@@ -1,4 +1,4 @@
 interface:
   display_name: "Vibenote Release"
-  short_description: "Run the Vibenote small-group trial release flow safely."
-  default_prompt: "Prepare a Vibenote trial release."
+  short_description: "Run the Vibenote tag-driven macOS release flow safely."
+  default_prompt: "Prepare a Vibenote macOS release."

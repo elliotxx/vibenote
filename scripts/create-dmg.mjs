@@ -8,7 +8,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const productName = packageJson.build.productName
 const version = packageJson.version
-const arch = process.arch === 'arm64' ? 'arm64' : process.arch
+const arch = process.env.VIBENOTE_RELEASE_ARCH || 'arm64'
 const appPath = path.join(root, 'dist', 'mac-arm64', `${productName}.app`)
 const dmgPath = path.join(root, 'dist', `${productName}-${version}-${arch}.dmg`)
 const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'vibenote-dmg-stage-'))

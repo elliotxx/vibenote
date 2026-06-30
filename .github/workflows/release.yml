@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: Build macOS release
+    runs-on: macos-latest
+    env:
+      VIBENOTE_RELEASE_ARCH: arm64
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Validate release tag
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          expected="v${version}"
+          if [ "${GITHUB_REF_NAME}" != "${expected}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package version ${expected}" >&2
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build release artifacts
+        run: npm run release:mac
+
+      - name: Verify checksums
+        run: |
+          cd dist
+          shasum -a 256 -c SHA256SUMS
+
+      - name: Write release notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cat > release-notes.md <<EOF
+          ## Vibenote ${GITHUB_REF_NAME}
+
+          This is an unsigned macOS Apple Silicon release.
+
+          ### Install
+
+          1. Download \`Vibenote-${version}-arm64.dmg\`.
+          2. Open the DMG and drag \`Vibenote.app\` to Applications.
+          3. On first launch, macOS may block the app because it is unsigned.
+          4. Open the Applications folder in Finder, right-click \`Vibenote.app\`, choose \`Open\`, then confirm the warning.
+          5. If it is still blocked, open System Settings, Privacy & Security, and allow Vibenote from the security warning.
+
+          Only install this build if you trust the source.
+
+          ### Verify
+
+          Download \`SHA256SUMS\`, then run:
+
+          \`\`\`sh
+          cd <download-folder>
+          shasum -a 256 -c SHA256SUMS
+          \`\`\`
+
+          ### Scope
+
+          - macOS arm64 only.
+          - One persistent note stream.
+          - Block-based plain text capture.
+          - Autosave and quit-time save.
+          - Local app data under \`\$HOME/Library/Application Support/Vibenote\`.
+          - No Heynote data migration or access.
+
+          ### Known Limits
+
+          - Unsigned and not notarized.
+          - macOS Gatekeeper warning on first launch.
+          - No auto-update channel.
+          EOF
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          gh release create "${GITHUB_REF_NAME}" \
+            "dist/Vibenote-${version}-arm64.dmg" \
+            dist/SHA256SUMS \
+            --verify-tag \
+            --title "Vibenote ${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md

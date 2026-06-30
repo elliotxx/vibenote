@@ -1,6 +1,6 @@
-# Trial Release Checklist
+# Release Checklist
 
-## 0.1.0 Small-Group Trial
+## 0.1.0 macOS Release
 
 Product name: Vibenote
 
@@ -10,9 +10,9 @@ Tagline: 沉浸式、顺手、AI Native 的纯文本笔记。
 
 English tagline: Immersive, effortless, AI-native plain text notes.
 
-Release mode: small-group macOS trial distribution.
+Release mode: tag-driven macOS release distribution.
 
-This release mode is for trusted friends or early testers only. The app is unsigned and not notarized, so testers must explicitly allow the first launch in macOS. Do not use this checklist for public distribution.
+The app is unsigned and not notarized, so testers must explicitly allow the first launch in macOS. Do not describe the build as signed, notarized, or Gatekeeper-clean.
 
 ### Scope
 
@@ -23,11 +23,11 @@ This release mode is for trusted friends or early testers only. The app is unsig
 - No Heynote data migration or access.
 - No tabs, sidebar tree, multiple buffers, command palette, or note search in the first release.
 
-### Build Artifacts
+### Local Preflight
 
 ```sh
 npm ci
-npm run release:trial
+npm run release:mac
 ```
 
 Expected artifacts:
@@ -36,7 +36,7 @@ Expected artifacts:
 - `dist/SHA256SUMS`
 - `dist/mac-arm64/Vibenote.app`
 
-Verify checksums before uploading or sharing:
+Verify checksums before tagging:
 
 ```sh
 cd dist
@@ -45,7 +45,7 @@ shasum -a 256 -c SHA256SUMS
 
 ### Verification
 
-Run the full trial suite before sharing:
+Run the full suite before tagging:
 
 ```sh
 npm run verify:package
@@ -93,12 +93,19 @@ Send testers these instructions with the DMG:
 Tester-facing warning:
 
 ```text
-This Vibenote build is an unsigned small-group trial build. macOS may block the first launch because it cannot verify the developer. Only install it if you trust this build source.
+This Vibenote build is unsigned and not notarized. macOS may block the first launch because it cannot verify the developer. Only install it if you trust this build source.
 ```
 
-### Share Package
+### Publish
 
-For a small-group trial, share only:
+Releases are created by pushing a version tag that matches `package.json`:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The `.github/workflows/release.yml` workflow builds the macOS arm64 DMG, verifies `SHA256SUMS`, and creates a formal GitHub Release with:
 
 - `Vibenote-0.1.0-arm64.dmg`
 - `SHA256SUMS`
@@ -128,11 +135,12 @@ rm -rf "$HOME/Library/Application Support/Vibenote"
 
 ### Release Decision
 
-Share `0.1.0` trial builds only when:
+Publish `0.1.0` only when:
 
 - The full verification suite passes.
 - One short dogfood pass finds no data-loss or launch issues.
 - `SHA256SUMS` has been generated.
 - The tester warning and install instructions are included wherever the DMG is shared.
+- The tag-driven GitHub Actions release workflow passes.
 
-Do not call this a public release until Developer ID signing and notarization are complete.
+Do not call this a signed or notarized release until Developer ID signing and notarization are complete.
