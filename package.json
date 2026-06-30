@@ -1,0 +1,105 @@
+{
+  "name": "vibenote",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Immersive, effortless, AI-native plain text notes",
+  "author": "elliotxx",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elliotxx/vibenote.git"
+  },
+  "type": "module",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1 --port 3344 --strictPort\" \"wait-on tcp:3344 && VITE_DEV_SERVER_URL=http://127.0.0.1:3344 electron .\"",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview",
+    "electron": "electron .",
+    "build:mac": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac zip --publish never -c.electronDist=.electron-dist && node scripts/create-dmg.mjs",
+    "release:trial": "npm run build:mac && npm run verify:package && node scripts/create-checksums.mjs",
+    "verify:package": "node scripts/verify-package.mjs",
+    "verify:runtime": "node scripts/smoke-runtime.mjs",
+    "verify:stability": "node scripts/stability-runtime.mjs",
+    "verify:edges": "node scripts/edge-runtime.mjs",
+    "verify:install": "node scripts/install-runtime.mjs"
+  },
+  "build": {
+    "appId": "com.elliotxx.vibenote",
+    "productName": "Vibenote",
+    "electronVersion": "41.3.0",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
+    "directories": {
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "dmg": {
+      "icon": "build/icon.icns",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "window": {
+        "width": 540,
+        "height": 360
+      },
+      "contents": [
+        {
+          "x": 160,
+          "y": 170,
+          "type": "file"
+        },
+        {
+          "x": 380,
+          "y": 170,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
+  },
+  "dependencies": {
+    "vue": "^3.5.38",
+    "@vscode/ripgrep": "^1.18.0",
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.11",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/lang-sql": "^6.10.0",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/legacy-modes": "^6.5.3",
+    "@codemirror/search": "^6.7.1",
+    "@codemirror/state": "^6.7.0",
+    "@codemirror/view": "^6.43.4",
+    "@lezer/common": "^1.5.2",
+    "lucide-vue-next": "^0.577.0",
+    "pinia": "^3.0.4",
+    "prettier": "^3.9.3"
+  },
+  "devDependencies": {
+    "@lezer/generator": "^1.8.0",
+    "@types/node": "^24.13.2",
+    "@vitejs/plugin-vue": "^6.0.7",
+    "@vue/tsconfig": "^0.9.1",
+    "concurrently": "^10.0.3",
+    "debounce": "^3.0.0",
+    "electron": "^41.3.0",
+    "electron-builder": "^26.15.3",
+    "electron-store": "^11.0.2",
+    "typescript": "~6.0.2",
+    "vite": "^8.1.0",
+    "vue-tsc": "^3.3.5",
+    "wait-on": "^9.0.10"
+  }
+}
