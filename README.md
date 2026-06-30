@@ -51,50 +51,29 @@ Vibenote `0.1.0` targets macOS arm64 only. To keep the experience minimal, this 
 
 ## Quick Start
 
-Run the app for development:
+The fastest path is to let an AI coding agent install it for you from source. Copy this prompt into Codex, Claude Code, or another local agent that can run shell commands on your Mac:
 
-```sh
-npm install
-npm run dev
+```text
+Install Vibenote from https://github.com/elliotxx/vibenote on this Mac.
+
+Requirements:
+- Do not touch any Heynote data.
+- Clone or update the repo under $HOME/workspace/vibenote.
+- Install dependencies with npm.
+- Build the small-group trial macOS arm64 package with npm run release:trial.
+- Verify dist/SHA256SUMS.
+- Mount dist/Vibenote-0.1.0-arm64.dmg, copy Vibenote.app into the Applications folder, unmount the DMG, and launch the app.
+- If macOS blocks the unsigned app, tell me the exact Finder right-click Open or Privacy & Security steps.
 ```
 
-If Electron binary download is blocked, you can still inspect the renderer:
+Manual install:
 
-```sh
-npx vite --host 127.0.0.1 --port 3344 --strictPort
-```
-
-The browser renderer uses a localStorage mock when the Electron preload bridge is unavailable, so it does not write real app data.
-
-## Build and Install
-
-Build the macOS artifacts:
-
-```sh
-npm run release:trial
-```
-
-Expected artifacts:
-
-- `dist/Vibenote-0.1.0-arm64.dmg`
-- `dist/Vibenote-0.1.0-arm64.zip`
-- `dist/SHA256SUMS`
-
-The current release mode is **small-group trial distribution**. The app is unsigned and not notarized, so it is intended for trusted testers who understand the macOS first-launch warning. Public distribution still requires Developer ID signing and Apple notarization.
-
-Before sharing a build, verify checksums:
-
-```sh
-cd dist
-shasum -a 256 -c SHA256SUMS
-```
-
-Install:
-
-1. Open `dist/Vibenote-0.1.0-arm64.dmg`.
-2. Drag `Vibenote.app` into `Applications`.
-3. If macOS blocks the first launch, open `/Applications` in Finder, right-click `Vibenote.app`, choose `Open`, then confirm the dialog.
-4. If right-click `Open` is still blocked, go to System Settings, Privacy & Security, and allow Vibenote from the security warning shown there.
+1. Download or build `Vibenote-0.1.0-arm64.dmg`.
+2. Verify the checksum with `SHA256SUMS` if it is provided.
+3. Open the DMG and drag `Vibenote.app` into the Applications folder.
+4. Launch Vibenote.
+5. If macOS blocks the first launch, open the Applications folder in Finder, right-click `Vibenote.app`, choose `Open`, then confirm the dialog.
+6. If right-click `Open` is still blocked, go to System Settings, Privacy & Security, and allow Vibenote from the security warning shown there.
 
 Only share the DMG/ZIP with people who trust the build source. Do not present unsigned trial builds as a normal public macOS release.
 
@@ -138,7 +117,45 @@ Only remove app data after confirming the note stream is no longer needed:
 rm -rf "$HOME/Library/Application Support/Vibenote"
 ```
 
-## Tech Stack
+## Developer Notes
+
+Run the app for development:
+
+```sh
+npm install
+npm run dev
+```
+
+If Electron binary download is blocked, you can still inspect the renderer:
+
+```sh
+npx vite --host 127.0.0.1 --port 3344 --strictPort
+```
+
+The browser renderer uses a localStorage mock when the Electron preload bridge is unavailable, so it does not write real app data.
+
+Build the macOS trial artifacts:
+
+```sh
+npm run release:trial
+```
+
+Expected artifacts:
+
+- `dist/Vibenote-0.1.0-arm64.dmg`
+- `dist/Vibenote-0.1.0-arm64.zip`
+- `dist/SHA256SUMS`
+
+The current release mode is **small-group trial distribution**. The app is unsigned and not notarized, so it is intended for trusted testers who understand the macOS first-launch warning. Public distribution still requires Developer ID signing and Apple notarization.
+
+Before sharing a build, verify checksums:
+
+```sh
+cd dist
+shasum -a 256 -c SHA256SUMS
+```
+
+### Tech Stack
 
 - Electron 41
 - Vue 3
@@ -148,7 +165,7 @@ rm -rf "$HOME/Library/Application Support/Vibenote"
 - ripgrep via `@vscode/ripgrep`
 - electron-builder
 
-## Verification
+### Verification
 
 ```sh
 npm run build

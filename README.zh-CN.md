@@ -51,50 +51,29 @@ Vibenote `0.1.0` 首发只支持 macOS arm64。为了保持简单，当前版本
 
 ## 快速开始
 
-开发运行：
+最快的方式是让本地 AI coding agent 从源码帮你安装。把下面这段 prompt 复制到 Codex、Claude Code 或其他能在本机执行 shell 命令的 agent 里：
 
-```sh
-npm install
-npm run dev
+```text
+请在这台 Mac 上从 https://github.com/elliotxx/vibenote 安装 Vibenote。
+
+要求：
+- 不要读取、迁移或修改任何 Heynote 数据。
+- 将仓库 clone 或更新到 $HOME/workspace/vibenote。
+- 使用 npm 安装依赖。
+- 使用 npm run release:trial 构建小范围试用的 macOS arm64 安装包。
+- 校验 dist/SHA256SUMS。
+- 挂载 dist/Vibenote-0.1.0-arm64.dmg，将 Vibenote.app 复制到 Applications 文件夹，卸载 DMG，并启动应用。
+- 如果 macOS 拦截未签名应用，请告诉我准确的 Finder 右键打开或“隐私与安全”放行步骤。
 ```
 
-如果 Electron 二进制下载受限，可以先只检查浏览器渲染层：
+手动安装：
 
-```sh
-npx vite --host 127.0.0.1 --port 3344 --strictPort
-```
-
-浏览器渲染层在没有 Electron preload 时会使用 localStorage mock，不会写入真实应用数据。
-
-## 打包与安装
-
-构建 macOS 安装包：
-
-```sh
-npm run release:trial
-```
-
-构建产物：
-
-- `dist/Vibenote-0.1.0-arm64.dmg`
-- `dist/Vibenote-0.1.0-arm64.zip`
-- `dist/SHA256SUMS`
-
-当前发布模式是**小范围试用分发**。应用未签名、未公证，只适合发给信任你、且理解 macOS 首次启动拦截提示的测试用户。公开分发前仍需要 Developer ID 签名和 Apple notarization。
-
-分享前可以校验产物：
-
-```sh
-cd dist
-shasum -a 256 -c SHA256SUMS
-```
-
-安装方式：
-
-1. 打开 `dist/Vibenote-0.1.0-arm64.dmg`。
-2. 将 `Vibenote.app` 拖到 `Applications`。
-3. 首次启动如被 macOS 拦截，请在 Finder 中打开 `/Applications`，右键点击 `Vibenote.app`，选择“打开”，再确认弹窗。
-4. 如果右键打开仍被拦截，请进入“系统设置 > 隐私与安全”，在安全提示处允许打开 Vibenote。
+1. 下载或构建 `Vibenote-0.1.0-arm64.dmg`。
+2. 如果同时提供了 `SHA256SUMS`，先校验文件哈希。
+3. 打开 DMG，将 `Vibenote.app` 拖到 Applications 文件夹。
+4. 启动 Vibenote。
+5. 首次启动如被 macOS 拦截，请在 Finder 中打开 Applications 文件夹，右键点击 `Vibenote.app`，选择“打开”，再确认弹窗。
+6. 如果右键打开仍被拦截，请进入“系统设置 > 隐私与安全”，在安全提示处允许打开 Vibenote。
 
 只把未签名试用包发给信任构建来源的人，不要把它包装成普通公开 macOS release。
 
@@ -138,7 +117,45 @@ rm -rf "/Applications/Vibenote.app"
 rm -rf "$HOME/Library/Application Support/Vibenote"
 ```
 
-## 技术栈
+## 开发者须知
+
+开发运行：
+
+```sh
+npm install
+npm run dev
+```
+
+如果 Electron 二进制下载受限，可以先只检查浏览器渲染层：
+
+```sh
+npx vite --host 127.0.0.1 --port 3344 --strictPort
+```
+
+浏览器渲染层在没有 Electron preload 时会使用 localStorage mock，不会写入真实应用数据。
+
+构建 macOS 试用安装包：
+
+```sh
+npm run release:trial
+```
+
+构建产物：
+
+- `dist/Vibenote-0.1.0-arm64.dmg`
+- `dist/Vibenote-0.1.0-arm64.zip`
+- `dist/SHA256SUMS`
+
+当前发布模式是**小范围试用分发**。应用未签名、未公证，只适合发给信任你、且理解 macOS 首次启动拦截提示的测试用户。公开分发前仍需要 Developer ID 签名和 Apple notarization。
+
+分享前可以校验产物：
+
+```sh
+cd dist
+shasum -a 256 -c SHA256SUMS
+```
+
+### 技术栈
 
 - Electron 41
 - Vue 3
@@ -148,7 +165,7 @@ rm -rf "$HOME/Library/Application Support/Vibenote"
 - ripgrep via `@vscode/ripgrep`
 - electron-builder
 
-## 验证
+### 验证
 
 ```sh
 npm run build
