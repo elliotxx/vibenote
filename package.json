@@ -15,7 +15,7 @@
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "electron": "electron .",
-    "build:mac": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac zip --publish never -c.electronDist=.electron-dist && node scripts/create-dmg.mjs",
+    "build:mac": "rm -f dist/*.zip dist/*.zip.blockmap && npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir --publish never -c.electronDist=.electron-dist && node scripts/create-dmg.mjs",
     "release:trial": "npm run build:mac && npm run verify:package && node scripts/create-checksums.mjs",
     "verify:package": "node scripts/verify-package.mjs",
     "verify:runtime": "node scripts/smoke-runtime.mjs",
@@ -39,8 +39,7 @@
     "mac": {
       "icon": "build/icon.icns",
       "target": [
-        "dmg",
-        "zip"
+        "dir"
       ],
       "category": "public.app-category.developer-tools"
     },
