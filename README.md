@@ -75,7 +75,7 @@ Manual install:
 5. If macOS blocks the first launch, open the Applications folder in Finder, right-click `Vibenote.app`, choose `Open`, then confirm the dialog.
 6. If right-click `Open` is still blocked, go to System Settings, Privacy & Security, and allow Vibenote from the security warning shown there.
 
-Only share the DMG/ZIP with people who trust the build source. Do not present unsigned trial builds as a normal public macOS release.
+Only share the DMG with people who trust the build source. Do not present unsigned trial builds as a normal public macOS release.
 
 ## Keyboard Shortcuts
 
@@ -143,7 +143,6 @@ npm run release:trial
 Expected artifacts:
 
 - `dist/Vibenote-0.1.0-arm64.dmg`
-- `dist/Vibenote-0.1.0-arm64.zip`
 - `dist/SHA256SUMS`
 
 The current release mode is **small-group trial distribution**. The app is unsigned and not notarized, so it is intended for trusted testers who understand the macOS first-launch warning. Public distribution still requires Developer ID signing and Apple notarization.

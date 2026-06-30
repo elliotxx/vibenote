@@ -1,6 +1,6 @@
 ---
 name: vibenote-release
-description: Run the Vibenote macOS small-group trial release workflow. Use when the user asks to prepare, verify, tag, package, publish, or explain a Vibenote release, trial build, DMG/ZIP distribution, SHA256SUMS, GitHub Release, or tester install instructions for github.com/elliotxx/vibenote.
+description: Run the Vibenote macOS small-group trial release workflow. Use when the user asks to prepare, verify, tag, package, publish, or explain a Vibenote release, trial build, DMG distribution, SHA256SUMS, GitHub Release, or tester install instructions for github.com/elliotxx/vibenote.
 ---
 
 # Vibenote Release
@@ -47,7 +47,6 @@ Resolve resource paths relative to this skill folder.
      ```
    - Expected artifacts:
      - `dist/Vibenote-<version>-arm64.dmg`
-     - `dist/Vibenote-<version>-arm64.zip`
      - `dist/SHA256SUMS`
 
 4. **Verify release artifacts**
@@ -87,7 +86,7 @@ Resolve resource paths relative to this skill folder.
 
 7. **Create GitHub Release when requested**
    - Prefer a draft release for trial builds.
-   - Upload only the DMG and `SHA256SUMS` by default. Keep ZIP as backup unless the user asks to upload it.
+   - Upload the DMG and `SHA256SUMS`.
    - Use `references/release-notes-template.md` for notes.
    - If using GitHub CLI:
      ```sh
@@ -120,7 +119,7 @@ Report:
 - Version and tag.
 - Commit hash used for the build.
 - Artifact paths.
-- SHA256 values for DMG and ZIP, or the `SHA256SUMS` path.
+- SHA256 value for the DMG, or the `SHA256SUMS` path.
 - Verification commands run and result.
 - Whether tag was pushed.
 - Whether GitHub Release was created, and whether it is draft.

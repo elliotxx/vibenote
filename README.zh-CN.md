@@ -143,7 +143,6 @@ npm run release:trial
 构建产物：
 
 - `dist/Vibenote-0.1.0-arm64.dmg`
-- `dist/Vibenote-0.1.0-arm64.zip`
 - `dist/SHA256SUMS`
 
 当前发布模式是**小范围试用分发**。应用未签名、未公证，只适合发给信任你、且理解 macOS 首次启动拦截提示的测试用户。公开分发前仍需要 Developer ID 签名和 Apple notarization。

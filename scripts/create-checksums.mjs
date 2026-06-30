@@ -11,7 +11,6 @@ const arch = process.arch === 'arm64' ? 'arm64' : process.arch
 const distDir = path.join(root, 'dist')
 const artifacts = [
   `${productName}-${version}-${arch}.dmg`,
-  `${productName}-${version}-${arch}.zip`,
 ]
 
 function sha256(filePath) {

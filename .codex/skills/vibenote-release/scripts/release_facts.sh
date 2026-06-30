@@ -12,7 +12,6 @@ product="$(node -p "require('./package.json').build.productName")"
 tag="v${version}"
 arch="arm64"
 dmg="dist/${product}-${version}-${arch}.dmg"
-zip="dist/${product}-${version}-${arch}.zip"
 sums="dist/SHA256SUMS"
 
 echo "repo: $repo_name"
@@ -28,7 +27,7 @@ echo "local_tag_exists: $(git tag -l "$tag" | grep -q . && echo yes || echo no)"
 echo "remote_tag_exists: $(git ls-remote --tags origin "refs/tags/${tag}" | grep -q . && echo yes || echo no)"
 echo
 echo "artifacts:"
-for file in "$dmg" "$zip" "$sums"; do
+for file in "$dmg" "$sums"; do
   if [[ -f "$file" ]]; then
     size="$(du -h "$file" | awk '{print $1}')"
     echo "  ok $file $size"

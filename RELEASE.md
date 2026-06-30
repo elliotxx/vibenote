@@ -33,7 +33,6 @@ npm run release:trial
 Expected artifacts:
 
 - `dist/Vibenote-0.1.0-arm64.dmg`
-- `dist/Vibenote-0.1.0-arm64.zip`
 - `dist/SHA256SUMS`
 - `dist/mac-arm64/Vibenote.app`
 
@@ -58,7 +57,7 @@ npm run verify:install
 
 Acceptance criteria:
 
-- The DMG, ZIP, bundled icon, version metadata, preload, renderer assets, and ripgrep runtime are present.
+- The DMG, bundled icon, version metadata, preload, renderer assets, and ripgrep runtime are present.
 - The DMG mounts and contains `Vibenote.app` plus an `Applications` symlink.
 - The packaged app launches as the frontmost app.
 - Text pasted into the editor is saved.
@@ -103,8 +102,6 @@ For a small-group trial, share only:
 
 - `Vibenote-0.1.0-arm64.dmg`
 - `SHA256SUMS`
-
-The ZIP can be kept as a backup artifact, but the DMG is the preferred tester install path.
 
 ### Uninstall Instructions
 

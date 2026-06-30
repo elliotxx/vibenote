@@ -11,7 +11,6 @@ const version = packageJson.version
 const arch = process.arch === 'arm64' ? 'arm64' : process.arch
 const appPath = path.join(root, 'dist', 'mac-arm64', `${productName}.app`)
 const dmgPath = path.join(root, 'dist', `${productName}-${version}-${arch}.dmg`)
-const zipPath = path.join(root, 'dist', `${productName}-${version}-${arch}.zip`)
 const asarPath = path.join(appPath, 'Contents', 'Resources', 'app.asar')
 const plistPath = path.join(appPath, 'Contents', 'Info.plist')
 const iconPath = path.join(appPath, 'Contents', 'Resources', 'icon.icns')
@@ -37,9 +36,7 @@ function dirExists(dirPath) {
 
 check(dirExists(appPath), `packaged app exists at ${appPath}`)
 check(fileExists(dmgPath), `DMG exists at ${dmgPath}`)
-check(fileExists(zipPath), `ZIP exists at ${zipPath}`)
 check(fs.statSync(dmgPath).size > 10 * 1024 * 1024, 'DMG is not empty')
-check(fs.statSync(zipPath).size > 10 * 1024 * 1024, 'ZIP is not empty')
 check(fileExists(iconPath), 'app icon is bundled')
 
 const bundleVersion = output('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', plistPath]).trim()
