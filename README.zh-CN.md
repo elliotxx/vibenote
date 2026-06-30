@@ -60,7 +60,7 @@ Vibenote `0.1.0` 首发只支持 macOS arm64。为了保持简单，当前版本
 - 不要读取、迁移或修改任何 Heynote 数据。
 - 将仓库 clone 或更新到 $HOME/workspace/vibenote。
 - 使用 npm 安装依赖。
-- 使用 npm run release:trial 构建小范围试用的 macOS arm64 安装包。
+- 使用 npm run release:mac 构建未签名的 macOS arm64 安装包。
 - 校验 dist/SHA256SUMS。
 - 挂载 dist/Vibenote-0.1.0-arm64.dmg，将 Vibenote.app 复制到 Applications 文件夹，卸载 DMG，并启动应用。
 - 如果 macOS 拦截未签名应用，请告诉我准确的 Finder 右键打开或“隐私与安全”放行步骤。
@@ -137,7 +137,7 @@ npx vite --host 127.0.0.1 --port 3344 --strictPort
 构建 macOS 试用安装包：
 
 ```sh
-npm run release:trial
+npm run release:mac
 ```
 
 构建产物：
@@ -145,7 +145,7 @@ npm run release:trial
 - `dist/Vibenote-0.1.0-arm64.dmg`
 - `dist/SHA256SUMS`
 
-当前发布模式是**小范围试用分发**。应用未签名、未公证，只适合发给信任你、且理解 macOS 首次启动拦截提示的测试用户。公开分发前仍需要 Developer ID 签名和 Apple notarization。
+当前发布模式是**通过 tag 触发的 macOS release 分发**。应用未签名、未公证，用户需要理解 macOS 首次启动拦截提示。大范围分发前仍需要 Developer ID 签名和 Apple notarization。
 
 分享前可以校验产物：
 
@@ -153,6 +153,17 @@ npm run release:trial
 cd dist
 shasum -a 256 -c SHA256SUMS
 ```
+
+### 发布
+
+Vibenote 通过 tag 触发发布。推送与 `package.json` 版本一致的版本 tag：
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+GitHub Actions 会构建 macOS arm64 DMG，校验 `SHA256SUMS`，并创建正式 GitHub Release，上传 DMG 和 checksum 文件。当前构建仍然未签名、未公证。
 
 ### 技术栈
 

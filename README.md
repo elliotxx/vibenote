@@ -60,7 +60,7 @@ Requirements:
 - Do not touch any Heynote data.
 - Clone or update the repo under $HOME/workspace/vibenote.
 - Install dependencies with npm.
-- Build the small-group trial macOS arm64 package with npm run release:trial.
+- Build the unsigned macOS arm64 package with npm run release:mac.
 - Verify dist/SHA256SUMS.
 - Mount dist/Vibenote-0.1.0-arm64.dmg, copy Vibenote.app into the Applications folder, unmount the DMG, and launch the app.
 - If macOS blocks the unsigned app, tell me the exact Finder right-click Open or Privacy & Security steps.
@@ -75,7 +75,7 @@ Manual install:
 5. If macOS blocks the first launch, open the Applications folder in Finder, right-click `Vibenote.app`, choose `Open`, then confirm the dialog.
 6. If right-click `Open` is still blocked, go to System Settings, Privacy & Security, and allow Vibenote from the security warning shown there.
 
-Only share the DMG with people who trust the build source. Do not present unsigned trial builds as a normal public macOS release.
+Only share the DMG with people who trust the build source. This release is unsigned and not notarized.
 
 ## Keyboard Shortcuts
 
@@ -134,10 +134,10 @@ npx vite --host 127.0.0.1 --port 3344 --strictPort
 
 The browser renderer uses a localStorage mock when the Electron preload bridge is unavailable, so it does not write real app data.
 
-Build the macOS trial artifacts:
+Build the macOS release artifacts:
 
 ```sh
-npm run release:trial
+npm run release:mac
 ```
 
 Expected artifacts:
@@ -145,7 +145,7 @@ Expected artifacts:
 - `dist/Vibenote-0.1.0-arm64.dmg`
 - `dist/SHA256SUMS`
 
-The current release mode is **small-group trial distribution**. The app is unsigned and not notarized, so it is intended for trusted testers who understand the macOS first-launch warning. Public distribution still requires Developer ID signing and Apple notarization.
+The current release mode is **tag-driven macOS release distribution**. The app is unsigned and not notarized, so users must understand the macOS first-launch warning. Broad distribution still requires Developer ID signing and Apple notarization.
 
 Before sharing a build, verify checksums:
 
@@ -153,6 +153,17 @@ Before sharing a build, verify checksums:
 cd dist
 shasum -a 256 -c SHA256SUMS
 ```
+
+### Release
+
+Vibenote releases are tag-driven. Push a version tag that matches `package.json`:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+GitHub Actions builds the macOS arm64 DMG, verifies `SHA256SUMS`, and creates a formal GitHub Release with the DMG and checksum file. The release is still unsigned and not notarized.
 
 ### Tech Stack
 
@@ -185,7 +196,7 @@ Contributions are welcome around the minimal capture experience. First-release p
 
 - Data-save reliability.
 - Block editing ergonomics.
-- macOS packaging and small-group trial distribution.
+- macOS packaging and tag-driven release automation.
 - Developer ID signing and notarization before public distribution.
 - Shortcut consistency.
 - Non-destructive AI-native assistance.

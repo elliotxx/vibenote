@@ -1,11 +1,11 @@
-# Vibenote Trial Release Notes Template
+# Vibenote Release Notes Template
 
 Use this template for GitHub Release notes or tester-facing messages.
 
 ```md
-## Vibenote v<version> Trial
+## Vibenote v<version>
 
-This is an unsigned small-group trial build for macOS Apple Silicon.
+This is an unsigned macOS Apple Silicon release.
 
 ### Install
 
@@ -40,5 +40,5 @@ shasum -a 256 -c SHA256SUMS
 - Unsigned and not notarized.
 - macOS Gatekeeper warning on first launch.
 - No auto-update channel.
-- Not intended as a public macOS release.
+- No auto-update channel.
 ```
