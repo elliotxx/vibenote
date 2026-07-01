@@ -137,6 +137,29 @@ test.describe('editor text selection shortcuts', () => {
     await expect.poll(() => hasNoVisibleSelectionHighlight(page)).toBe(true)
   })
 
+  test('does not reserve visible space for hidden block delimiters', async ({ page }) => {
+    const layout = await page.evaluate(() => {
+      const content = document.querySelector<HTMLElement>('.cm-content')
+      const firstVisibleLine = Array.from(document.querySelectorAll<HTMLElement>('.cm-line'))
+        .find(line => !line.classList.contains('block-delimiter-line') && (line.textContent || '').includes('# Stream'))
+      const delimiterLines = Array.from(document.querySelectorAll<HTMLElement>('.cm-line.block-delimiter-line'))
+      const delimiterGutters = Array.from(document.querySelectorAll<HTMLElement>('.cm-gutterElement.block-gutter-delimiter'))
+
+      if (!content || !firstVisibleLine) return null
+
+      return {
+        firstLineOffset: firstVisibleLine.getBoundingClientRect().top - content.getBoundingClientRect().top,
+        maxDelimiterHeight: Math.max(0, ...delimiterLines.map(line => line.getBoundingClientRect().height)),
+        maxDelimiterGutterHeight: Math.max(0, ...delimiterGutters.map(gutter => gutter.getBoundingClientRect().height)),
+      }
+    })
+
+    expect(layout).not.toBeNull()
+    expect(layout!.firstLineOffset).toBeLessThanOrEqual(2)
+    expect(layout!.maxDelimiterHeight).toBeLessThanOrEqual(1)
+    expect(layout!.maxDelimiterGutterHeight).toBeLessThanOrEqual(1)
+  })
+
   test('supports keyboard and mouse selection like a plain text editor', async ({ page }) => {
     await clickLine(page, '# Stream')
 
