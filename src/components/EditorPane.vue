@@ -193,10 +193,10 @@ function mountEditor() {
           minWidth: '44px',
         },
         '.cm-activeLine': {
-          backgroundColor: 'oklch(92.8% 0.016 228)',
+          backgroundColor: 'oklch(95.5% 0.01 228)',
         },
         '.cm-activeLineGutter': {
-          backgroundColor: 'oklch(92.8% 0.016 228)',
+          backgroundColor: 'oklch(95.5% 0.01 228)',
           color: 'var(--ink-soft)',
           fontWeight: '700',
         },
@@ -208,7 +208,7 @@ function mountEditor() {
           zIndex: '6',
         },
         '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
-          backgroundColor: 'oklch(84.5% 0.048 252 / 0.48)',
+          backgroundColor: 'oklch(80.5% 0.058 252 / 0.62)',
         },
       }),
       blockField,

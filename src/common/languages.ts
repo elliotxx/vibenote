@@ -55,6 +55,5 @@ export function detectLanguage(content: string): string {
   if (/^\s*(select|with|insert|update|delete)\s+/i.test(trimmed)) return 'sql'
   if (/^\s*(def|import|from|class)\s+\w+/m.test(trimmed)) return 'python'
   if (/^\s*(const|let|function|import|export)\s+/m.test(trimmed)) return 'javascript'
-  if (/^\s*[\w.]+\s*=\s*[-+*/\d(]/m.test(trimmed) || /^\s*[-+*/().\d\s]+\s*$/m.test(trimmed)) return 'math'
   return 'text'
 }

@@ -157,16 +157,8 @@ select:focus {
 
 .cm-editor .cm-selectionBackground {
   border-radius: 0;
-  background-color: oklch(84.5% 0.048 252 / 0.48) !important;
+  background-color: oklch(80.5% 0.058 252 / 0.62) !important;
   box-shadow: none;
-}
-
-.cm-editor:has(.cm-selectionBackground) .cm-activeLine {
-  background-color: transparent !important;
-}
-
-.cm-editor:has(.cm-selectionBackground) .cm-activeLineGutter {
-  background-color: transparent !important;
 }
 
 .block-even {
