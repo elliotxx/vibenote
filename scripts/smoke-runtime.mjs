@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const productName = packageJson.build.productName
-const appBundlePath = path.join(root, 'dist', 'mac-arm64', `${productName}.app`)
+const releaseArch = process.env.VIBENOTE_RELEASE_ARCH || 'arm64'
+const appBundlePath = path.join(root, 'dist', `mac-${releaseArch}`, `${productName}.app`)
 const streamPath = path.join(os.homedir(), 'Library', 'Application Support', productName, 'notes', 'stream.txt')
 const screenshotPath = path.join(os.tmpdir(), 'vibenote-runtime-smoke.png')
 const marker = `runtime-smoke-${Date.now()}`

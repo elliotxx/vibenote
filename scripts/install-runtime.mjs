@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const productName = packageJson.build.productName
-const dmgPath = path.join(root, 'dist', `${productName}-${packageJson.version}-arm64.dmg`)
+const releaseArch = process.env.VIBENOTE_RELEASE_ARCH || 'arm64'
+const dmgPath = path.join(root, 'dist', `${productName}-${packageJson.version}-${releaseArch}.dmg`)
 const installedAppPath = `/Applications/${productName}.app`
 const screenshotPath = path.join(os.tmpdir(), 'vibenote-install-smoke.png')
 let mountedPath = null

@@ -1,6 +1,6 @@
 # Release Checklist
 
-## 0.1.0 macOS Release
+## Versioned macOS Release
 
 Product name: Vibenote
 
@@ -32,9 +32,9 @@ npm run release:mac
 
 Expected artifacts:
 
-- `dist/Vibenote-0.1.0-arm64.dmg`
+- `dist/Vibenote-<version>-arm64.dmg`
 - `dist/SHA256SUMS`
-- `dist/mac-arm64/Vibenote.app`
+- `dist/mac-<arch>/Vibenote.app`
 
 Verify checksums before tagging:
 
@@ -75,14 +75,14 @@ Use the installed app for normal note capture before tagging a release:
 - Paste and edit Markdown, JSON, JavaScript or TypeScript, Python, and SQL snippets.
 - Quit and relaunch several times.
 - Restart macOS once if this is intended to become the daily note stream.
-- Verify that content remains in `~/Library/Application Support/Vibenote/notes/stream.txt`.
+- Verify that content remains in `$HOME/Library/Application Support/Vibenote/notes/stream.txt`.
 - Confirm the UI still feels simple enough: single editor, no sidebar, no tabs.
 
 ### Tester Install Instructions
 
 Send testers these instructions with the DMG:
 
-1. Download `Vibenote-0.1.0-arm64.dmg`.
+1. Download `Vibenote-<version>-arm64.dmg`.
 2. Optionally verify the SHA256 checksum from `SHA256SUMS`.
 3. Open the DMG and drag `Vibenote.app` to `Applications`.
 4. Open `/Applications` in Finder.
@@ -101,13 +101,13 @@ This Vibenote build is unsigned and not notarized. macOS may block the first lau
 Releases are created by pushing a version tag that matches `package.json`:
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git tag v<version>
+git push origin v<version>
 ```
 
 The `.github/workflows/release.yml` workflow builds the macOS arm64 DMG, verifies `SHA256SUMS`, and creates a formal GitHub Release with:
 
-- `Vibenote-0.1.0-arm64.dmg`
+- `Vibenote-<version>-arm64.dmg`
 - `SHA256SUMS`
 
 ### Uninstall Instructions
@@ -135,7 +135,7 @@ rm -rf "$HOME/Library/Application Support/Vibenote"
 
 ### Release Decision
 
-Publish `0.1.0` only when:
+Publish a version only when:
 
 - The full verification suite passes.
 - One short dogfood pass finds no data-loss or launch issues.
