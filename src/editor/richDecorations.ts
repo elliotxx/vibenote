@@ -1,4 +1,3 @@
-import { RangeSetBuilder } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType } from '@codemirror/view'
 import { blockField, type ScratchBlock } from './blocks'
 
@@ -46,24 +45,24 @@ class MathResultWidget extends WidgetType {
 }
 
 export const richDecorations = EditorView.decorations.compute([blockField], state => {
-  const builder = new RangeSetBuilder<Decoration>()
+  const decorations: any[] = []
   const blocks = state.field(blockField)
   for (const block of blocks) {
-    addSyntaxMarks(builder, state, block)
-    addImageWidgets(builder, state, block)
-    addMathResults(builder, state, block)
+    addSyntaxMarks(decorations, state, block)
+    addImageWidgets(decorations, state, block)
+    addMathResults(decorations, state, block)
   }
-  return builder.finish()
+  return Decoration.set(decorations, true)
 })
 
-function addSyntaxMarks(builder: RangeSetBuilder<Decoration>, state: any, block: ScratchBlock) {
+function addSyntaxMarks(decorations: any[], state: any, block: ScratchBlock) {
   const content = state.doc.sliceString(block.content.from, block.content.to)
   const patterns = syntaxPatterns(block.language)
   for (const [className, pattern] of patterns) {
     for (const match of content.matchAll(pattern)) {
       const from = block.content.from + match.index!
       const to = from + match[0].length
-      builder.add(from, to, Decoration.mark({ class: className }))
+      decorations.push(Decoration.mark({ class: className }).range(from, to))
     }
   }
 }
@@ -109,17 +108,17 @@ function syntaxPatterns(language: string): Array<[string, RegExp]> {
   return []
 }
 
-function addImageWidgets(builder: RangeSetBuilder<Decoration>, state: any, block: ScratchBlock) {
+function addImageWidgets(decorations: any[], state: any, block: ScratchBlock) {
   const content = state.doc.sliceString(block.content.from, block.content.to)
   const imagePattern = /!\[[^\]]*]\((vibenote-image:\/\/[^)]+)\)/g
   for (const match of content.matchAll(imagePattern)) {
     const from = block.content.from + match.index!
     const to = from + match[0].length
-    builder.add(from, to, Decoration.replace({ widget: new ImageWidget(match[1]) }))
+    decorations.push(Decoration.replace({ widget: new ImageWidget(match[1]) }).range(from, to))
   }
 }
 
-function addMathResults(builder: RangeSetBuilder<Decoration>, state: any, block: ScratchBlock) {
+function addMathResults(decorations: any[], state: any, block: ScratchBlock) {
   if (block.language !== 'math') return
   const content = state.doc.sliceString(block.content.from, block.content.to)
   let offset = 0
@@ -129,7 +128,7 @@ function addMathResults(builder: RangeSetBuilder<Decoration>, state: any, block:
       try {
         const value = Function(`"use strict"; return (${trimmed})`)()
         const lineEnd = block.content.from + offset + line.length
-        builder.add(lineEnd, lineEnd, Decoration.widget({ widget: new MathResultWidget(String(value)), side: 1 }))
+        decorations.push(Decoration.widget({ widget: new MathResultWidget(String(value)), side: 1 }).range(lineEnd))
       } catch {
         // Invalid expressions stay as plain text.
       }

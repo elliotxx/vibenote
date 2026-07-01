@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { Settings, X } from 'lucide-vue-next'
+import { X } from 'lucide-vue-next'
 import EditorPane from './components/EditorPane.vue'
 import { useWorkspaceStore } from './stores/workspace'
 
@@ -16,15 +16,10 @@ onMounted(async () => {
   <div class="app-shell">
     <main class="main-area">
       <header class="windowbar">
-        <div class="windowbar-drag-zone" aria-hidden="true"></div>
-        <div class="windowbar-actions">
-          <button class="icon-button" title="Settings" @click="showSettings = true">
-            <Settings :size="16" />
-          </button>
-        </div>
+        <div class="window-title">{{ store.currentPath ? store.bufferTitle(store.currentPath) : 'Vibenote' }}</div>
       </header>
 
-      <EditorPane v-if="store.currentPath" :key="store.currentPath" />
+      <EditorPane v-if="store.currentPath" :key="store.currentPath" @open-settings="showSettings = true" />
     </main>
 
     <div v-if="showSettings" class="modal-backdrop" @click.self="showSettings = false">

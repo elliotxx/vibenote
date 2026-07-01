@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeTheme, protocol } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, protocol } from 'electron'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -15,6 +15,22 @@ app.setName('Vibenote')
 let mainWindow = null
 let library = null
 let currentSearch = null
+
+function runtimeIconPath() {
+  const candidate = app.isPackaged
+    ? path.join(process.resourcesPath, 'icon.png')
+    : path.join(__dirname, '../build/icon.png')
+  return fs.existsSync(candidate) ? candidate : null
+}
+
+function applyRuntimeIcon() {
+  const iconPath = runtimeIconPath()
+  if (!iconPath) return null
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(nativeImage.createFromPath(iconPath))
+  }
+  return iconPath
+}
 
 function safeJoin(base, relativePath) {
   const fullPath = path.resolve(base, relativePath)
@@ -174,6 +190,7 @@ class FileLibrary {
 }
 
 function createWindow() {
+  const iconPath = runtimeIconPath()
   mainWindow = new BrowserWindow({
     width: 1120,
     height: 760,
@@ -182,6 +199,7 @@ function createWindow() {
     title: 'Vibenote',
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#f5f6f8',
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -342,6 +360,7 @@ function startSearch(query) {
 }
 
 app.whenReady().then(async () => {
+  applyRuntimeIcon()
   const basePath = path.join(app.getPath('userData'), 'notes')
   library = new FileLibrary(basePath)
   await library.init()

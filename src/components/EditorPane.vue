@@ -4,7 +4,7 @@ import { addCursorAbove, addCursorBelow, defaultKeymap, history, historyKeymap, 
 import { lineNumbers, keymap, drawSelection, highlightActiveLine, EditorView } from '@codemirror/view'
 import { searchKeymap } from '@codemirror/search'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Code2, FilePlus2, Trash2, Wand2 } from 'lucide-vue-next'
+import { Code2, FilePlus2, Keyboard, Settings, Trash2, Wand2 } from 'lucide-vue-next'
 import * as prettier from 'prettier/standalone'
 import { blockDelimiter, loadNote, serializeNote, type LoadedNote } from '../common/noteFormat'
 import { getLanguage, languages } from '../common/languages'
@@ -13,6 +13,7 @@ import {
   autoDetectPlugin,
   blockDecorations,
   blockField,
+  blockGutterDecorations,
   currentBlockText,
   deleteCurrentBlock,
   delimiterChangeProtection,
@@ -31,6 +32,9 @@ import { richDecorations } from '../editor/richDecorations'
 import { useWorkspaceStore } from '../stores/workspace'
 
 const store = useWorkspaceStore()
+const emit = defineEmits<{
+  (event: 'open-settings'): void
+}>()
 const editorHost = ref<HTMLElement | null>(null)
 const languageSelect = ref<HTMLSelectElement | null>(null)
 const currentBlock = ref<ScratchBlock | null>(null)
@@ -62,6 +66,21 @@ const autoMode = computed({
     }
   },
 })
+
+const cursorStatus = computed(() => {
+  const [line = '1', column = '1'] = cursorLabel.value.split(':')
+  return `Ln ${line} Col ${column}`
+})
+
+const shortcutSummary = '⌘↵ New · ⌥↵ Before · ⇧⌘↵ End · ⇧⌥F Format'
+const shortcutTitle = [
+  'Cmd/Ctrl+Enter: new block after current',
+  'Alt+Enter: new block before current',
+  'Cmd/Ctrl+Alt+Enter: split current block',
+  'Cmd/Ctrl+Shift+D: delete current block',
+  'Cmd/Ctrl+Up/Down: move between blocks',
+  'Shift+Alt+F: format current block',
+].join('\n')
 
 onMounted(() => {
   mountEditor()
@@ -108,9 +127,11 @@ function mountEditor() {
         formatNumber(lineNo, state) {
           if (lineNo < 1 || lineNo > state.doc.lines) return ''
           const line = state.doc.line(lineNo)
-          const block = state.field(blockField).find(item => item.content.from <= line.from && item.content.to >= line.from)
+          const block = state.field(blockField).find(item => item.content.from <= line.to && item.content.to >= line.from)
           if (!block) return ''
-          return String(lineNo - state.doc.lineAt(block.content.from).number + 1)
+          const blockStartLine = contentStartLineNumber(state, block)
+          if (lineNo < blockStartLine) return ''
+          return String(lineNo - blockStartLine + 1)
         },
       }),
       history(),
@@ -131,6 +152,8 @@ function mountEditor() {
         { key: 'Mod-ArrowDown', run: moveToNextBlock },
         { key: 'Mod-l', run: focusLanguageSelector },
         { key: 'Shift-Alt-f', run: formatBlockFromKeymap },
+        { key: 'Backspace', run: removeBlankBlockFromDeleteKey },
+        { key: 'Delete', run: removeBlankBlockFromDeleteKey },
         indentWithTab,
         ...defaultKeymap,
         ...historyKeymap,
@@ -144,22 +167,53 @@ function mountEditor() {
         },
         '.cm-scroller': {
           fontFamily: 'JetBrains Mono, SFMono-Regular, Menlo, Consolas, monospace',
-          lineHeight: '1.58',
+          lineHeight: '1.36',
         },
         '.cm-content': {
           padding: '0 0 120px 0',
         },
         '.cm-line': {
-          padding: '0 28px',
+          padding: '1px 10px',
         },
         '.cm-gutters': {
-          background: 'transparent',
-          borderRight: '1px solid #e0e4eb',
-          color: '#9aa4b4',
+          background: 'var(--surface-soft)',
+          borderRight: '2px solid oklch(87.5% 0.012 226)',
+          color: 'var(--faint)',
+        },
+        '.cm-lineNumbers .cm-gutterElement': {
+          boxSizing: 'border-box',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          minWidth: '44px',
+          padding: '0 10px 0 8px',
+          textAlign: 'right',
+        },
+        '.cm-lineNumbers': {
+          minWidth: '44px',
+        },
+        '.cm-activeLine': {
+          backgroundColor: 'oklch(92.8% 0.016 228)',
+        },
+        '.cm-activeLineGutter': {
+          backgroundColor: 'oklch(92.8% 0.016 228)',
+          color: 'var(--ink-soft)',
+          fontWeight: '700',
+        },
+        '.cm-selectionLayer': {
+          zIndex: '5',
+          pointerEvents: 'none',
+        },
+        '.cm-cursorLayer': {
+          zIndex: '6',
+        },
+        '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+          backgroundColor: 'oklch(84.5% 0.048 252 / 0.48)',
         },
       }),
       blockField,
       blockDecorations,
+      blockGutterDecorations,
       richDecorations,
       protectDelimiters,
       delimiterChangeProtection,
@@ -167,6 +221,12 @@ function mountEditor() {
       EditorView.domEventHandlers({
         keydown(event, view) {
           return handleEditorShortcut(event, view)
+        },
+        copy(event, view) {
+          return copyVisibleSelection(event, view)
+        },
+        cut(event, view) {
+          return cutVisibleSelection(event, view)
         },
         paste(event, view) {
           const items = Array.from(event.clipboardData?.items || [])
@@ -188,6 +248,7 @@ function mountEditor() {
           scheduleSave()
         }
         if (update.docChanged || update.selectionSet) {
+          if (normalizeSelectionToBlockContent(update.view)) return
           updateStatus(update.view)
         }
       }),
@@ -200,6 +261,14 @@ function mountEditor() {
   moveCursorToEditableContent(view)
   updateStatus(view)
   view.focus()
+}
+
+function contentStartLineNumber(state: EditorState, block: ScratchBlock) {
+  const line = state.doc.lineAt(block.content.from)
+  if (line.to < block.content.from && line.number < state.doc.lines) {
+    return line.number + 1
+  }
+  return line.number
 }
 
 function moveCursorToEditableContent(editor: EditorView) {
@@ -220,11 +289,109 @@ function focusEditorContent() {
   view.focus()
 }
 
+function visibleTextForRange(state: EditorState, from: number, to: number) {
+  const blocks = state.field(blockField)
+  const parts: string[] = []
+
+  for (const block of blocks) {
+    const partFrom = Math.max(from, block.content.from)
+    const partTo = Math.min(to, block.content.to)
+    if (partFrom >= partTo) continue
+
+    const text = state.doc.sliceString(partFrom, partTo)
+    if (parts.length > 0 && text.length > 0) {
+      const previous = parts[parts.length - 1]
+      if (!previous.endsWith('\n') && !text.startsWith('\n')) {
+        parts.push('\n')
+      }
+    }
+    parts.push(text)
+  }
+
+  return parts.join('')
+}
+
+function visibleSelectionText(editor: EditorView) {
+  const ranges = editor.state.selection.ranges.filter(range => !range.empty)
+  if (ranges.length === 0) return null
+  return ranges
+    .map(range => visibleTextForRange(editor.state, range.from, range.to))
+    .join('\n')
+}
+
+function copyVisibleSelection(event: ClipboardEvent, editor: EditorView) {
+  const text = visibleSelectionText(editor)
+  if (text === null) return false
+  event.clipboardData?.setData('text/plain', text)
+  event.preventDefault()
+  return true
+}
+
+function selectedContentSegments(editor: EditorView) {
+  const blocks = editor.state.field(blockField)
+  const segments: Array<{ from: number, to: number }> = []
+
+  for (const range of editor.state.selection.ranges) {
+    if (range.empty) continue
+    for (const block of blocks) {
+      const from = Math.max(range.from, block.content.from)
+      const to = Math.min(range.to, block.content.to)
+      if (from < to) segments.push({ from, to })
+    }
+  }
+
+  return segments
+    .sort((left, right) => left.from - right.from || left.to - right.to)
+    .reduce<Array<{ from: number, to: number }>>((merged, segment) => {
+      const previous = merged[merged.length - 1]
+      if (previous && segment.from <= previous.to) {
+        previous.to = Math.max(previous.to, segment.to)
+      } else {
+        merged.push({ ...segment })
+      }
+      return merged
+    }, [])
+}
+
+function cutVisibleSelection(event: ClipboardEvent, editor: EditorView) {
+  const text = visibleSelectionText(editor)
+  if (text === null) return false
+
+  event.clipboardData?.setData('text/plain', text)
+  event.preventDefault()
+
+  const segments = selectedContentSegments(editor)
+  if (segments.length === 0) return true
+
+  editor.dispatch({
+    changes: segments.map(segment => ({ from: segment.from, to: segment.to, insert: '' })),
+    selection: EditorSelection.cursor(segments[0].from),
+    annotations: internalBlockEdit.of(true),
+    userEvent: 'delete.cut',
+  })
+  updateStatus(editor)
+  scheduleSave()
+  return true
+}
+
+function normalizeSelectionToBlockContent(editor: EditorView) {
+  const selection = editor.state.selection.main
+  if (!selection.empty) return false
+
+  const block = activeBlock(editor.state)
+  if (!block || selection.head >= block.content.from) return false
+
+  editor.dispatch({
+    selection: EditorSelection.cursor(block.content.from),
+  })
+  return true
+}
+
 function updateStatus(editor: EditorView) {
   const block = activeBlock(editor.state)
   currentBlock.value = block || null
   const line = editor.state.doc.lineAt(editor.state.selection.main.head)
-  const blockStartLine = block ? editor.state.doc.lineAt(block.content.from).number : 1
+  const blockStartLine = block ? contentStartLineNumber(editor.state, block) : 1
   cursorLabel.value = `${line.number - blockStartLine + 1}:${editor.state.selection.main.head - line.from + 1}`
 }
 
@@ -276,6 +443,41 @@ function removeBlockFromKeymap(editor: EditorView) {
     updateStatus(editor)
     scheduleSave()
   }
+  return true
+}
+
+function removeBlankBlockFromDeleteKey(editor: EditorView) {
+  const selection = editor.state.selection.main
+  if (!selection.empty) return false
+
+  const block = activeBlock(editor.state)
+  if (!block || selection.head < block.content.from || selection.head > block.content.to) return false
+
+  const content = editor.state.doc.sliceString(block.content.from, block.content.to)
+  if (content.trim().length > 0) return false
+
+  const blocks = editor.state.field(blockField)
+  if (blocks.length <= 1) return true
+
+  const index = blocks.indexOf(block)
+  const previousBlock = blocks[index - 1]
+  const nextBlock = blocks[index + 1]
+  const target = previousBlock
+    ? blockSelectionRange(previousBlock, editor).to
+    : nextBlock.content.from
+  const deleteFrom = previousBlock && editor.state.doc.sliceString(block.range.from - 1, block.range.from) === '\n'
+    ? block.range.from - 1
+    : block.range.from
+
+  editor.dispatch({
+    changes: { from: deleteFrom, to: block.range.to, insert: '' },
+    selection: { anchor: target },
+    annotations: internalBlockEdit.of(true),
+    scrollIntoView: true,
+  })
+  editor.focus()
+  updateStatus(editor)
+  scheduleSave()
   return true
 }
 
@@ -373,7 +575,9 @@ function handleEditorShortcut(event: KeyboardEvent, editor: EditorView) {
   const key = event.key.toLowerCase()
   let handled = false
 
-  if (key === 'enter' && primary && event.altKey) {
+  if ((key === 'backspace' || key === 'delete') && removeBlankBlockFromDeleteKey(editor)) {
+    handled = true
+  } else if (key === 'enter' && primary && event.altKey) {
     handled = splitBlockFromKeymap(editor)
   } else if (key === 'enter' && primary && event.shiftKey) {
     handled = addBlockAtEnd(editor)
@@ -483,43 +687,45 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
 
 <template>
   <section class="editor-pane">
-    <div class="editor-toolbar">
-      <div class="editor-actions">
-        <label>
+    <div ref="editorHost" class="editor-host" @mousedown.self="focusEditorContent"></div>
+
+    <footer class="statusbar">
+      <div class="statusbar-left">
+        <span class="status-pill strong">{{ cursorStatus }}</span>
+        <label class="status-control" title="Current block language (Cmd/Ctrl+L)">
           <Code2 :size="14" />
-          <select ref="languageSelect" v-model="activeLanguage">
+          <select ref="languageSelect" v-model="activeLanguage" aria-label="Current block language">
             <option v-for="language in languages" :key="language.token" :value="language.token">
               {{ language.name }}
             </option>
           </select>
         </label>
-        <label class="checkbox-label">
+        <label class="status-toggle" title="Auto detect language for current block">
           <input v-model="autoMode" type="checkbox" />
-          Auto
+          <span>{{ currentBlock?.auto ? 'Auto' : 'Manual' }}</span>
         </label>
+        <span class="status-pill">{{ saving ? 'Saving' : 'Saved' }}</span>
       </div>
-      <div class="editor-actions">
-        <button class="toolbar-button" title="New block (Cmd/Ctrl+Enter)" @click="addBlock">
+
+      <div class="statusbar-center" :title="shortcutTitle">
+        <Keyboard :size="14" />
+        <span>{{ shortcutSummary }}</span>
+      </div>
+
+      <div class="statusbar-actions">
+        <button class="status-icon-button" title="New block after current (Cmd/Ctrl+Enter)" @click="addBlock">
           <FilePlus2 :size="15" />
-          New Block
         </button>
-        <button class="toolbar-button" title="Format current block (Shift+Alt+F)" @click="formatBlock">
+        <button class="status-icon-button" title="Format current block (Shift+Alt+F)" @click="formatBlock">
           <Wand2 :size="15" />
-          Format
         </button>
-        <button class="toolbar-button danger" title="Delete current block (Ctrl+Shift+D)" @click="removeBlock">
+        <button class="status-icon-button danger" title="Delete current block (Cmd/Ctrl+Shift+D)" @click="removeBlock">
           <Trash2 :size="15" />
         </button>
+        <button class="status-icon-button" title="Settings" @click="emit('open-settings')">
+          <Settings :size="15" />
+        </button>
       </div>
-    </div>
-
-    <div ref="editorHost" class="editor-host" @mousedown.self="focusEditorContent"></div>
-
-    <footer class="statusbar">
-      <span>{{ getLanguage(activeLanguage).name }}</span>
-      <span>Line {{ cursorLabel }}</span>
-      <span>{{ currentBlock?.auto ? 'Auto detect' : 'Manual language' }}</span>
-      <span>{{ saving ? 'Saving' : 'Saved' }}</span>
     </footer>
   </section>
 </template>
