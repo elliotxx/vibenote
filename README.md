@@ -51,25 +51,28 @@ Vibenote `0.1.0` targets macOS arm64 only. To keep the experience minimal, this 
 
 ## Quick Start
 
-The fastest path is to let an AI coding agent install it for you from source. Copy this prompt into Codex, Claude Code, or another local agent that can run shell commands on your Mac:
+The fastest path is to let an AI coding agent install the latest release for you. Copy this prompt into Codex, Claude Code, or another local agent that can run shell commands on your Mac:
 
 ```text
-Install Vibenote from https://github.com/elliotxx/vibenote on this Mac.
+Install Vibenote v0.1.0 from the GitHub Release on this Mac.
 
 Requirements:
+- Use https://github.com/elliotxx/vibenote/releases/tag/v0.1.0.
+- Download Vibenote-0.1.0-arm64.dmg and SHA256SUMS into a temporary folder.
+- Verify the download with shasum -a 256 -c SHA256SUMS.
+- Mount the DMG, copy Vibenote.app into the Applications folder, unmount the DMG, and launch the app.
 - Do not touch any Heynote data.
-- Clone or update the repo under $HOME/workspace/vibenote.
-- Install dependencies with npm.
-- Build the unsigned macOS arm64 package with npm run release:mac.
-- Verify dist/SHA256SUMS.
-- Mount dist/Vibenote-0.1.0-arm64.dmg, copy Vibenote.app into the Applications folder, unmount the DMG, and launch the app.
+- Do not clone or build from source unless the release download fails.
 - If macOS blocks the unsigned app, tell me the exact Finder right-click Open or Privacy & Security steps.
 ```
 
 Manual install:
 
-1. Download or build `Vibenote-0.1.0-arm64.dmg`.
-2. Verify the checksum with `SHA256SUMS` if it is provided.
+1. Download `Vibenote-0.1.0-arm64.dmg` and `SHA256SUMS` from [Vibenote v0.1.0](https://github.com/elliotxx/vibenote/releases/tag/v0.1.0).
+2. Verify the checksum:
+   ```sh
+   shasum -a 256 -c SHA256SUMS
+   ```
 3. Open the DMG and drag `Vibenote.app` into the Applications folder.
 4. Launch Vibenote.
 5. If macOS blocks the first launch, open the Applications folder in Finder, right-click `Vibenote.app`, choose `Open`, then confirm the dialog.

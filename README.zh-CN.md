@@ -51,31 +51,34 @@ Vibenote `0.1.0` 首发只支持 macOS arm64。为了保持简单，当前版本
 
 ## 快速开始
 
-最快的方式是让本地 AI coding agent 从源码帮你安装。把下面这段 prompt 复制到 Codex、Claude Code 或其他能在本机执行 shell 命令的 agent 里：
+最快的方式是让本地 AI coding agent 帮你安装最新 release。把下面这段 prompt 复制到 Codex、Claude Code 或其他能在本机执行 shell 命令的 agent 里：
 
 ```text
-请在这台 Mac 上从 https://github.com/elliotxx/vibenote 安装 Vibenote。
+请在这台 Mac 上从 GitHub Release 安装 Vibenote v0.1.0。
 
 要求：
+- 使用 https://github.com/elliotxx/vibenote/releases/tag/v0.1.0。
+- 将 Vibenote-0.1.0-arm64.dmg 和 SHA256SUMS 下载到临时目录。
+- 使用 shasum -a 256 -c SHA256SUMS 校验下载文件。
+- 挂载 DMG，将 Vibenote.app 复制到 Applications 文件夹，卸载 DMG，并启动应用。
 - 不要读取、迁移或修改任何 Heynote 数据。
-- 将仓库 clone 或更新到 $HOME/workspace/vibenote。
-- 使用 npm 安装依赖。
-- 使用 npm run release:mac 构建未签名的 macOS arm64 安装包。
-- 校验 dist/SHA256SUMS。
-- 挂载 dist/Vibenote-0.1.0-arm64.dmg，将 Vibenote.app 复制到 Applications 文件夹，卸载 DMG，并启动应用。
+- 除非 release 下载失败，否则不要 clone 源码或本地构建。
 - 如果 macOS 拦截未签名应用，请告诉我准确的 Finder 右键打开或“隐私与安全”放行步骤。
 ```
 
 手动安装：
 
-1. 下载或构建 `Vibenote-0.1.0-arm64.dmg`。
-2. 如果同时提供了 `SHA256SUMS`，先校验文件哈希。
+1. 从 [Vibenote v0.1.0](https://github.com/elliotxx/vibenote/releases/tag/v0.1.0) 下载 `Vibenote-0.1.0-arm64.dmg` 和 `SHA256SUMS`。
+2. 校验文件哈希：
+   ```sh
+   shasum -a 256 -c SHA256SUMS
+   ```
 3. 打开 DMG，将 `Vibenote.app` 拖到 Applications 文件夹。
 4. 启动 Vibenote。
 5. 首次启动如被 macOS 拦截，请在 Finder 中打开 Applications 文件夹，右键点击 `Vibenote.app`，选择“打开”，再确认弹窗。
 6. 如果右键打开仍被拦截，请进入“系统设置 > 隐私与安全”，在安全提示处允许打开 Vibenote。
 
-只把未签名试用包发给信任构建来源的人，不要把它包装成普通公开 macOS release。
+只安装你信任来源的 DMG。当前构建未签名、未公证。
 
 ## 快捷键
 
