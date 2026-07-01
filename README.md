@@ -54,11 +54,11 @@ Vibenote `0.1.0` targets macOS arm64 only. To keep the experience minimal, this 
 The fastest path is to let an AI coding agent install the latest release for you. Copy this prompt into Codex, Claude Code, or another local agent that can run shell commands on your Mac:
 
 ```text
-Install Vibenote v0.1.0 from the GitHub Release on this Mac.
+Install the latest Vibenote release from GitHub on this Mac.
 
 Requirements:
-- Use https://github.com/elliotxx/vibenote/releases/tag/v0.1.0.
-- Download Vibenote-0.1.0-arm64.dmg and SHA256SUMS into a temporary folder.
+- Use https://github.com/elliotxx/vibenote/releases/latest.
+- Download the latest macOS arm64 DMG asset named like Vibenote-*-arm64.dmg and the matching SHA256SUMS file into a temporary folder.
 - Verify the download with shasum -a 256 -c SHA256SUMS.
 - Mount the DMG, copy Vibenote.app into the Applications folder, unmount the DMG, and launch the app.
 - Do not touch any Heynote data.
@@ -68,7 +68,7 @@ Requirements:
 
 Manual install:
 
-1. Download `Vibenote-0.1.0-arm64.dmg` and `SHA256SUMS` from [Vibenote v0.1.0](https://github.com/elliotxx/vibenote/releases/tag/v0.1.0).
+1. Download the latest `Vibenote-*-arm64.dmg` and `SHA256SUMS` from [Vibenote Releases](https://github.com/elliotxx/vibenote/releases/latest).
 2. Verify the checksum:
    ```sh
    shasum -a 256 -c SHA256SUMS
@@ -162,8 +162,8 @@ shasum -a 256 -c SHA256SUMS
 Vibenote releases are tag-driven. Push a version tag that matches `package.json`:
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git tag v<version>
+git push origin v<version>
 ```
 
 GitHub Actions builds the macOS arm64 DMG, verifies `SHA256SUMS`, and creates a formal GitHub Release with the DMG and checksum file. The release is still unsigned and not notarized.
