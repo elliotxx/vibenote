@@ -42,8 +42,34 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   async function openBuffer(path: string | undefined | null) {
     if (!path) return
     const content = await window.vibenote.buffer.load(path)
-    currentContent.value = content
+    const normalized = await normalizeLegacyImageUrls(content)
+    if (normalized !== content) {
+      await window.vibenote.buffer.save(path, normalized)
+      await refreshBuffers()
+    }
+    currentContent.value = normalized
     currentPath.value = path
+  }
+
+  async function normalizeLegacyImageUrls(content: string) {
+    const imagePattern = /!\[[^\]]*]\((<([^>]+)>|([^)]+))\)/g
+    const matches = Array.from(content.matchAll(imagePattern))
+      .filter(match => (match[2] || match[3] || '').trim().startsWith('vibenote-image://'))
+    if (matches.length === 0) return content
+
+    let normalized = content
+    for (const match of matches.reverse()) {
+      const originalUrl = (match[2] || match[3] || '').trim()
+      try {
+        const absolutePath = await window.vibenote.image.resolveLegacyUrl(originalUrl)
+        const replacement = match[0].replace(match[1], `<${absolutePath}>`)
+        const start = match.index ?? 0
+        normalized = `${normalized.slice(0, start)}${replacement}${normalized.slice(start + match[0].length)}`
+      } catch {
+        // Keep unreadable legacy image links unchanged.
+      }
+    }
+    return normalized
   }
 
   async function saveCurrent(content: string) {

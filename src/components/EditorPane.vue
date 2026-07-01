@@ -28,7 +28,7 @@ import {
   splitCurrentBlock,
   type ScratchBlock,
 } from '../editor/blocks'
-import { richDecorations } from '../editor/richDecorations'
+import { activeImageLineField, richDecorations, setActiveImageLine } from '../editor/richDecorations'
 import { useWorkspaceStore } from '../stores/workspace'
 
 const store = useWorkspaceStore()
@@ -152,8 +152,10 @@ function mountEditor() {
         { key: 'Mod-ArrowDown', run: moveToNextBlock },
         { key: 'Mod-l', run: focusLanguageSelector },
         { key: 'Shift-Alt-f', run: formatBlockFromKeymap },
-        { key: 'Backspace', run: removeBlankBlockFromDeleteKey },
-        { key: 'Delete', run: removeBlankBlockFromDeleteKey },
+        { key: 'Backspace', run: removeImageOrBlankBlockFromDeleteKey },
+        { key: 'Delete', run: removeImageOrBlankBlockFromDeleteKey },
+        { key: 'ArrowLeft', run: editor => revealCursorAroundActiveImage(editor, 'left') },
+        { key: 'ArrowRight', run: editor => revealCursorAroundActiveImage(editor, 'right') },
         indentWithTab,
         ...defaultKeymap,
         ...historyKeymap,
@@ -207,6 +209,9 @@ function mountEditor() {
         '.cm-cursorLayer': {
           zIndex: '6',
         },
+        '&.image-line-focused .cm-cursorLayer': {
+          opacity: '0',
+        },
         '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
           backgroundColor: 'oklch(80.5% 0.058 252 / 0.62)',
         },
@@ -214,6 +219,7 @@ function mountEditor() {
       blockField,
       blockDecorations,
       blockGutterDecorations,
+      activeImageLineField,
       richDecorations,
       protectDelimiters,
       delimiterChangeProtection,
@@ -231,13 +237,37 @@ function mountEditor() {
         paste(event, view) {
           const items = Array.from(event.clipboardData?.items || [])
           const image = items.find(item => item.type.startsWith('image/'))
-          if (!image) return false
+          const activeImageLine = activeImageLineRange(view)
+          if (!image) {
+            if (!activeImageLine) return false
+            const text = event.clipboardData?.getData('text/plain') || ''
+            event.preventDefault()
+            view.dispatch({
+              changes: { from: activeImageLine.from, to: activeImageLine.to, insert: text },
+              selection: EditorSelection.cursor(activeImageLine.from + text.length),
+              effects: setActiveImageLine.of(null),
+              annotations: internalBlockEdit.of(true),
+              userEvent: 'input.paste',
+            })
+            scheduleSave()
+            return true
+          }
           event.preventDefault()
           const file = image.getAsFile()
           if (!file) return true
           file.arrayBuffer().then(async data => {
-            const url = await window.vibenote.image.save({ mime: file.type, data })
-            view.dispatch(view.state.replaceSelection(`![image](${url})`))
+            const imagePath = await window.vibenote.image.save({ mime: file.type, data })
+            const markdown = `![image](<${imagePath}>)`
+            const target = activeImageLineRange(view)
+            view.dispatch({
+              changes: target
+                ? { from: target.from, to: target.to, insert: markdown }
+                : view.state.replaceSelection(markdown).changes,
+              selection: EditorSelection.cursor((target?.from ?? view.state.selection.main.from) + markdown.length),
+              effects: setActiveImageLine.of(null),
+              annotations: internalBlockEdit.of(true),
+              userEvent: 'input.paste',
+            })
             scheduleSave()
           })
           return true
@@ -248,6 +278,8 @@ function mountEditor() {
           scheduleSave()
         }
         if (update.docChanged || update.selectionSet) {
+          clearImageEditWhenSelectionLeaves(update.view)
+          updateImageFocusClass(update.view)
           if (normalizeSelectionToBlockContent(update.view)) return
           updateStatus(update.view)
         }
@@ -259,6 +291,7 @@ function mountEditor() {
   view.dom.style.setProperty('--editor-font-size', `${store.settings.fontSize}px`)
   view.dom.classList.toggle('dark-editor', store.settings.theme === 'dark')
   moveCursorToEditableContent(view)
+  updateImageFocusClass(view)
   updateStatus(view)
   view.focus()
 }
@@ -319,8 +352,97 @@ function visibleSelectionText(editor: EditorView) {
     .join('\n')
 }
 
+function activeImageLineRange(editor: EditorView) {
+  const activeImageLine = editor.state.field(activeImageLineField, false)
+  const selection = editor.state.selection.main
+  if (!activeImageLine || activeImageLine.cursor || !selection.empty) return null
+  if (selection.head < activeImageLine.from || selection.head > activeImageLine.to) return null
+  return activeImageLine
+}
+
+function activeImageLineAtSelection(editor: EditorView) {
+  const activeImageLine = editor.state.field(activeImageLineField, false)
+  const selection = editor.state.selection.main
+  if (!activeImageLine || !selection.empty) return null
+  if (selection.head < activeImageLine.from || selection.head > activeImageLine.to) return null
+  return activeImageLine
+}
+
+function updateImageFocusClass(editor: EditorView) {
+  const activeImageLine = activeImageLineAtSelection(editor)
+  editor.dom.classList.toggle('image-line-focused', Boolean(activeImageLine && !activeImageLine.edit))
+}
+
+function revealCursorAroundActiveImage(editor: EditorView, direction: 'left' | 'right') {
+  const activeImageLine = activeImageLineAtSelection(editor)
+  if (!activeImageLine || activeImageLine.edit) return false
+
+  if (activeImageLine.cursor === direction) {
+    const target = adjacentVisibleLinePosition(editor, activeImageLine, direction)
+    if (target === null) return true
+    editor.dispatch({
+      selection: EditorSelection.cursor(target),
+      effects: setActiveImageLine.of(null),
+      scrollIntoView: true,
+    })
+    editor.focus()
+    updateStatus(editor)
+    updateImageFocusClass(editor)
+    return true
+  }
+
+  const target = direction === 'left' ? activeImageLine.from : activeImageLine.to
+  editor.dispatch({
+    selection: EditorSelection.cursor(target),
+    effects: setActiveImageLine.of({ ...activeImageLine, edit: false, cursor: direction }),
+    scrollIntoView: true,
+  })
+  editor.focus()
+  updateStatus(editor)
+  updateImageFocusClass(editor)
+  return true
+}
+
+function adjacentVisibleLinePosition(editor: EditorView, activeImageLine: { from: number, to: number }, direction: 'left' | 'right') {
+  const lines: Array<{ from: number, to: number }> = []
+  for (const block of editor.state.field(blockField)) {
+    const firstLine = editor.state.doc.lineAt(block.content.from).number
+    const lastLine = editor.state.doc.lineAt(block.content.to).number
+    for (let lineNumber = firstLine; lineNumber <= lastLine; lineNumber += 1) {
+      const line = editor.state.doc.line(lineNumber)
+      const from = Math.max(line.from, block.content.from)
+      const to = Math.min(line.to, block.content.to)
+      if (from <= to) lines.push({ from, to })
+    }
+  }
+
+  const index = lines.findIndex(line => line.from <= activeImageLine.from && line.to >= activeImageLine.from)
+  if (index === -1) return null
+  if (direction === 'left') {
+    return index > 0 ? lines[index - 1].to : null
+  }
+  return index < lines.length - 1 ? lines[index + 1].from : null
+}
+
+function clearImageEditWhenSelectionLeaves(editor: EditorView) {
+  const activeImageLine = editor.state.field(activeImageLineField, false)
+  if (!activeImageLine?.edit && !activeImageLine?.cursor) return
+
+  const selection = editor.state.selection.main
+  const stillInsideImageLine =
+    selection.from >= activeImageLine.from &&
+    selection.to <= activeImageLine.to
+
+  if (stillInsideImageLine) return
+
+  editor.dispatch({ effects: setActiveImageLine.of(null) })
+}
+
 function copyVisibleSelection(event: ClipboardEvent, editor: EditorView) {
-  const text = visibleSelectionText(editor)
+  const activeImageLine = activeImageLineRange(editor)
+  const text = activeImageLine
+    ? editor.state.doc.sliceString(activeImageLine.from, activeImageLine.to)
+    : visibleSelectionText(editor)
   if (text === null) return false
   event.clipboardData?.setData('text/plain', text)
   event.preventDefault()
@@ -354,11 +476,27 @@ function selectedContentSegments(editor: EditorView) {
 }
 
 function cutVisibleSelection(event: ClipboardEvent, editor: EditorView) {
-  const text = visibleSelectionText(editor)
+  const activeImageLine = activeImageLineRange(editor)
+  const text = activeImageLine
+    ? editor.state.doc.sliceString(activeImageLine.from, activeImageLine.to)
+    : visibleSelectionText(editor)
   if (text === null) return false
 
   event.clipboardData?.setData('text/plain', text)
   event.preventDefault()
+
+  if (activeImageLine) {
+    editor.dispatch({
+      changes: { from: activeImageLine.from, to: activeImageLine.to, insert: '' },
+      selection: EditorSelection.cursor(activeImageLine.from),
+      effects: setActiveImageLine.of(null),
+      annotations: internalBlockEdit.of(true),
+      userEvent: 'delete.cut',
+    })
+    updateStatus(editor)
+    scheduleSave()
+    return true
+  }
 
   const segments = selectedContentSegments(editor)
   if (segments.length === 0) return true
@@ -481,6 +619,40 @@ function removeBlankBlockFromDeleteKey(editor: EditorView) {
   return true
 }
 
+function removeImageOrBlankBlockFromDeleteKey(editor: EditorView) {
+  return removeActiveImageLineFromDeleteKey(editor) || removeBlankBlockFromDeleteKey(editor)
+}
+
+function removeActiveImageLineFromDeleteKey(editor: EditorView) {
+  const activeImageLine = activeImageLineRange(editor)
+  if (!activeImageLine || activeImageLine.edit) return false
+
+  const line = editor.state.doc.lineAt(activeImageLine.from)
+  const block = activeBlock(editor.state)
+  if (!block || line.from < block.content.from || line.to > block.content.to) return false
+
+  let deleteFrom = line.from
+  let deleteTo = line.to
+  if (line.to < block.content.to) {
+    deleteTo += 1
+  } else if (line.from > block.content.from) {
+    deleteFrom -= 1
+  }
+
+  editor.dispatch({
+    changes: { from: deleteFrom, to: deleteTo, insert: '' },
+    selection: EditorSelection.cursor(deleteFrom),
+    effects: setActiveImageLine.of(null),
+    annotations: internalBlockEdit.of(true),
+    userEvent: 'delete.image',
+    scrollIntoView: true,
+  })
+  editor.focus()
+  updateStatus(editor)
+  scheduleSave()
+  return true
+}
+
 function addBlockAfterCurrent(editor: EditorView) {
   insertBlockAfterCurrent(editor, store.settings.defaultLanguage, true)
   scheduleSave()
@@ -575,7 +747,11 @@ function handleEditorShortcut(event: KeyboardEvent, editor: EditorView) {
   const key = event.key.toLowerCase()
   let handled = false
 
-  if ((key === 'backspace' || key === 'delete') && removeBlankBlockFromDeleteKey(editor)) {
+  if (key === 'arrowleft' && !primary && !event.altKey && !event.shiftKey) {
+    handled = revealCursorAroundActiveImage(editor, 'left')
+  } else if (key === 'arrowright' && !primary && !event.altKey && !event.shiftKey) {
+    handled = revealCursorAroundActiveImage(editor, 'right')
+  } else if ((key === 'backspace' || key === 'delete') && removeImageOrBlankBlockFromDeleteKey(editor)) {
     handled = true
   } else if (key === 'enter' && primary && event.altKey) {
     handled = splitBlockFromKeymap(editor)

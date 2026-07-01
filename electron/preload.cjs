@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('vibenote', {
   },
   image: {
     save: payload => ipcRenderer.invoke('image:save', payload),
+    resolveLegacyUrl: url => ipcRenderer.invoke('image:resolveLegacyUrl', url),
   },
   settings: {
     getTheme: () => ipcRenderer.invoke('settings:get'),

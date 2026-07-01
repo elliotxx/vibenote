@@ -250,9 +250,39 @@ select:focus {
 
 .image-widget {
   display: inline-block;
+  position: relative;
   max-width: 520px;
   margin: 6px 0;
   vertical-align: top;
+}
+
+.image-widget-cursor-left::before,
+.image-widget-cursor-right::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--ink);
+  animation: image-caret-blink 1.05s steps(1) infinite;
+}
+
+.image-widget-cursor-left::before {
+  left: -8px;
+}
+
+.image-widget-cursor-right::after {
+  right: -8px;
+}
+
+@keyframes image-caret-blink {
+  0%, 48% {
+    opacity: 1;
+  }
+  49%, 100% {
+    opacity: 0;
+  }
 }
 
 .image-widget img {

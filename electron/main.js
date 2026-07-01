@@ -185,7 +185,14 @@ class FileLibrary {
     const fileName = `${new Date().toISOString().replace(/[:.]/g, '-')}.${ext}`
     const filePath = path.join(this.imagesPath, fileName)
     await fs.promises.writeFile(filePath, Buffer.from(data))
-      return `vibenote-image://${encodeURIComponent(fileName)}`
+    return filePath
+  }
+
+  resolveLegacyImageUrl(url) {
+    if (!url.startsWith('vibenote-image://')) return url
+    const parsed = new URL(url)
+    const fileName = decodeURIComponent(parsed.hostname || parsed.pathname.replace(/^\//, ''))
+    return safeJoin(this.imagesPath, fileName)
   }
 }
 
@@ -411,6 +418,7 @@ ipcMain.handle('buffer:delete', (_event, relativePath) => library.delete(relativ
 ipcMain.handle('buffer:archiveStream', (_event, name) => library.archiveStream(name))
 ipcMain.handle('library:search', (_event, query) => startSearch(query))
 ipcMain.handle('image:save', (_event, payload) => library.saveImage(payload))
+ipcMain.handle('image:resolveLegacyUrl', (_event, url) => library.resolveLegacyImageUrl(url))
 ipcMain.handle('settings:get', () => nativeTheme.themeSource)
 ipcMain.handle('settings:setTheme', (_event, theme) => {
   nativeTheme.themeSource = theme

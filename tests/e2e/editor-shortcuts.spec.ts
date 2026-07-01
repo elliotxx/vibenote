@@ -19,12 +19,32 @@ function fixtureContent() {
   return `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${body}`
 }
 
-async function loadFixture(page: Page) {
+function imageFixtureContent() {
+  const created = '2026-07-01T10:38:41.565Z'
+  return `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
+    `---block:markdown;auto=1;created=${created}`,
+    'Image note',
+    '![image](</tmp/vibenote-e2e-image.png>)',
+    'After image',
+  ].join('\n')}`
+}
+
+function legacyImageFixtureContent() {
+  const created = '2026-07-01T10:38:41.565Z'
+  return `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
+    `---block:markdown;auto=1;created=${created}`,
+    'Legacy image note',
+    '![image](vibenote-image://2026-07-01T13-18-21-285Z.png)',
+    'After legacy image',
+  ].join('\n')}`
+}
+
+async function loadFixture(page: Page, content = fixtureContent()) {
   await page.addInitScript((content) => {
     localStorage.setItem('vibenote:mock-buffers', JSON.stringify([
       { path: 'stream.txt', name: 'Stream', tags: [], isScratch: true, content },
     ]))
-  }, fixtureContent())
+  }, content)
   await page.goto('/')
   await expect(page.locator('.cm-editor')).toBeVisible()
 }
@@ -104,6 +124,32 @@ async function hasNoVisibleSelectionHighlight(page: Page) {
         return rect.width > 0 && rect.height > 0
       })
   })
+}
+
+async function hasVisibleCursor(page: Page) {
+  return page.evaluate(() => {
+    const layer = document.querySelector<HTMLElement>('.cm-cursorLayer')
+    const cursor = document.querySelector<HTMLElement>('.cm-cursor')
+    if (!layer || !cursor) return false
+    const layerStyle = getComputedStyle(layer)
+    const cursorStyle = getComputedStyle(cursor)
+    const rect = cursor.getBoundingClientRect()
+    return layerStyle.opacity !== '0' &&
+      cursorStyle.display !== 'none' &&
+      rect.width > 0 &&
+      rect.height > 0
+  })
+}
+
+async function hasVisibleImageCursor(page: Page, side: 'left' | 'right') {
+  return page.evaluate((side) => {
+    const image = document.querySelector<HTMLElement>(`.image-widget-cursor-${side}`)
+    if (!image) return false
+    const style = getComputedStyle(image, side === 'left' ? '::before' : '::after')
+    return style.content !== 'none' &&
+      style.opacity !== '0' &&
+      style.backgroundColor !== 'rgba(0, 0, 0, 0)'
+  }, side)
 }
 
 test.describe('editor text selection shortcuts', () => {
@@ -251,5 +297,105 @@ test.describe('editor text selection shortcuts', () => {
     })
     expect(saved).toContain('---block:markdown;')
     expect(saved).not.toContain('paste-smoke')
+  })
+
+  test('supports selecting and editing pasted image markdown', async ({ page }) => {
+    await page.goto('about:blank')
+    await loadFixture(page, imageFixtureContent())
+
+    const image = page.locator('.image-widget').first()
+    await expect(image).toBeVisible()
+
+    await image.click()
+    await expect.poll(() => hasNoVisibleSelectionHighlight(page)).toBe(true)
+    await expect.poll(() => hasVisibleCursor(page)).toBe(false)
+    await expect.poll(() => copySelection(page)).toBe('![image](</tmp/vibenote-e2e-image.png>)')
+
+    await page.keyboard.press('Delete')
+    await expect(page.locator('.image-widget')).toHaveCount(0)
+    await expect(page.locator('.cm-content')).not.toContainText('![image](</tmp/vibenote-e2e-image.png>)')
+
+    await page.keyboard.press(`${modifier}+Z`)
+    await expect(page.locator('.image-widget')).toHaveCount(1)
+
+    await image.click()
+    await page.evaluate(() => navigator.clipboard.writeText('replacement image line'))
+    await page.keyboard.press(`${modifier}+V`)
+    await expect(page.locator('.cm-content')).toContainText('replacement image line')
+    await expect(page.locator('.image-widget')).toHaveCount(0)
+
+    await page.keyboard.press(`${modifier}+Z`)
+    await expect(page.locator('.image-widget')).toHaveCount(1)
+
+    await image.dblclick()
+    await expect(page.locator('.cm-content')).toContainText('![image](</tmp/vibenote-e2e-image.png>)')
+    await expect(page.locator('.image-widget')).toHaveCount(0)
+    await expect.poll(() => hasVisibleCursor(page)).toBe(true)
+
+    await clickLine(page, 'After image')
+    await expect(page.locator('.image-widget')).toHaveCount(1)
+    await expect(page.locator('.cm-content')).not.toContainText('![image](</tmp/vibenote-e2e-image.png>)')
+  })
+
+  test('normalizes legacy image urls to absolute paths', async ({ page }) => {
+    await page.goto('about:blank')
+    await loadFixture(page, legacyImageFixtureContent())
+
+    await expect(page.locator('.image-widget')).toHaveCount(1)
+
+    const saved = await page.evaluate(() => {
+      const buffers = JSON.parse(localStorage.getItem('vibenote:mock-buffers') || '[]')
+      return buffers[0]?.content || ''
+    })
+    expect(saved).toContain('![image](</tmp/vibenote-images/2026-07-01T13-18-21-285Z.png>)')
+    expect(saved).not.toContain('vibenote-image://')
+  })
+
+  test('reveals the cursor around a focused image with arrow keys', async ({ page }) => {
+    await page.goto('about:blank')
+    await loadFixture(page, imageFixtureContent())
+
+    const image = page.locator('.image-widget').first()
+    await image.click()
+    await expect.poll(() => hasVisibleCursor(page)).toBe(false)
+
+    await page.keyboard.press('ArrowRight')
+    await expect(page.locator('.image-widget')).toHaveCount(1)
+    await expect.poll(() => hasVisibleCursor(page)).toBe(false)
+    await expect.poll(() => hasVisibleImageCursor(page, 'right')).toBe(true)
+    await expect(page.locator('.cm-content')).not.toContainText('![image](</tmp/vibenote-e2e-image.png>)')
+
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('after arrow image')
+    await expect(page.locator('.cm-content')).toContainText('after arrow image')
+
+    await page.goto('about:blank')
+    await loadFixture(page, imageFixtureContent())
+    await page.locator('.image-widget').first().click()
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('ArrowRight')
+    await expect(page.locator('.image-widget')).toHaveCount(1)
+    await expect.poll(() => hasVisibleCursor(page)).toBe(true)
+    await expect.poll(() => hasVisibleImageCursor(page, 'right')).toBe(false)
+    await page.keyboard.type('next-line ')
+    await expect(page.locator('.cm-content')).toContainText('next-line After image')
+    await expect(page.locator('.cm-content')).not.toContainText('![image](</tmp/vibenote-e2e-image.png>)')
+
+    await page.goto('about:blank')
+    await loadFixture(page, imageFixtureContent())
+    await page.locator('.image-widget').first().click()
+    await page.keyboard.press('ArrowLeft')
+    await expect(page.locator('.image-widget')).toHaveCount(1)
+    await expect.poll(() => hasVisibleCursor(page)).toBe(false)
+    await expect.poll(() => hasVisibleImageCursor(page, 'left')).toBe(true)
+    await expect(page.locator('.cm-content')).not.toContainText('![image](</tmp/vibenote-e2e-image.png>)')
+
+    await page.keyboard.press('ArrowLeft')
+    await expect(page.locator('.image-widget')).toHaveCount(1)
+    await expect.poll(() => hasVisibleCursor(page)).toBe(true)
+    await expect.poll(() => hasVisibleImageCursor(page, 'left')).toBe(false)
+    await page.keyboard.type(' tail')
+    await expect(page.locator('.cm-content')).toContainText('Image note tail')
+    await expect(page.locator('.cm-content')).not.toContainText('![image](</tmp/vibenote-e2e-image.png>)')
   })
 })
