@@ -66,6 +66,21 @@ async function waitForAppToExit() {
   throw new Error(`${productName} did not exit before stability verification setup`)
 }
 
+async function waitForStreamContent(predicate, message, timeoutMs = 8000) {
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < timeoutMs) {
+    if (fs.existsSync(streamPath)) {
+      const content = fs.readFileSync(streamPath, 'utf8')
+      if (predicate(content)) {
+        console.log(`ok - ${message}`)
+        return content
+      }
+    }
+    await sleep(200)
+  }
+  throw new Error(message)
+}
+
 async function activateApp() {
   run('open', ['-n', appBundlePath])
   for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -73,7 +88,10 @@ async function activateApp() {
     try {
       run('osascript', ['-e', `tell application ${JSON.stringify(productName)} to activate`])
       await sleep(150)
-      if (frontmostProcessName() === productName) return
+      if (frontmostProcessName() === productName) {
+        normalizeWindow()
+        return
+      }
     } catch {
       // Keep waiting for Launch Services to register the app.
     }
@@ -81,9 +99,34 @@ async function activateApp() {
   throw new Error(`${productName} did not become frontmost; frontmost process is ${frontmostProcessName()}`)
 }
 
+function normalizeWindow() {
+  run('osascript', ['-e', [
+    'tell application "System Events"',
+    `tell process ${JSON.stringify(productName)}`,
+    'set position of window 1 to {80, 90}',
+    'set size of window 1 to {980, 700}',
+    'end tell',
+    'end tell',
+  ].join('\n')])
+}
+
+async function focusEditor() {
+  run('osascript', ['-e', [
+    'tell application "System Events"',
+    `tell process ${JSON.stringify(productName)}`,
+    'set windowPosition to position of window 1',
+    'set clickX to (item 1 of windowPosition) + 180',
+    'set clickY to (item 2 of windowPosition) + 120',
+    'click at {clickX, clickY}',
+    'end tell',
+    'end tell',
+  ].join('\n')])
+  await sleep(150)
+}
+
 async function paste(text) {
   run('osascript', ['-e', `tell application ${JSON.stringify(productName)} to activate`])
-  await sleep(500)
+  await focusEditor()
   runShell(`cat <<'PAYLOAD' | pbcopy\n${text}\nPAYLOAD`)
   run('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down'])
   await sleep(500)
@@ -100,6 +143,10 @@ async function main() {
   await activateApp()
   console.log(`ok - ${productName} accepted activation before stability smoke`)
   await paste(longPayload)
+  await waitForStreamContent(
+    content => content.includes(`${marker}-start`) && content.includes(`${marker}-end`),
+    'autosave persists pasted payload before quit',
+  )
   quitApp()
   await waitForAppToExit()
 
