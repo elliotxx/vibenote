@@ -92,7 +92,7 @@ async function hasNaturalSelectionStyling(page: Page) {
     const activeLine = document.querySelector<HTMLElement>('.cm-activeLine')
     const activeLineBackground = activeLine ? getComputedStyle(activeLine).backgroundColor : 'rgba(0, 0, 0, 0)'
 
-    return selectionIsFlat && activeLineBackground === 'rgba(0, 0, 0, 0)'
+    return selectionIsFlat && activeLineBackground !== 'rgba(0, 0, 0, 0)'
   })
 }
 
@@ -158,6 +158,23 @@ test.describe('editor text selection shortcuts', () => {
     expect(layout!.firstLineOffset).toBeLessThanOrEqual(2)
     expect(layout!.maxDelimiterHeight).toBeLessThanOrEqual(1)
     expect(layout!.maxDelimiterGutterHeight).toBeLessThanOrEqual(1)
+  })
+
+  test('keeps arithmetic-like notes out of auto math mode', async ({ page }) => {
+    await clickLine(page, '# Stream')
+    await page.keyboard.press(`${modifier}+A`)
+    await page.keyboard.type('1+1')
+
+    await expect(page.locator('.math-result')).toHaveCount(1)
+    const mathResults = await page.locator('.math-result').allTextContents()
+    expect(mathResults).not.toContain(' = 2')
+
+    const saved = await page.evaluate(() => {
+      const buffers = JSON.parse(localStorage.getItem('vibenote:mock-buffers') || '[]')
+      return buffers[0]?.content || ''
+    })
+    expect(saved).toContain('---block:markdown;auto=1;')
+    expect(saved).not.toContain('---block:math;auto=1;')
   })
 
   test('supports keyboard and mouse selection like a plain text editor', async ({ page }) => {
