@@ -98,6 +98,20 @@ function normalizeWindow() {
   ].join('\n')])
 }
 
+async function focusEditor() {
+  run('osascript', ['-e', [
+    'tell application "System Events"',
+    `tell process ${JSON.stringify(productName)}`,
+    'set windowPosition to position of window 1',
+    'set clickX to (item 1 of windowPosition) + 180',
+    'set clickY to (item 2 of windowPosition) + 120',
+    'click at {clickX, clickY}',
+    'end tell',
+    'end tell',
+  ].join('\n')])
+  await sleep(150)
+}
+
 async function keyCode(code, modifiers) {
   const modifierText = modifiers.length ? ` using {${modifiers.join(', ')}}` : ''
   run('osascript', ['-e', `tell application "System Events" to key code ${code}${modifierText}`])
@@ -116,9 +130,10 @@ async function verifyDeleteEdges() {
     { language: 'markdown', auto: true, content: `${marker}-delete` },
   ]))
   await activateApp()
+  await focusEditor()
   await sleep(1200)
   await keyCode(125, ['command down'])
-  await keyStroke('d', ['control down', 'shift down'])
+  await keyStroke('d', ['command down', 'shift down'])
   await sleep(900)
 
   let content = fs.readFileSync(streamPath, 'utf8')
@@ -126,7 +141,7 @@ async function verifyDeleteEdges() {
   check(!content.includes(`${marker}-delete`), 'delete removes the active block')
   check(blockCount(content) === 1, 'delete persists exactly one remaining block')
 
-  await keyStroke('d', ['control down', 'shift down'])
+  await keyStroke('d', ['command down', 'shift down'])
   await sleep(700)
   content = fs.readFileSync(streamPath, 'utf8')
   check(content.includes(`${marker}-keep`), 'delete refuses to remove the final block')
