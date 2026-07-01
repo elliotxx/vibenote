@@ -1,7 +1,7 @@
 import { Annotation, EditorState, RangeSetBuilder, StateField, Transaction } from '@codemirror/state'
-import { Decoration, EditorView, ViewPlugin, WidgetType } from '@codemirror/view'
+import { Decoration, EditorView, GutterMarker, ViewPlugin, gutterLineClass } from '@codemirror/view'
 import { blockDelimiter } from '../common/noteFormat'
-import { detectLanguage, getLanguage } from '../common/languages'
+import { detectLanguage } from '../common/languages'
 
 export type ScratchBlock = {
   language: string
@@ -56,36 +56,6 @@ export const blockField = StateField.define<ScratchBlock[]>({
   },
 })
 
-class BlockHeaderWidget extends WidgetType {
-  private readonly language: string
-  private readonly auto: boolean
-  private readonly created?: string
-
-  constructor(language: string, auto: boolean, created?: string) {
-    super()
-    this.language = language
-    this.auto = auto
-    this.created = created
-  }
-
-  eq(other: BlockHeaderWidget) {
-    return this.language === other.language && this.auto === other.auto && this.created === other.created
-  }
-
-  toDOM() {
-    const element = document.createElement('div')
-    element.className = 'block-header-widget'
-    const language = getLanguage(this.language)
-    const created = this.created ? new Date(this.created).toLocaleString() : ''
-    element.innerHTML = `<span>${language.name}${this.auto ? ' auto' : ''}</span><small>${created}</small>`
-    return element
-  }
-
-  ignoreEvent() {
-    return false
-  }
-}
-
 export const blockDecorations = StateField.define({
   create(state) {
     return buildDecorations(state)
@@ -101,22 +71,87 @@ export const blockDecorations = StateField.define({
   },
 })
 
+class BlockGutterMarker extends GutterMarker {
+  readonly elementClass: string
+
+  constructor(elementClass: string) {
+    super()
+    this.elementClass = elementClass
+  }
+
+  eq(other: BlockGutterMarker) {
+    return this.elementClass === other.elementClass
+  }
+}
+
+const gutterEven = new BlockGutterMarker('block-gutter-even')
+const gutterOdd = new BlockGutterMarker('block-gutter-odd')
+const gutterStart = new BlockGutterMarker('block-gutter-start')
+const gutterDelimiter = new BlockGutterMarker('block-gutter-delimiter')
+
+export const blockGutterDecorations = StateField.define({
+  create(state) {
+    return buildGutterDecorations(state)
+  },
+  update(markers, transaction) {
+    if (transaction.docChanged) {
+      return buildGutterDecorations(transaction.state)
+    }
+    return markers.map(transaction.changes)
+  },
+  provide(field) {
+    return gutterLineClass.from(field)
+  },
+})
+
 function buildDecorations(state: any) {
-  const builder = new RangeSetBuilder<Decoration>()
+  const decorations: any[] = []
   const blocks = state.field(blockField) as ScratchBlock[]
   blocks.forEach((block, index) => {
-    builder.add(
-      block.delimiter.from,
-      Math.max(block.delimiter.from, block.delimiter.to - 1),
-      Decoration.replace({
-        widget: new BlockHeaderWidget(block.language, block.auto, block.created),
-        block: true,
-      }),
-    )
+    decorations.push(Decoration.line({ class: 'block-delimiter-line' }).range(block.delimiter.from))
+    decorations.push(Decoration.replace({}).range(block.delimiter.from, Math.max(block.delimiter.from, block.delimiter.to - 1)))
+
+    const lines = []
+    let line = state.doc.lineAt(block.content.from)
+    while (line.to < block.content.from && line.number < state.doc.lines) {
+      line = state.doc.line(line.number + 1)
+    }
+    while (line.from <= block.content.to && line.to >= block.content.from) {
+      lines.push(line)
+      if (line.to >= block.content.to || line.number >= state.doc.lines) break
+      line = state.doc.line(line.number + 1)
+    }
+
+    lines.forEach((contentLine, lineIndex) => {
+      const classes = [
+        index % 2 === 0 ? 'block-even' : 'block-odd',
+        lineIndex === 0 ? 'block-first-line' : '',
+        lineIndex === 0 && index > 0 ? 'block-start' : '',
+        lineIndex === lines.length - 1 ? 'block-last-line' : '',
+      ].filter(Boolean).join(' ')
+      decorations.push(Decoration.line({ class: classes }).range(contentLine.from))
+    })
+  })
+  return Decoration.set(decorations, true)
+}
+
+function buildGutterDecorations(state: any) {
+  const builder = new RangeSetBuilder<GutterMarker>()
+  const blocks = state.field(blockField) as ScratchBlock[]
+  blocks.forEach((block, index) => {
+    builder.add(block.delimiter.from, block.delimiter.from, gutterDelimiter)
 
     let line = state.doc.lineAt(block.content.from)
-    while (line.from <= block.content.to) {
-      builder.add(line.from, line.from, Decoration.line({ class: index % 2 === 0 ? 'block-even' : 'block-odd' }))
+    while (line.to < block.content.from && line.number < state.doc.lines) {
+      line = state.doc.line(line.number + 1)
+    }
+    let isFirstContentLine = true
+    while (line.from <= block.content.to && line.to >= block.content.from) {
+      builder.add(line.from, line.from, index % 2 === 0 ? gutterEven : gutterOdd)
+      if (isFirstContentLine && index > 0) {
+        builder.add(line.from, line.from, gutterStart)
+      }
+      isFirstContentLine = false
       if (line.to >= block.content.to || line.number >= state.doc.lines) break
       line = state.doc.line(line.number + 1)
     }

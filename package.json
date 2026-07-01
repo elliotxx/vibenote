@@ -12,7 +12,9 @@
   "main": "electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1 --port 3344 --strictPort\" \"wait-on tcp:3344 && VITE_DEV_SERVER_URL=http://127.0.0.1:3344 electron .\"",
+    "dev:web": "vite --host 127.0.0.1 --port 3344 --strictPort",
     "build": "vue-tsc -b && vite build",
+    "test:e2e": "playwright test",
     "preview": "vite preview",
     "electron": "electron .",
     "build:mac": "export VIBENOTE_RELEASE_ARCH=${VIBENOTE_RELEASE_ARCH:-arm64}; rm -f dist/*.zip dist/*.zip.blockmap && npm run build && electron_dist_arg=\"\"; if [ -d .electron-dist ]; then electron_dist_arg=\"-c.electronDist=.electron-dist\"; fi; CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir --${VIBENOTE_RELEASE_ARCH} --publish never $electron_dist_arg && node scripts/create-dmg.mjs",
@@ -36,6 +38,12 @@
       "dist/**/*",
       "electron/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
     ],
     "mac": {
       "icon": "build/icon.icns",
@@ -67,8 +75,6 @@
     }
   },
   "dependencies": {
-    "vue": "^3.5.38",
-    "@vscode/ripgrep": "^1.18.0",
     "@codemirror/commands": "^6.10.4",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-html": "^6.4.11",
@@ -83,12 +89,15 @@
     "@codemirror/state": "^6.7.0",
     "@codemirror/view": "^6.43.4",
     "@lezer/common": "^1.5.2",
+    "@vscode/ripgrep": "^1.18.0",
     "lucide-vue-next": "^0.577.0",
     "pinia": "^3.0.4",
-    "prettier": "^3.9.3"
+    "prettier": "^3.9.3",
+    "vue": "^3.5.38"
   },
   "devDependencies": {
     "@lezer/generator": "^1.8.0",
+    "@playwright/test": "^1.61.1",
     "@types/node": "^24.13.2",
     "@vitejs/plugin-vue": "^6.0.7",
     "@vue/tsconfig": "^0.9.1",
