@@ -54,11 +54,11 @@ Vibenote `0.1.0` 首发只支持 macOS arm64。为了保持简单，当前版本
 最快的方式是让本地 AI coding agent 帮你安装最新 release。把下面这段 prompt 复制到 Codex、Claude Code 或其他能在本机执行 shell 命令的 agent 里：
 
 ```text
-请在这台 Mac 上从 GitHub Release 安装 Vibenote v0.1.0。
+请在这台 Mac 上从 GitHub 安装最新版本的 Vibenote。
 
 要求：
-- 使用 https://github.com/elliotxx/vibenote/releases/tag/v0.1.0。
-- 将 Vibenote-0.1.0-arm64.dmg 和 SHA256SUMS 下载到临时目录。
+- 使用 https://github.com/elliotxx/vibenote/releases/latest。
+- 将最新的 macOS arm64 DMG 资产（文件名类似 Vibenote-*-arm64.dmg）和对应的 SHA256SUMS 下载到临时目录。
 - 使用 shasum -a 256 -c SHA256SUMS 校验下载文件。
 - 挂载 DMG，将 Vibenote.app 复制到 Applications 文件夹，卸载 DMG，并启动应用。
 - 不要读取、迁移或修改任何 Heynote 数据。
@@ -68,7 +68,7 @@ Vibenote `0.1.0` 首发只支持 macOS arm64。为了保持简单，当前版本
 
 手动安装：
 
-1. 从 [Vibenote v0.1.0](https://github.com/elliotxx/vibenote/releases/tag/v0.1.0) 下载 `Vibenote-0.1.0-arm64.dmg` 和 `SHA256SUMS`。
+1. 从 [Vibenote Releases](https://github.com/elliotxx/vibenote/releases/latest) 下载最新的 `Vibenote-*-arm64.dmg` 和 `SHA256SUMS`。
 2. 校验文件哈希：
    ```sh
    shasum -a 256 -c SHA256SUMS
@@ -162,8 +162,8 @@ shasum -a 256 -c SHA256SUMS
 Vibenote 通过 tag 触发发布。推送与 `package.json` 版本一致的版本 tag：
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git tag v<version>
+git push origin v<version>
 ```
 
 GitHub Actions 会构建 macOS arm64 DMG，校验 `SHA256SUMS`，并创建正式 GitHub Release，上传 DMG 和 checksum 文件。当前构建仍然未签名、未公证。
