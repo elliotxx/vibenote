@@ -193,6 +193,20 @@ The verification suite checks package structure, DMG contents, runtime input, qu
 
 See [RELEASE.md](./RELEASE.md) for the first-release checklist.
 
+## Feedback
+
+Please open a [GitHub Issue](https://github.com/elliotxx/vibenote/issues) for bugs, install problems, data-save issues, or product feedback.
+
+Include:
+
+- macOS version and chip type.
+- Vibenote version.
+- What you expected to happen.
+- What actually happened.
+- Steps to reproduce the issue.
+
+For data-related issues, back up `$HOME/Library/Application Support/Vibenote` before trying repairs or reinstalling.
+
 ## Contributing
 
 Contributions are welcome around the minimal capture experience. First-release priorities:
