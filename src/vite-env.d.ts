@@ -45,6 +45,7 @@ interface Window {
     }
     image: {
       save(payload: { mime: string; data: ArrayBuffer }): Promise<string>
+      resolveLegacyUrl(url: string): Promise<string>
     }
     settings: {
       getTheme(): Promise<string>
