@@ -374,36 +374,93 @@ function updateImageFocusClass(editor: EditorView) {
 }
 
 function revealCursorAroundActiveImage(editor: EditorView, direction: 'left' | 'right') {
-  const activeImageLine = activeImageLineAtSelection(editor)
-  if (!activeImageLine || activeImageLine.edit) return false
+  const activeImageLine = editor.state.field(activeImageLineField, false)
+  if (activeImageLine?.edit) return false
 
-  if (activeImageLine.cursor === direction) {
-    const target = adjacentVisibleLinePosition(editor, activeImageLine, direction)
-    if (target === null) return true
-    editor.dispatch({
-      selection: EditorSelection.cursor(target),
-      effects: setActiveImageLine.of(null),
-      scrollIntoView: true,
-    })
-    editor.focus()
-    updateStatus(editor)
-    updateImageFocusClass(editor)
+  if (activeImageLine?.cursor) {
+    const shouldLeaveImage =
+      (activeImageLine.cursor === 'left' && direction === 'left') ||
+      (activeImageLine.cursor === 'right' && direction === 'right')
+
+    if (shouldLeaveImage) {
+      const target = adjacentVisibleLinePosition(editor, activeImageLine, direction)
+      if (target === null) return true
+      editor.dispatch({
+        selection: EditorSelection.cursor(target),
+        effects: setActiveImageLine.of(null),
+        scrollIntoView: true,
+      })
+      editor.focus()
+      updateStatus(editor)
+      updateImageFocusClass(editor)
+      return true
+    }
+
+    setImageCursor(editor, activeImageLine, direction)
     return true
   }
 
-  const target = direction === 'left' ? activeImageLine.from : activeImageLine.to
+  const selectedImageLine = activeImageLineAtSelection(editor)
+  if (selectedImageLine) {
+    setImageCursor(editor, selectedImageLine, direction)
+    return true
+  }
+
+  const boundaryMove = imageArrowBoundaryMove(editor, direction)
+  if (!boundaryMove) return false
+  setImageCursor(editor, boundaryMove.imageLine, boundaryMove.cursor)
+  return true
+}
+
+function setImageCursor(editor: EditorView, imageLine: { from: number, to: number, edit: boolean }, cursor: 'left' | 'right') {
+  const target = cursor === 'left' ? imageLine.from : imageLine.to
   editor.dispatch({
     selection: EditorSelection.cursor(target),
-    effects: setActiveImageLine.of({ ...activeImageLine, edit: false, cursor: direction }),
+    effects: setActiveImageLine.of({ from: imageLine.from, to: imageLine.to, edit: false, cursor }),
     scrollIntoView: true,
   })
   editor.focus()
   updateStatus(editor)
   updateImageFocusClass(editor)
-  return true
 }
 
-function adjacentVisibleLinePosition(editor: EditorView, activeImageLine: { from: number, to: number }, direction: 'left' | 'right') {
+function imageArrowBoundaryMove(editor: EditorView, direction: 'left' | 'right') {
+  const selection = editor.state.selection.main
+  if (!selection.empty) return null
+
+  const imageLines = allImageLines(editor)
+  const boundaryImage = imageLines.find(imageLine => {
+    if (direction === 'left') return selection.head === imageLine.to
+    return selection.head === imageLine.from
+  })
+  if (boundaryImage) {
+    return { imageLine: boundaryImage, cursor: direction } as const
+  }
+
+  const visibleLines = visibleContentLines(editor)
+  const currentLineIndex = visibleLines.findIndex(line => line.from <= selection.head && selection.head <= line.to)
+  if (currentLineIndex === -1) return null
+
+  if (direction === 'left' && selection.head === visibleLines[currentLineIndex].from && currentLineIndex > 0) {
+    const previousLine = visibleLines[currentLineIndex - 1]
+    const previousImage = imageLines.find(imageLine => previousLine.from <= imageLine.from && imageLine.to <= previousLine.to)
+    return previousImage ? { imageLine: previousImage, cursor: 'right' as const } : null
+  }
+
+  if (direction === 'right' && selection.head === visibleLines[currentLineIndex].to && currentLineIndex < visibleLines.length - 1) {
+    const nextLine = visibleLines[currentLineIndex + 1]
+    const nextImage = imageLines.find(imageLine => nextLine.from <= imageLine.from && imageLine.to <= nextLine.to)
+    return nextImage ? { imageLine: nextImage, cursor: 'left' as const } : null
+  }
+
+  return null
+}
+
+function allImageLines(editor: EditorView) {
+  return editor.state.field(blockField).flatMap(block => imageLinesInBlock(editor, block))
+}
+
+function visibleContentLines(editor: EditorView) {
   const lines: Array<{ from: number, to: number }> = []
   for (const block of editor.state.field(blockField)) {
     const firstLine = editor.state.doc.lineAt(block.content.from).number
@@ -415,7 +472,32 @@ function adjacentVisibleLinePosition(editor: EditorView, activeImageLine: { from
       if (from <= to) lines.push({ from, to })
     }
   }
+  return lines
+}
 
+function imageLinesInBlock(editor: EditorView, block: ScratchBlock) {
+  const content = editor.state.doc.sliceString(block.content.from, block.content.to)
+  const imagePattern = /!\[[^\]]*]\((<([^>]+)>|([^)]+))\)/g
+  const lines: Array<{ from: number, to: number, edit: boolean, cursor?: 'left' | 'right' }> = []
+  for (const match of content.matchAll(imagePattern)) {
+    const imageUrl = (match[2] || match[3] || '').trim()
+    if (!isPreviewableImageUrl(imageUrl)) continue
+    const from = block.content.from + match.index!
+    const to = from + match[0].length
+    lines.push({ from, to, edit: false })
+  }
+  return lines
+}
+
+function isPreviewableImageUrl(url: string) {
+  return url.startsWith('vibenote-image://') ||
+    url.startsWith('file://') ||
+    url.startsWith('/') ||
+    /^https?:\/\//i.test(url)
+}
+
+function adjacentVisibleLinePosition(editor: EditorView, activeImageLine: { from: number, to: number }, direction: 'left' | 'right') {
+  const lines = visibleContentLines(editor)
   const index = lines.findIndex(line => line.from <= activeImageLine.from && line.to >= activeImageLine.from)
   if (index === -1) return null
   if (direction === 'left') {
