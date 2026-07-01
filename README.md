@@ -8,7 +8,7 @@
   <p>
     <a href="https://github.com/elliotxx/vibenote"><img alt="Repository" src="https://img.shields.io/badge/repo-elliotxx%2Fvibenote-24292f"></a>
     <img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20arm64-000000">
-    <img alt="Version" src="https://img.shields.io/badge/version-0.1.0-blue">
+    <img alt="Version" src="https://img.shields.io/github/v/release/elliotxx/vibenote?label=version">
     <img alt="Electron" src="https://img.shields.io/badge/Electron-41-47848f">
     <img alt="Vue" src="https://img.shields.io/badge/Vue-3-42b883">
   </p>
@@ -47,7 +47,7 @@ The first release focuses on a minimal capture loop: one window, one buffer, pla
 
 ## First Release Scope
 
-Vibenote `0.1.0` targets macOS arm64 only. To keep the experience minimal, this version intentionally does not include multiple buffers, tabs, a sidebar tree, full-text search, a command palette, block folding, cloud sync, or Heynote data migration.
+Vibenote currently targets macOS arm64 only. To keep the experience minimal, the first release intentionally does not include multiple buffers, tabs, a sidebar tree, full-text search, a command palette, block folding, cloud sync, or Heynote data migration.
 
 ## Quick Start
 
@@ -104,8 +104,8 @@ Only share the DMG with people who trust the build source. This release is unsig
 Vibenote uses its own Electron `userData` directory:
 
 ```sh
-~/Library/Application Support/Vibenote/notes/stream.txt
-~/Library/Application Support/Vibenote/notes/.images/
+$HOME/Library/Application Support/Vibenote/notes/stream.txt
+$HOME/Library/Application Support/Vibenote/notes/.images/
 ```
 
 Uninstall the app:
@@ -145,7 +145,7 @@ npm run release:mac
 
 Expected artifacts:
 
-- `dist/Vibenote-0.1.0-arm64.dmg`
+- `dist/Vibenote-<version>-arm64.dmg`
 - `dist/SHA256SUMS`
 
 The current release mode is **tag-driven macOS release distribution**. The app is unsigned and not notarized, so users must understand the macOS first-launch warning. Broad distribution still requires Developer ID signing and Apple notarization.

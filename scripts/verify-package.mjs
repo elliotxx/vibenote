@@ -9,7 +9,7 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 
 const productName = packageJson.build.productName
 const version = packageJson.version
 const arch = process.env.VIBENOTE_RELEASE_ARCH || 'arm64'
-const appPath = path.join(root, 'dist', 'mac-arm64', `${productName}.app`)
+const appPath = path.join(root, 'dist', `mac-${arch}`, `${productName}.app`)
 const dmgPath = path.join(root, 'dist', `${productName}-${version}-${arch}.dmg`)
 const asarPath = path.join(appPath, 'Contents', 'Resources', 'app.asar')
 const plistPath = path.join(appPath, 'Contents', 'Info.plist')
@@ -48,7 +48,7 @@ check(bundleIcon.includes('icon'), 'Info.plist points at bundled icon')
 
 const asarList = output('npx', ['asar', 'list', asarPath])
 check(asarList.includes('/electron/preload.cjs'), 'asar contains preload.cjs')
-check(asarList.includes('/node_modules/@vscode/ripgrep-darwin-arm64/bin/rg'), 'asar contains ripgrep runtime')
+check(asarList.includes(`/node_modules/@vscode/ripgrep-darwin-${arch}/bin/rg`), 'asar contains ripgrep runtime')
 check(/\/dist\/assets\/index-.*\.js/.test(asarList), 'asar contains renderer JavaScript')
 check(/\/dist\/assets\/index-.*\.css/.test(asarList), 'asar contains renderer CSS')
 
