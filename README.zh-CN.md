@@ -193,6 +193,20 @@ npm run verify:install
 
 更多首发候选检查项见 [RELEASE.md](./RELEASE.md)。
 
+## 反馈
+
+如遇到 bug、安装问题、保存问题或产品建议，请提交 [GitHub Issue](https://github.com/elliotxx/vibenote/issues)。
+
+请尽量附上：
+
+- macOS 版本和芯片类型。
+- Vibenote 版本。
+- 你预期发生什么。
+- 实际发生了什么。
+- 可复现步骤。
+
+如果问题和数据有关，请先备份 `$HOME/Library/Application Support/Vibenote`，再尝试修复或重装。
+
 ## 贡献
 
 欢迎围绕极简记录体验提交改进。首发阶段优先关注：
