@@ -123,6 +123,47 @@ class MathResultWidget extends WidgetType {
   }
 }
 
+class TaskCheckboxWidget extends WidgetType {
+  private readonly checked: boolean
+  private readonly from: number
+  private readonly to: number
+
+  constructor(checked: boolean, from: number, to: number) {
+    super()
+    this.checked = checked
+    this.from = from
+    this.to = to
+  }
+
+  eq(other: TaskCheckboxWidget) {
+    return this.checked === other.checked && this.from === other.from && this.to === other.to
+  }
+
+  toDOM(view: EditorView) {
+    const checkbox = document.createElement('input')
+    checkbox.type = 'checkbox'
+    checkbox.className = 'markdown-task-checkbox'
+    checkbox.checked = this.checked
+    checkbox.title = this.checked ? 'Mark task as incomplete' : 'Mark task as complete'
+    checkbox.addEventListener('mousedown', event => {
+      event.preventDefault()
+      event.stopPropagation()
+    })
+    checkbox.addEventListener('click', event => {
+      event.preventDefault()
+      event.stopPropagation()
+      const next = this.checked ? '[ ]' : '[x]'
+      view.dispatch({
+        changes: { from: this.from, to: this.to, insert: next },
+        selection: EditorSelection.cursor(this.from + next.length),
+        scrollIntoView: true,
+      })
+      view.focus()
+    })
+    return checkbox
+  }
+}
+
 export const richDecorations = ViewPlugin.fromClass(
   class {
     decorations
@@ -154,6 +195,7 @@ function buildRichDecorations(view: EditorView) {
   const blocks = state.field(blockField)
   for (const block of blocks) {
     addSyntaxMarks(decorations, state, block)
+    addTaskCheckboxes(decorations, state, block)
     addImageWidgets(decorations, state, block)
     addMathResults(decorations, state, block)
   }
@@ -191,7 +233,14 @@ function syntaxPatterns(language: string): Array<[string, RegExp]> {
   }
   if (language === 'markdown') {
     return [
+      ['tok-code-block', /```[\s\S]*?```/g],
       ['tok-heading', /^#{1,6}\s.+$/gm],
+      ['tok-task', /^\s*[-*+]\s+\[[ xX]\]\s+.+$/gm],
+      ['tok-list', /^\s*(?:[-*+]\s+(?!\[[ xX]\]\s)|\d+\.\s+).+$/gm],
+      ['tok-quote', /^>\s.*$/gm],
+      ['tok-link', /(?<!!)\[[^\]\n]+]\((<[^>\n]+>|[^)\n]+)\)/g],
+      ['tok-image', /!\[[^\]\n]*]\((<[^>\n]+>|[^)\n]+)\)/g],
+      ['tok-hr', /^\s{0,3}(?:[-*_]\s*){3,}$/gm],
       ['tok-keyword', /`[^`\n]+`/g],
       ['tok-string', /\*\*[^*\n]+\*\*/g],
     ]
@@ -211,6 +260,19 @@ function syntaxPatterns(language: string): Array<[string, RegExp]> {
     ]
   }
   return []
+}
+
+function addTaskCheckboxes(decorations: any[], state: any, block: ScratchBlock) {
+  if (block.language !== 'markdown') return
+  const content = state.doc.sliceString(block.content.from, block.content.to)
+  const taskPattern = /^(\s*[-*+]\s+)\[([ xX])]\s+/gm
+  for (const match of content.matchAll(taskPattern)) {
+    const from = block.content.from + match.index! + match[1].length
+    const to = from + 3
+    decorations.push(Decoration.replace({
+      widget: new TaskCheckboxWidget(match[2].toLowerCase() === 'x', from, to),
+    }).range(from, to))
+  }
 }
 
 function addImageWidgets(decorations: any[], state: any, block: ScratchBlock) {

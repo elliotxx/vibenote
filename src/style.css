@@ -248,6 +248,49 @@ select:focus {
   font-weight: 700;
 }
 
+.tok-list {
+  color: var(--ink);
+}
+
+.tok-task {
+  color: oklch(38% 0.08 185);
+}
+
+.tok-quote {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.tok-link {
+  color: oklch(45% 0.13 252);
+  text-decoration: underline;
+  text-decoration-color: oklch(74% 0.08 252);
+  text-underline-offset: 3px;
+}
+
+.tok-image {
+  color: oklch(44% 0.11 292);
+}
+
+.tok-hr {
+  color: var(--faint);
+  letter-spacing: 0;
+}
+
+.tok-code-block {
+  color: oklch(35% 0.05 230);
+  background: oklch(96.5% 0.006 230);
+}
+
+.markdown-task-checkbox {
+  width: 14px;
+  height: 14px;
+  margin: 0 3px 0 0;
+  vertical-align: -2px;
+  accent-color: oklch(50% 0.13 252);
+  cursor: pointer;
+}
+
 .image-widget {
   display: inline-block;
   position: relative;

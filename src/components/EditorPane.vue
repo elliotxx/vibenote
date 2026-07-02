@@ -152,6 +152,12 @@ function mountEditor() {
         { key: 'Mod-ArrowDown', run: moveToNextBlock },
         { key: 'Mod-l', run: focusLanguageSelector },
         { key: 'Shift-Alt-f', run: formatBlockFromKeymap },
+        { key: 'Mod-b', run: editor => wrapMarkdownSelection(editor, '**', '**', 'bold') },
+        { key: 'Mod-i', run: editor => wrapMarkdownSelection(editor, '*', '*', 'italic') },
+        { key: 'Mod-k', run: insertMarkdownLink },
+        { key: 'Mod-Shift-8', run: editor => toggleMarkdownList(editor, 'unordered') },
+        { key: 'Mod-Shift-7', run: editor => toggleMarkdownList(editor, 'ordered') },
+        { key: 'Enter', run: continueMarkdownListFromKeymap },
         { key: 'Backspace', run: removeImageOrBlankBlockFromDeleteKey },
         { key: 'Delete', run: removeImageOrBlankBlockFromDeleteKey },
         { key: 'ArrowLeft', run: editor => revealCursorAroundActiveImage(editor, 'left') },
@@ -824,6 +830,158 @@ function focusLanguageSelector() {
   return true
 }
 
+function activeMarkdownBlock(editor: EditorView) {
+  const block = activeBlock(editor.state)
+  if (!block || block.language !== 'markdown') return null
+  return block
+}
+
+function selectionWithinBlock(editor: EditorView, block: ScratchBlock) {
+  const selection = editor.state.selection.main
+  return selection.from >= block.content.from && selection.to <= block.content.to
+}
+
+function dispatchMarkdownEdit(editor: EditorView, spec: Parameters<EditorView['dispatch']>[0]) {
+  editor.dispatch(spec)
+  editor.focus()
+  updateStatus(editor)
+  scheduleSave()
+}
+
+function wrapMarkdownSelection(editor: EditorView, prefix: string, suffix: string, placeholder: string) {
+  const block = activeMarkdownBlock(editor)
+  if (!block || !selectionWithinBlock(editor, block)) return false
+
+  const selection = editor.state.selection.main
+  const selected = selection.empty
+    ? placeholder
+    : editor.state.doc.sliceString(selection.from, selection.to)
+  const insert = `${prefix}${selected}${suffix}`
+  const anchor = selection.from + prefix.length
+  const head = anchor + selected.length
+
+  dispatchMarkdownEdit(editor, {
+    changes: { from: selection.from, to: selection.to, insert },
+    selection: EditorSelection.range(anchor, head),
+    scrollIntoView: true,
+  })
+  return true
+}
+
+function insertMarkdownLink(editor: EditorView) {
+  const block = activeMarkdownBlock(editor)
+  if (!block || !selectionWithinBlock(editor, block)) return false
+
+  const selection = editor.state.selection.main
+  const label = selection.empty
+    ? 'text'
+    : editor.state.doc.sliceString(selection.from, selection.to)
+  const insert = `[${label}](url)`
+  const urlFrom = selection.from + label.length + 3
+
+  dispatchMarkdownEdit(editor, {
+    changes: { from: selection.from, to: selection.to, insert },
+    selection: EditorSelection.range(urlFrom, urlFrom + 3),
+    scrollIntoView: true,
+  })
+  return true
+}
+
+function toggleMarkdownList(editor: EditorView, kind: 'ordered' | 'unordered') {
+  const block = activeMarkdownBlock(editor)
+  if (!block || !selectionWithinBlock(editor, block)) return false
+
+  const selection = editor.state.selection.main
+  const firstLine = editor.state.doc.lineAt(selection.from)
+  const lastLine = editor.state.doc.lineAt(Math.max(selection.from, selection.to))
+  const changes: Array<{ from: number, to: number, insert: string }> = []
+  let orderedIndex = 1
+
+  for (let lineNumber = firstLine.number; lineNumber <= lastLine.number; lineNumber += 1) {
+    const line = editor.state.doc.line(lineNumber)
+    const from = Math.max(line.from, block.content.from)
+    const to = Math.min(line.to, block.content.to)
+    const text = editor.state.doc.sliceString(from, to)
+    if (!text.trim()) continue
+
+    const unordered = text.match(/^(\s*)([-*+])\s+/)
+    const ordered = text.match(/^(\s*)\d+\.\s+/)
+    const indent = text.match(/^\s*/)?.[0] || ''
+
+    if (kind === 'unordered') {
+      if (unordered) {
+        changes.push({ from: from + unordered[1].length, to: from + unordered[0].length, insert: '' })
+      } else if (ordered) {
+        changes.push({ from: from + ordered[1].length, to: from + ordered[0].length, insert: '- ' })
+      } else {
+        changes.push({ from: from + indent.length, to: from + indent.length, insert: '- ' })
+      }
+      continue
+    }
+
+    const marker = `${orderedIndex}. `
+    orderedIndex += 1
+    if (ordered) {
+      changes.push({ from: from + ordered[1].length, to: from + ordered[0].length, insert: '' })
+    } else if (unordered) {
+      changes.push({ from: from + unordered[1].length, to: from + unordered[0].length, insert: marker })
+    } else {
+      changes.push({ from: from + indent.length, to: from + indent.length, insert: marker })
+    }
+  }
+
+  if (changes.length === 0) return false
+  dispatchMarkdownEdit(editor, {
+    changes,
+    selection: EditorSelection.cursor(selection.from),
+    scrollIntoView: true,
+  })
+  return true
+}
+
+function continueMarkdownListFromKeymap(editor: EditorView) {
+  const block = activeMarkdownBlock(editor)
+  const selection = editor.state.selection.main
+  if (!block || !selection.empty || !selectionWithinBlock(editor, block)) return false
+
+  const line = editor.state.doc.lineAt(selection.head)
+  if (line.from < block.content.from || line.to > block.content.to) return false
+
+  const text = editor.state.doc.sliceString(line.from, line.to)
+  const cursorOffset = selection.head - line.from
+  const beforeCursor = text.slice(0, cursorOffset)
+  const afterCursor = text.slice(cursorOffset)
+  const unordered = beforeCursor.match(/^(\s*)([-*+])\s+(\[[ xX]\]\s+)?(.*)$/)
+  const ordered = beforeCursor.match(/^(\s*)(\d+)\.\s+(.*)$/)
+
+  if (!unordered && !ordered) return false
+
+  const marker = unordered
+    ? `${unordered[1]}${unordered[2]} ${unordered[3] || ''}`
+    : `${ordered![1]}${Number.parseInt(ordered![2], 10) + 1}. `
+  const markerLength = unordered
+    ? unordered[1].length + unordered[2].length + 1 + (unordered[3]?.length || 0)
+    : ordered![1].length + ordered![2].length + 2
+  const itemTextBeforeCursor = unordered ? unordered[4] : ordered![3]
+  const shouldExitList = itemTextBeforeCursor.trim().length === 0 && afterCursor.trim().length === 0
+
+  if (shouldExitList) {
+    dispatchMarkdownEdit(editor, {
+      changes: { from: line.from, to: line.from + markerLength, insert: '' },
+      selection: EditorSelection.cursor(line.from),
+      scrollIntoView: true,
+    })
+    return true
+  }
+
+  dispatchMarkdownEdit(editor, {
+    changes: { from: selection.head, to: selection.head, insert: `\n${marker}` },
+    selection: EditorSelection.cursor(selection.head + marker.length + 1),
+    scrollIntoView: true,
+  })
+  return true
+}
+
 function handleEditorShortcut(event: KeyboardEvent, editor: EditorView) {
   const primary = event.metaKey || event.ctrlKey
   const key = event.key.toLowerCase()
@@ -861,6 +1019,16 @@ function handleEditorShortcut(event: KeyboardEvent, editor: EditorView) {
     handled = focusLanguageSelector()
   } else if (key === 'f' && event.altKey && event.shiftKey) {
     handled = formatBlockFromKeymap()
+  } else if (key === 'b' && primary) {
+    handled = wrapMarkdownSelection(editor, '**', '**', 'bold')
+  } else if (key === 'i' && primary) {
+    handled = wrapMarkdownSelection(editor, '*', '*', 'italic')
+  } else if (key === 'k' && primary) {
+    handled = insertMarkdownLink(editor)
+  } else if ((key === '*' || key === '8') && primary && event.shiftKey) {
+    handled = toggleMarkdownList(editor, 'unordered')
+  } else if ((key === '&' || key === '7') && primary && event.shiftKey) {
+    handled = toggleMarkdownList(editor, 'ordered')
   }
 
   if (handled) {
