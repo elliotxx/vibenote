@@ -44,6 +44,9 @@ let view: EditorView | null = null
 let note: LoadedNote | null = null
 let saveTimer: number | null = null
 let unsubscribeEditorCommand: (() => void) | null = null
+const EDITOR_FONT_MIN = 11
+const EDITOR_FONT_MAX = 48
+const EDITOR_FONT_DEFAULT = 13
 
 const activeLanguage = computed({
   get: () => currentBlock.value?.language || store.settings.defaultLanguage,
@@ -108,10 +111,19 @@ onBeforeUnmount(() => {
 watch(
   () => [store.settings.fontSize, store.settings.tabSize, store.settings.theme],
   () => {
-    view?.dom.style.setProperty('--editor-font-size', `${store.settings.fontSize}px`)
-    view?.dom.classList.toggle('dark-editor', store.settings.theme === 'dark')
+    applyEditorViewSettings(view)
   },
 )
+
+function applyEditorViewSettings(editor: EditorView | null) {
+  if (!editor) return
+  editor.dom.style.setProperty('--editor-font-size', `${store.settings.fontSize}px`)
+  editor.dom.classList.toggle('dark-editor', store.settings.theme === 'dark')
+  editor.requestMeasure()
+  window.requestAnimationFrame(() => {
+    if (editor === view) editor.requestMeasure()
+  })
+}
 
 function mountEditor() {
   if (!editorHost.value) return
@@ -187,18 +199,21 @@ function mountEditor() {
           background: 'var(--surface-soft)',
           borderRight: '2px solid oklch(87.5% 0.012 226)',
           color: 'var(--faint)',
+          fontFamily: 'JetBrains Mono, SFMono-Regular, Menlo, Consolas, monospace',
+          lineHeight: '1.36',
         },
         '.cm-lineNumbers .cm-gutterElement': {
           boxSizing: 'border-box',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'flex-end',
-          minWidth: '44px',
-          padding: '0 10px 0 8px',
-          textAlign: 'right',
+          justifyContent: 'center',
+          minWidth: 'calc(var(--editor-font-size) * 1.8 + 18px)',
+          padding: '0 calc(var(--editor-font-size) * 0.22)',
+          lineHeight: '1.36',
+          textAlign: 'center',
         },
         '.cm-lineNumbers': {
-          minWidth: '44px',
+          minWidth: 'calc(var(--editor-font-size) * 1.8 + 18px)',
         },
         '.cm-activeLine': {
           backgroundColor: 'oklch(95.5% 0.01 228)',
@@ -233,6 +248,9 @@ function mountEditor() {
       EditorView.domEventHandlers({
         keydown(event, view) {
           return handleEditorShortcut(event, view)
+        },
+        click(event, view) {
+          return openMarkdownLinkFromClick(event, view)
         },
         copy(event, view) {
           return copyVisibleSelection(event, view)
@@ -294,8 +312,7 @@ function mountEditor() {
   })
 
   view = new EditorView({ state, parent: editorHost.value })
-  view.dom.style.setProperty('--editor-font-size', `${store.settings.fontSize}px`)
-  view.dom.classList.toggle('dark-editor', store.settings.theme === 'dark')
+  applyEditorViewSettings(view)
   moveCursorToEditableContent(view)
   updateImageFocusClass(view)
   updateStatus(view)
@@ -887,6 +904,41 @@ function insertMarkdownLink(editor: EditorView) {
   return true
 }
 
+function markdownLinkAt(editor: EditorView, pos: number) {
+  const block = editor.state.field(blockField).find(item => item.language === 'markdown' && pos >= item.content.from && pos <= item.content.to)
+  if (!block) return null
+
+  const text = editor.state.doc.sliceString(block.content.from, block.content.to)
+  const linkPattern = /(?<!!)\[([^\]\n]+)]\((<([^>\n]+)>|([^)]+))\)/g
+  for (const match of text.matchAll(linkPattern)) {
+    const from = block.content.from + match.index!
+    const to = from + match[0].length
+    if (pos < from || pos > to) continue
+
+    const url = (match[3] || match[4] || '').trim()
+    if (!/^https?:\/\//i.test(url)) return null
+    return { url, from, to }
+  }
+  return null
+}
+
+function openMarkdownLinkFromClick(event: MouseEvent, editor: EditorView) {
+  if (!event.metaKey && !event.ctrlKey) return false
+
+  const pos = editor.posAtCoords({ x: event.clientX, y: event.clientY })
+  if (pos === null) return false
+
+  const link = markdownLinkAt(editor, pos)
+  if (!link) return false
+
+  event.preventDefault()
+  event.stopPropagation()
+  void window.vibenote.shell.openExternal(link.url).catch(error => {
+    console.error('Failed to open external link', error)
+  })
+  return true
+}
+
 function toggleMarkdownList(editor: EditorView, kind: 'ordered' | 'unordered') {
   const block = activeMarkdownBlock(editor)
   if (!block || !selectionWithinBlock(editor, block)) return false
@@ -1052,20 +1104,40 @@ function runEditorCommand(command: EditorCommand, editor: EditorView) {
   if (command === 'cursor:add-above') return addCursorAbove(editor)
   if (command === 'cursor:add-below') return addCursorBelow(editor)
   if (command === 'language:focus') return focusLanguageSelector()
+  if (command === 'view:font-increase') return adjustEditorFontSize(1)
+  if (command === 'view:font-decrease') return adjustEditorFontSize(-1)
+  if (command === 'view:font-reset') return resetEditorFontSize()
   return false
+}
+
+function adjustEditorFontSize(delta: number) {
+  store.settings.fontSize = Math.min(EDITOR_FONT_MAX, Math.max(EDITOR_FONT_MIN, store.settings.fontSize + delta))
+  void store.saveSettings()
+  return true
+}
+
+function resetEditorFontSize() {
+  store.settings.fontSize = EDITOR_FONT_DEFAULT
+  void store.saveSettings()
+  return true
 }
 
 function onEditorCommand(command: EditorCommand) {
   if (!view) return
+  if (isFormControl(document.activeElement)) return
   runEditorCommand(command, view)
 }
 
 function onWindowKeydown(event: KeyboardEvent) {
   if (!view || event.defaultPrevented) return
   const target = event.target as HTMLElement | null
-  const hasEditorModifier = event.metaKey || event.ctrlKey || event.altKey
-  if (!hasEditorModifier && target?.closest('input, select, textarea, button')) return
+  if (isFormControl(target)) return
   handleEditorShortcut(event, view)
+}
+
+function isFormControl(element: EventTarget | Element | null) {
+  if (!(element instanceof Element)) return false
+  return Boolean(element.closest('input, select, textarea, button, [contenteditable="true"]'))
 }
 
 function onWindowFocus() {

@@ -1,6 +1,9 @@
 import { formatInitialContent } from './common/noteFormat'
 
 const STORAGE_KEY = 'vibenote:mock-buffers'
+const AI_SETTINGS_KEY = 'vibenote:mock-ai-settings'
+
+let mockApiKey = ''
 
 type MockBuffer = BufferInfo & { content: string }
 
@@ -29,6 +32,19 @@ function readBuffers(): MockBuffer[] {
 
 function writeBuffers(buffers: MockBuffer[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(buffers))
+}
+
+function readMockAiSettings(): AiSettings {
+  const stored = localStorage.getItem(AI_SETTINGS_KEY)
+  return {
+    enabled: false,
+    provider: 'deepseek',
+    baseUrl: 'https://api.deepseek.com',
+    model: 'deepseek-chat',
+    ...(stored ? JSON.parse(stored) : {}),
+    hasApiKey: Boolean(mockApiKey),
+    keyStorage: mockApiKey ? 'local-fallback' : 'none',
+  }
 }
 
 export function installDevMock() {
@@ -118,6 +134,41 @@ export function installDevMock() {
         return 'light'
       },
       async setTheme() {
+        return true
+      },
+    },
+    ai: {
+      async getSettings() {
+        return readMockAiSettings()
+      },
+      async saveSettings(settings: AiSettings) {
+        const safeSettings: AiSettings = {
+          ...settings,
+          hasApiKey: Boolean(mockApiKey),
+          keyStorage: mockApiKey ? 'local-fallback' : 'none',
+        }
+        localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(safeSettings))
+        return safeSettings
+      },
+      async setApiKey(apiKey: string) {
+        mockApiKey = apiKey.trim()
+        return readMockAiSettings()
+      },
+      async clearApiKey() {
+        mockApiKey = ''
+        return readMockAiSettings()
+      },
+      async testConnection() {
+        const settings = readMockAiSettings()
+        if (!settings.enabled) return { ok: false, message: 'AI is disabled' }
+        if (!settings.hasApiKey) return { ok: false, message: 'API key is required' }
+        if (!settings.model.trim()) return { ok: false, message: 'Model is required' }
+        return { ok: true, message: 'Connection OK' }
+      },
+    },
+    shell: {
+      async openExternal(url: string) {
+        window.open(url, '_blank', 'noopener,noreferrer')
         return true
       },
     },

@@ -102,7 +102,7 @@ select:focus {
 
 .main-area {
   display: grid;
-  grid-template-rows: 28px 1fr;
+  grid-template-rows: 32px 1fr;
   height: 100vh;
   min-width: 0;
   min-height: 0;
@@ -126,7 +126,7 @@ select:focus {
   color: var(--ink-soft);
   font-size: 12px;
   font-weight: 700;
-  line-height: 28px;
+  line-height: 32px;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -134,7 +134,7 @@ select:focus {
 
 .editor-pane {
   display: grid;
-  grid-template-rows: 1fr 34px;
+  grid-template-rows: 1fr 36px;
   min-height: 0;
   background: var(--surface-editor);
 }
@@ -244,7 +244,7 @@ select:focus {
 }
 
 .tok-heading {
-  color: oklch(39% 0.12 258);
+  color: var(--ink);
   font-weight: 700;
 }
 
@@ -253,23 +253,23 @@ select:focus {
 }
 
 .tok-task {
-  color: oklch(38% 0.08 185);
+  color: var(--ink);
 }
 
 .tok-quote {
-  color: var(--muted);
+  color: var(--ink-soft);
   font-style: italic;
 }
 
 .tok-link {
-  color: oklch(45% 0.13 252);
+  color: oklch(43% 0.08 252);
   text-decoration: underline;
-  text-decoration-color: oklch(74% 0.08 252);
+  text-decoration-color: oklch(78% 0.05 252);
   text-underline-offset: 3px;
 }
 
 .tok-image {
-  color: oklch(44% 0.11 292);
+  color: var(--ink-soft);
 }
 
 .tok-hr {
@@ -278,8 +278,21 @@ select:focus {
 }
 
 .tok-code-block {
-  color: oklch(35% 0.05 230);
-  background: oklch(96.5% 0.006 230);
+  color: var(--ink-soft);
+  background: transparent;
+}
+
+.tok-inline-code {
+  color: var(--ink-soft);
+  background: oklch(95.5% 0.006 230);
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  padding: 0 2px;
+}
+
+.tok-strong {
+  color: var(--ink);
+  font-weight: 700;
 }
 
 .markdown-task-checkbox {
@@ -287,7 +300,7 @@ select:focus {
   height: 14px;
   margin: 0 3px 0 0;
   vertical-align: -2px;
-  accent-color: oklch(50% 0.13 252);
+  accent-color: var(--ink-soft);
   cursor: pointer;
 }
 
@@ -345,11 +358,11 @@ select:focus {
   display: grid;
   grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   border-top: 1px solid var(--line);
   background: var(--status-bg);
   color: var(--ink-soft);
-  padding: 0 12px 0 18px;
+  padding: 0 12px 0 16px;
   font-size: 12px;
   min-width: 0;
 }
@@ -363,7 +376,7 @@ select:focus {
 }
 
 .statusbar-left {
-  gap: 12px;
+  gap: 10px;
   justify-self: start;
 }
 
@@ -405,12 +418,12 @@ select:focus {
 }
 
 .status-control select {
-  width: 132px;
-  height: 24px;
+  width: 126px;
+  height: 28px;
   border-color: var(--line);
   background: var(--surface-control);
   color: var(--ink-soft);
-  padding: 0 24px 0 8px;
+  padding: 0 24px 0 9px;
   font-size: 12px;
 }
 
@@ -439,12 +452,17 @@ select:focus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: 5px;
   color: var(--muted);
   background: transparent;
   cursor: pointer;
+}
+
+.statusbar svg {
+  width: 14px;
+  height: 14px;
 }
 
 .status-icon-button:hover {
@@ -511,7 +529,9 @@ select:focus {
 .settings-panel {
   display: grid;
   gap: 14px;
-  width: 360px;
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 48px));
+  overflow: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-editor);
@@ -530,10 +550,99 @@ select:focus {
   font-size: 17px;
 }
 
+.settings-sections,
+.settings-section {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-sections {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.settings-section {
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.settings-section:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+.settings-section h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+
 .settings-panel label {
   display: grid;
   gap: 6px;
   color: var(--ink-soft);
   font-size: 12px;
   font-weight: 600;
+}
+
+.checkbox-label {
+  display: flex !important;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 8px !important;
+}
+
+.checkbox-label input {
+  width: 15px;
+  height: 15px;
+}
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.secondary-button,
+.ghost-button {
+  flex: 0 0 auto;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 10px;
+  color: var(--ink-soft);
+  background: var(--surface-control);
+  cursor: pointer;
+}
+
+.ghost-button {
+  background: transparent;
+}
+
+.secondary-button:disabled,
+.ghost-button:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.settings-status {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .settings-sections {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-section:nth-child(3) {
+    grid-column: auto;
+  }
 }

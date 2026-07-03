@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, protocol } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, protocol, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -14,6 +14,7 @@ app.setName('Vibenote')
 
 let mainWindow = null
 let library = null
+let aiSettings = null
 let currentSearch = null
 
 function runtimeIconPath() {
@@ -196,6 +197,145 @@ class FileLibrary {
   }
 }
 
+class AiSettingsStore {
+  constructor(basePath) {
+    this.settingsPath = path.join(basePath, 'ai-settings.json')
+    this.keyPath = path.join(basePath, 'ai-key.bin')
+    this.defaults = {
+      enabled: false,
+      provider: 'deepseek',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-chat',
+    }
+  }
+
+  async readKeyRecord() {
+    try {
+      const raw = await fs.promises.readFile(this.keyPath, 'utf8')
+      try {
+        return JSON.parse(raw)
+      } catch {
+        return {
+          version: 0,
+          storage: 'safeStorage',
+          value: raw,
+        }
+      }
+    } catch {
+      return null
+    }
+  }
+
+  keyStorageFromRecord(record) {
+    if (!record) return 'none'
+    if (record.storage === 'localFallback') return 'local-fallback'
+    if (record.storage === 'safeStorage') return 'unknown'
+    return 'unknown'
+  }
+
+  async readSettings() {
+    let stored = {}
+    try {
+      stored = JSON.parse(await fs.promises.readFile(this.settingsPath, 'utf8'))
+    } catch {
+      stored = {}
+    }
+    const keyRecord = await this.readKeyRecord()
+    return {
+      ...this.defaults,
+      ...stored,
+      hasApiKey: Boolean(keyRecord),
+      keyStorage: this.keyStorageFromRecord(keyRecord),
+    }
+  }
+
+  async saveSettings(settings) {
+    const { hasApiKey, keyStorage, ...safeSettings } = settings || {}
+    void hasApiKey
+    void keyStorage
+    await writeAtomic(this.settingsPath, JSON.stringify({ ...this.defaults, ...safeSettings }, null, 2))
+    return this.readSettings()
+  }
+
+  async setApiKey(apiKey) {
+    const value = String(apiKey || '').trim()
+    if (!value) {
+      throw new Error('API key is required')
+    }
+    const record = {
+      version: 1,
+      storage: 'localFallback',
+      value: Buffer.from(value, 'utf8').toString('base64'),
+    }
+    await writeAtomic(this.keyPath, JSON.stringify(record, null, 2))
+    return this.readSettings()
+  }
+
+  async clearApiKey() {
+    await fs.promises.rm(this.keyPath, { force: true })
+    return this.readSettings()
+  }
+
+  async readApiKey() {
+    const record = await this.readKeyRecord()
+    if (!record) {
+      throw new Error('API key is required')
+    }
+    if (record.storage === 'localFallback') {
+      return Buffer.from(record.value, 'base64').toString('utf8')
+    }
+    if (record.storage === 'safeStorage') {
+      throw new Error('This API key was saved with macOS Keychain. Clear it and save it again.')
+    }
+    throw new Error('Unsupported API key storage')
+  }
+
+  endpointFor(settings) {
+    const baseUrl = String(settings.baseUrl || '').trim().replace(/\/+$/, '')
+    if (!baseUrl) {
+      throw new Error('Base URL is required')
+    }
+    if (baseUrl.endsWith('/chat/completions')) return baseUrl
+    return `${baseUrl}/chat/completions`
+  }
+
+  async testConnection() {
+    const settings = await this.readSettings()
+    if (!settings.enabled) {
+      return { ok: false, message: 'AI is disabled' }
+    }
+    if (!settings.hasApiKey) {
+      return { ok: false, message: 'API key is required' }
+    }
+    if (!settings.model) {
+      return { ok: false, message: 'Model is required' }
+    }
+
+    try {
+      const response = await fetch(this.endpointFor(settings), {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${await this.readApiKey()}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: settings.model,
+          messages: [{ role: 'user', content: 'Reply with OK.' }],
+          max_tokens: 4,
+          temperature: 0,
+        }),
+      })
+
+      if (!response.ok) {
+        return { ok: false, message: `Connection failed (${response.status})` }
+      }
+      return { ok: true, message: 'Connection OK' }
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : 'Connection failed' }
+    }
+  }
+}
+
 function createWindow() {
   const iconPath = runtimeIconPath()
   mainWindow = new BrowserWindow({
@@ -212,6 +352,15 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  })
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    mainWindow?.webContents.setZoomFactor(1)
+  })
+
+  mainWindow.webContents.on('zoom-changed', event => {
+    event.preventDefault()
+    mainWindow?.webContents.setZoomFactor(1)
   })
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
@@ -281,9 +430,21 @@ function setupApplicationMenu() {
         { role: 'reload' },
         { role: 'toggleDevTools' },
         { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
+        {
+          label: 'Reset Editor Font Size',
+          accelerator: 'CommandOrControl+0',
+          click: () => sendEditorCommandWhenFocused('view:font-reset'),
+        },
+        {
+          label: 'Increase Editor Font Size',
+          accelerator: 'CommandOrControl+=',
+          click: () => sendEditorCommandWhenFocused('view:font-increase'),
+        },
+        {
+          label: 'Decrease Editor Font Size',
+          accelerator: 'CommandOrControl+-',
+          click: () => sendEditorCommandWhenFocused('view:font-decrease'),
+        },
         { type: 'separator' },
         { role: 'togglefullscreen' },
       ],
@@ -304,13 +465,15 @@ function editorCommandForInput(input) {
   if (input.type !== 'keyDown' || input.isAutoRepeat) return null
   const primary = input.meta || input.control
   const key = input.key.toLowerCase()
+  if (primary && (key === '=' || key === '+')) return 'view:font-increase'
+  if (primary && key === '-') return 'view:font-decrease'
+  if (primary && key === '0') return 'view:font-reset'
   if (key === 'enter' && primary && input.alt) return 'block:split'
   if (key === 'enter' && primary && input.shift) return 'block:add-end'
   if (key === 'enter' && input.alt && input.shift) return 'block:add-start'
   if (key === 'enter' && input.alt) return 'block:add-before'
   if (key === 'enter' && primary) return 'block:add-after'
   if (key === 'd' && primary && input.shift) return 'block:delete'
-  if (key === 'a' && primary) return 'block:select'
   if (key === 'arrowup' && primary && input.alt) return 'cursor:add-above'
   if (key === 'arrowdown' && primary && input.alt) return 'cursor:add-below'
   if (key === 'arrowup' && primary) return 'block:previous'
@@ -370,6 +533,7 @@ app.whenReady().then(async () => {
   applyRuntimeIcon()
   const basePath = path.join(app.getPath('userData'), 'notes')
   library = new FileLibrary(basePath)
+  aiSettings = new AiSettingsStore(app.getPath('userData'))
   await library.init()
   protocol.handle('vibenote-image', async request => {
     const fileName = decodeURIComponent(new URL(request.url).hostname || new URL(request.url).pathname.replace(/^\//, ''))
@@ -419,8 +583,21 @@ ipcMain.handle('buffer:archiveStream', (_event, name) => library.archiveStream(n
 ipcMain.handle('library:search', (_event, query) => startSearch(query))
 ipcMain.handle('image:save', (_event, payload) => library.saveImage(payload))
 ipcMain.handle('image:resolveLegacyUrl', (_event, url) => library.resolveLegacyImageUrl(url))
+ipcMain.handle('shell:openExternal', async (_event, url) => {
+  const parsed = new URL(url)
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('Only HTTP and HTTPS links can be opened')
+  }
+  await shell.openExternal(parsed.toString())
+  return true
+})
 ipcMain.handle('settings:get', () => nativeTheme.themeSource)
 ipcMain.handle('settings:setTheme', (_event, theme) => {
   nativeTheme.themeSource = theme
   return true
 })
+ipcMain.handle('ai:getSettings', () => aiSettings.readSettings())
+ipcMain.handle('ai:saveSettings', (_event, settings) => aiSettings.saveSettings(settings))
+ipcMain.handle('ai:setApiKey', (_event, apiKey) => aiSettings.setApiKey(apiKey))
+ipcMain.handle('ai:clearApiKey', () => aiSettings.clearApiKey())
+ipcMain.handle('ai:testConnection', () => aiSettings.testConnection())

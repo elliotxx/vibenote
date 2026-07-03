@@ -6,6 +6,16 @@ export type Settings = {
   fontSize: number
   tabSize: number
   defaultLanguage: string
+  ai: AiSettings
+}
+
+const defaultAiSettings: AiSettings = {
+  enabled: false,
+  provider: 'deepseek',
+  baseUrl: 'https://api.deepseek.com',
+  model: 'deepseek-chat',
+  hasApiKey: false,
+  keyStorage: 'none',
 }
 
 export const useWorkspaceStore = defineStore('workspace', () => {
@@ -18,6 +28,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     fontSize: 13,
     tabSize: 2,
     defaultLanguage: 'markdown',
+    ai: { ...defaultAiSettings },
   })
 
   function bufferTitle(path: string) {
@@ -27,8 +38,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   async function init() {
     const stored = localStorage.getItem('vibenote:settings')
     if (stored) {
-      Object.assign(settings, JSON.parse(stored))
+      const parsed = JSON.parse(stored)
+      Object.assign(settings, parsed)
+      settings.ai = { ...defaultAiSettings, ...parsed.ai, hasApiKey: false }
     }
+    settings.ai = { ...settings.ai, ...(await window.vibenote.ai.getSettings()) }
     await refreshBuffers()
     localStorage.removeItem('vibenote:openTabs')
     const stream = buffers.value.find(buffer => buffer.isScratch) || buffers.value[0]
@@ -101,9 +115,43 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     window.dispatchEvent(new CustomEvent('vibenote:goto-line', { detail: result }))
   }
 
-  function saveSettings() {
+  function aiSettingsPayload(): AiSettings {
+    return {
+      enabled: Boolean(settings.ai.enabled),
+      provider: settings.ai.provider,
+      baseUrl: settings.ai.baseUrl,
+      model: settings.ai.model,
+      hasApiKey: Boolean(settings.ai.hasApiKey),
+      keyStorage: settings.ai.keyStorage,
+    }
+  }
+
+  async function saveSettings() {
     localStorage.setItem('vibenote:settings', JSON.stringify(settings))
     window.vibenote.settings.setTheme(settings.theme)
+    try {
+      const saved = await window.vibenote.ai.saveSettings(aiSettingsPayload())
+      settings.ai = saved
+      localStorage.setItem('vibenote:settings', JSON.stringify(settings))
+    } catch (error) {
+      console.error('Failed to save AI settings', error)
+    }
+  }
+
+  async function setAiApiKey(apiKey: string) {
+    await window.vibenote.ai.saveSettings(aiSettingsPayload())
+    settings.ai = await window.vibenote.ai.setApiKey(apiKey)
+    localStorage.setItem('vibenote:settings', JSON.stringify(settings))
+  }
+
+  async function clearAiApiKey() {
+    settings.ai = await window.vibenote.ai.clearApiKey()
+    localStorage.setItem('vibenote:settings', JSON.stringify(settings))
+  }
+
+  async function testAiConnection() {
+    await saveSettings()
+    return window.vibenote.ai.testConnection()
   }
 
   return {
@@ -122,5 +170,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     searchLibrary,
     openSearchResult,
     saveSettings,
+    setAiApiKey,
+    clearAiApiKey,
+    testAiConnection,
   }
 })

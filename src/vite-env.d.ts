@@ -28,6 +28,26 @@ type EditorCommand =
   | 'cursor:add-above'
   | 'cursor:add-below'
   | 'language:focus'
+  | 'view:font-increase'
+  | 'view:font-decrease'
+  | 'view:font-reset'
+
+type AiProviderKind = 'openai' | 'deepseek' | 'custom-openai-compatible'
+type AiKeyStorageKind = 'none' | 'secure' | 'local-fallback' | 'unknown'
+
+type AiSettings = {
+  enabled: boolean
+  provider: AiProviderKind
+  baseUrl: string
+  model: string
+  hasApiKey: boolean
+  keyStorage: AiKeyStorageKind
+}
+
+type AiConnectionTestResult = {
+  ok: boolean
+  message: string
+}
 
 interface Window {
   vibenote: {
@@ -50,6 +70,16 @@ interface Window {
     settings: {
       getTheme(): Promise<string>
       setTheme(theme: string): Promise<boolean>
+    }
+    ai: {
+      getSettings(): Promise<AiSettings>
+      saveSettings(settings: AiSettings): Promise<AiSettings>
+      setApiKey(apiKey: string): Promise<AiSettings>
+      clearApiKey(): Promise<AiSettings>
+      testConnection(): Promise<AiConnectionTestResult>
+    }
+    shell: {
+      openExternal(url: string): Promise<boolean>
     }
     commands: {
       onEditorCommand(callback: (command: EditorCommand) => void): () => void

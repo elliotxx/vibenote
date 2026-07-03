@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
+const primaryClickModifier = process.platform === 'darwin' ? 'Meta' : 'Control'
 
 function markdownFixture(lines: string[]) {
   const created = '2026-07-02T09:00:00.000Z'
@@ -143,5 +144,29 @@ test.describe('markdown block writing enhancements', () => {
     await checkbox.click()
     await expect(checkbox).not.toBeChecked()
     await expect.poll(() => savedContent(page)).toContain('- [ ] task item')
+  })
+
+  test('opens markdown links only with the primary click modifier', async ({ page }) => {
+    const fixture = markdownFixture(['Read [docs](https://example.com/docs) before shipping.'])
+    await loadFixture(page, fixture)
+    await page.evaluate(() => {
+      ;(window as any).__openedExternal = []
+      ;(window.vibenote as any).shell = {
+        openExternal: async (url: string) => {
+          ;(window as any).__openedExternal.push(url)
+          return true
+        },
+      }
+    })
+
+    const link = page.locator('.tok-link').first()
+    await expect(link).toBeVisible()
+
+    await link.click()
+    await expect.poll(() => page.evaluate(() => (window as any).__openedExternal)).toEqual([])
+
+    await link.click({ modifiers: [primaryClickModifier] })
+    await expect.poll(() => page.evaluate(() => (window as any).__openedExternal)).toEqual(['https://example.com/docs'])
+    await expect.poll(() => savedContent(page)).toBe(fixture)
   })
 })

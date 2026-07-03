@@ -23,9 +23,19 @@ contextBridge.exposeInMainWorld('vibenote', {
     save: payload => ipcRenderer.invoke('image:save', payload),
     resolveLegacyUrl: url => ipcRenderer.invoke('image:resolveLegacyUrl', url),
   },
+  shell: {
+    openExternal: url => ipcRenderer.invoke('shell:openExternal', url),
+  },
   settings: {
     getTheme: () => ipcRenderer.invoke('settings:get'),
     setTheme: theme => ipcRenderer.invoke('settings:setTheme', theme),
+  },
+  ai: {
+    getSettings: () => ipcRenderer.invoke('ai:getSettings'),
+    saveSettings: settings => ipcRenderer.invoke('ai:saveSettings', settings),
+    setApiKey: apiKey => ipcRenderer.invoke('ai:setApiKey', apiKey),
+    clearApiKey: () => ipcRenderer.invoke('ai:clearApiKey'),
+    testConnection: () => ipcRenderer.invoke('ai:testConnection'),
   },
   commands: {
     onEditorCommand: callback => {
