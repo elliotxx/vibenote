@@ -456,4 +456,109 @@ test.describe('editor text selection shortcuts', () => {
     await expect(page.locator('.cm-content')).toContainText('Image note tail')
     await expect(page.locator('.cm-content')).not.toContainText('![image](</tmp/vibenote-e2e-image.png>)')
   })
+
+  test('keeps status actions visible at max editor font size', async ({ page }) => {
+    await page.setViewportSize({ width: 420, height: 520 })
+    await page.addInitScript(() => {
+      localStorage.setItem('vibenote:settings', JSON.stringify({
+        theme: 'light',
+        fontSize: 48,
+        tabSize: 2,
+        defaultLanguage: 'markdown',
+      }))
+    })
+    await loadFixture(page)
+
+    const actions = page.locator('.statusbar-actions .status-icon-button')
+    await expect(actions).toHaveCount(4)
+    await expect(actions.nth(3)).toBeVisible()
+
+    const layout = await page.evaluate(() => {
+      const viewportWidth = window.innerWidth
+      const footer = document.querySelector<HTMLElement>('.statusbar')?.getBoundingClientRect()
+      const boxes = Array.from(document.querySelectorAll<HTMLElement>('.statusbar-actions .status-icon-button'))
+        .map(button => button.getBoundingClientRect())
+      return {
+        viewportWidth,
+        footerRight: footer?.right ?? 0,
+        actionRights: boxes.map(box => box.right),
+      }
+    })
+
+    expect(layout.footerRight).toBeLessThanOrEqual(layout.viewportWidth)
+    expect(Math.max(...layout.actionRights)).toBeLessThanOrEqual(layout.viewportWidth)
+  })
+
+  test('supports editor font size shortcuts without page zoom', async ({ page }) => {
+    await loadFixture(page)
+
+    const editorFontSize = () => page.evaluate(() => {
+      const editor = document.querySelector<HTMLElement>('.cm-editor')
+      return Number.parseFloat(getComputedStyle(editor!).getPropertyValue('--editor-font-size'))
+    })
+
+    await expect.poll(editorFontSize).toBe(13)
+
+    await page.keyboard.down(modifier)
+    await page.keyboard.down('Shift')
+    await page.keyboard.press('=')
+    await page.keyboard.up('Shift')
+    await page.keyboard.up(modifier)
+    await expect.poll(editorFontSize).toBe(14)
+
+    await page.keyboard.press(`${modifier}+-`)
+    await expect.poll(editorFontSize).toBe(13)
+
+    await page.keyboard.down(modifier)
+    await page.keyboard.down('Shift')
+    await page.keyboard.press('=')
+    await page.keyboard.up('Shift')
+    await page.keyboard.up(modifier)
+    await expect.poll(editorFontSize).toBe(14)
+
+    await page.keyboard.press(`${modifier}+0`)
+    await expect.poll(editorFontSize).toBe(13)
+    await expect.poll(() => page.evaluate(() => window.visualViewport?.scale ?? 1)).toBe(1)
+  })
+
+  test('extends the last remaining block background after deleting a trailing block', async ({ page }) => {
+    const created = '2026-07-03T10:00:00.000Z'
+    const content = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
+      `---block:markdown;auto=1;created=${created}`,
+      'first block',
+      `---block:markdown;auto=1;created=${created}`,
+      'last visible block',
+      `---block:markdown;auto=1;created=${created}`,
+      'delete me',
+    ].join('\n')}`
+    await loadFixture(page, content)
+    await clickLine(page, 'delete me')
+    await page.getByTitle('Delete current block (Cmd/Ctrl+Shift+D)').click()
+
+    await expect(page.locator('.cm-content')).not.toContainText('delete me')
+    await expect(page.locator('.cm-editor')).toHaveClass(/last-block-odd/)
+
+    const colors = await page.evaluate(() => {
+      const editor = document.querySelector<HTMLElement>('.cm-editor')!
+      const content = document.querySelector<HTMLElement>('.cm-content')!
+      const gutter = document.querySelector<HTMLElement>('.cm-gutters')!
+      const probe = document.createElement('div')
+      document.body.append(probe)
+      probe.style.background = 'var(--surface-block-alt)'
+      const expectedContentBackground = getComputedStyle(probe).backgroundColor
+      probe.style.background = 'var(--surface-gutter-odd)'
+      const expectedGutterBackground = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      return {
+        editorClass: editor.className,
+        contentBackground: getComputedStyle(content).backgroundColor,
+        expectedContentBackground,
+        gutterBackground: getComputedStyle(gutter).backgroundColor,
+        expectedGutterBackground,
+      }
+    })
+
+    expect(colors.contentBackground).toBe(colors.expectedContentBackground)
+    expect(colors.gutterBackground).toBe(colors.expectedGutterBackground)
+  })
 })

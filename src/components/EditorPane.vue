@@ -240,6 +240,12 @@ function mountEditor() {
       blockField,
       blockDecorations,
       blockGutterDecorations,
+      EditorView.editorAttributes.compute([blockField], state => {
+        const blocks = state.field(blockField)
+        const lastIndex = blocks.length - 1
+        if (lastIndex < 0) return { class: '' }
+        return { class: lastIndex % 2 === 0 ? 'last-block-even' : 'last-block-odd' }
+      }),
       activeImageLineField,
       richDecorations,
       protectDelimiters,
@@ -1069,6 +1075,12 @@ function handleEditorShortcut(event: KeyboardEvent, editor: EditorView) {
     handled = moveToNextBlock(editor)
   } else if (key === 'l' && primary) {
     handled = focusLanguageSelector()
+  } else if ((key === '=' || key === '+') && primary) {
+    handled = adjustEditorFontSize(1)
+  } else if (key === '-' && primary) {
+    handled = adjustEditorFontSize(-1)
+  } else if (key === '0' && primary) {
+    handled = resetEditorFontSize()
   } else if (key === 'f' && event.altKey && event.shiftKey) {
     handled = formatBlockFromKeymap()
   } else if (key === 'b' && primary) {
@@ -1137,6 +1149,7 @@ function onWindowKeydown(event: KeyboardEvent) {
 
 function isFormControl(element: EventTarget | Element | null) {
   if (!(element instanceof Element)) return false
+  if (element.closest('.cm-editor')) return false
   return Boolean(element.closest('input, select, textarea, button, [contenteditable="true"]'))
 }
 

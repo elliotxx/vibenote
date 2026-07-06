@@ -97,6 +97,11 @@ async function main() {
   if (fs.existsSync(streamPath)) {
     backup = fs.readFileSync(streamPath)
   }
+  fs.mkdirSync(path.dirname(streamPath), { recursive: true })
+  fs.writeFileSync(
+    streamPath,
+    `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n---block:markdown;auto=1;created=2026-07-03T00:00:00.000Z\n`,
+  )
 
   await activateApp()
   console.log(`ok - ${productName} accepted activation before keyboard smoke`)
@@ -112,10 +117,13 @@ async function main() {
   console.log(`ok - screenshot captured at ${screenshotPath}`)
 
   const content = fs.readFileSync(streamPath, 'utf8')
-  const markerCount = (content.match(new RegExp(marker, 'g')) || []).length
+  const markerVariants = [`${marker}-one`, `${marker}-two`, `${marker}-before`]
+  const markerCount = markerVariants.filter(value => content.includes(value)).length
   const blockCount = (content.match(/---block:/g) || []).length
-  check(markerCount >= 1, 'runtime smoke text was saved')
-  check(blockCount >= 1, 'runtime smoke preserves block structure')
+  const markerBlocks = content.split(/---block:[^\n]+\n/).filter(block => markerVariants.some(value => block.includes(value)))
+  check(markerCount === markerVariants.length, 'runtime smoke text was saved')
+  check(blockCount >= 3, 'runtime shortcuts create separate blocks')
+  check(markerBlocks.length >= 3, 'runtime shortcut markers are distributed across blocks')
   check(!content.includes(`${marker}-before---block:`), 'block-before shortcut keeps delimiters on separate lines')
 }
 

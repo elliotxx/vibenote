@@ -437,7 +437,7 @@ function setupApplicationMenu() {
         },
         {
           label: 'Increase Editor Font Size',
-          accelerator: 'CommandOrControl+=',
+          accelerator: 'CommandOrControl+Plus',
           click: () => sendEditorCommandWhenFocused('view:font-increase'),
         },
         {

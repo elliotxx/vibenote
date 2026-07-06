@@ -36,7 +36,6 @@
 
 body {
   margin: 0;
-  min-width: 760px;
   min-height: 100vh;
   overflow: hidden;
 }
@@ -148,6 +147,22 @@ select:focus {
 .cm-editor {
   height: 100%;
   outline: none;
+}
+
+.cm-editor.last-block-even .cm-content {
+  background: var(--surface-editor);
+}
+
+.cm-editor.last-block-odd .cm-content {
+  background: var(--surface-block-alt);
+}
+
+.cm-editor.last-block-even .cm-gutters {
+  background: var(--surface-gutter-even);
+}
+
+.cm-editor.last-block-odd .cm-gutters {
+  background: var(--surface-gutter-odd);
 }
 
 .cm-editor .cm-selectionLayer {
@@ -356,7 +371,7 @@ select:focus {
 
 .statusbar {
   display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) max-content;
   align-items: center;
   gap: 10px;
   border-top: 1px solid var(--line);
@@ -365,6 +380,8 @@ select:focus {
   padding: 0 12px 0 16px;
   font-size: 12px;
   min-width: 0;
+  width: 100%;
+  overflow: hidden;
 }
 
 .statusbar-left,
@@ -378,6 +395,7 @@ select:focus {
 .statusbar-left {
   gap: 10px;
   justify-self: start;
+  overflow: hidden;
 }
 
 .statusbar-center {
@@ -394,9 +412,11 @@ select:focus {
 }
 
 .statusbar-actions {
+  flex: 0 0 auto;
   gap: 4px;
   justify-content: flex-end;
   justify-self: end;
+  min-width: max-content;
 }
 
 .status-pill {
@@ -417,8 +437,12 @@ select:focus {
   min-width: 0;
 }
 
+.status-control {
+  flex: 0 1 auto;
+}
+
 .status-control select {
-  width: 126px;
+  width: clamp(100px, 14vw, 126px);
   height: 28px;
   border-color: var(--line);
   background: var(--surface-control);
@@ -476,7 +500,7 @@ select:focus {
 
 @media (max-width: 1040px) {
   .statusbar {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) max-content;
     gap: 8px;
     padding-left: 12px;
   }
@@ -491,7 +515,7 @@ select:focus {
   }
 
   .status-control select {
-    width: 132px;
+    width: clamp(104px, 18vw, 126px);
   }
 }
 
@@ -506,7 +530,27 @@ select:focus {
   }
 
   .status-control select {
-    width: 118px;
+    width: clamp(96px, 28vw, 118px);
+  }
+}
+
+@media (max-width: 520px) {
+  .statusbar {
+    gap: 6px;
+    padding: 0 8px;
+  }
+
+  .status-toggle {
+    display: none;
+  }
+
+  .status-icon-button {
+    width: 26px;
+    height: 28px;
+  }
+
+  .status-control select {
+    width: 104px;
   }
 }
 
