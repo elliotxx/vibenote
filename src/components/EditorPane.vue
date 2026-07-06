@@ -216,10 +216,10 @@ function mountEditor() {
           minWidth: 'calc(var(--editor-font-size) * 1.8 + 18px)',
         },
         '.cm-activeLine': {
-          backgroundColor: 'oklch(95.5% 0.01 228)',
+          backgroundColor: 'var(--active-line-bg)',
         },
         '.cm-activeLineGutter': {
-          backgroundColor: 'oklch(95.5% 0.01 228)',
+          backgroundColor: 'var(--active-line-bg)',
           color: 'var(--ink-soft)',
           fontWeight: '700',
         },

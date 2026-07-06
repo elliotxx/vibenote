@@ -173,7 +173,7 @@ export const richDecorations = ViewPlugin.fromClass(
     }
 
     update(update: any) {
-      if (update.docChanged || update.selectionSet || hasActiveImageLineEffect(update)) {
+      if (update.docChanged || hasActiveImageLineEffect(update)) {
         this.decorations = buildRichDecorations(update.view)
       }
     }
@@ -235,12 +235,9 @@ function syntaxPatterns(language: string): Array<[string, RegExp]> {
     return [
       ['tok-code-block', /```[\s\S]*?```/g],
       ['tok-heading', /^#{1,6}\s.+$/gm],
-      ['tok-task', /^\s*[-*+]\s+\[[ xX]\]\s+.+$/gm],
-      ['tok-list', /^\s*(?:[-*+]\s+(?!\[[ xX]\]\s)|\d+\.\s+).+$/gm],
       ['tok-quote', /^>\s.*$/gm],
       ['tok-link', /(?<!!)\[[^\]\n]+]\((<[^>\n]+>|[^)\n]+)\)/g],
       ['tok-image', /!\[[^\]\n]*]\((<[^>\n]+>|[^)\n]+)\)/g],
-      ['tok-hr', /^\s{0,3}(?:[-*_]\s*){3,}$/gm],
       ['tok-inline-code', /`[^`\n]+`/g],
       ['tok-strong', /\*\*[^*\n]+\*\*/g],
     ]

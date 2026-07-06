@@ -561,4 +561,84 @@ test.describe('editor text selection shortcuts', () => {
     expect(colors.contentBackground).toBe(colors.expectedContentBackground)
     expect(colors.gutterBackground).toBe(colors.expectedGutterBackground)
   })
+
+  test('keeps markdown block row backgrounds consistent outside the active line', async ({ page }) => {
+    const created = '2026-07-03T10:00:00.000Z'
+    const content = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
+      `---block:text;auto=0;created=${created}`,
+      'first block',
+      `---block:markdown;auto=1;created=${created}`,
+      '- hello',
+      '- 你好啊',
+      '',
+      '[text](https://baidu.com)',
+      '',
+      '- [ ] fdsafds',
+      '- [ ] fdsafdsfdsaf',
+      '- [x] xxx',
+      '',
+      '1. dfsafds',
+      '2. dfsaf',
+      '',
+      '---',
+      '',
+      '> fdsafdsa',
+    ].join('\n')}`
+    await loadFixture(page, content)
+    await clickLine(page, 'xxx')
+
+    const colors = await page.evaluate(() => {
+      const probe = document.createElement('div')
+      document.body.append(probe)
+      probe.style.background = 'var(--surface-block-alt)'
+      const expectedBlockBackground = getComputedStyle(probe).backgroundColor
+      probe.remove()
+
+      return Array.from(document.querySelectorAll<HTMLElement>('.cm-line.block-odd'))
+        .filter(line => !line.classList.contains('cm-activeLine'))
+        .map(line => ({
+          text: line.textContent || '',
+          background: getComputedStyle(line).backgroundColor,
+          expectedBlockBackground,
+        }))
+    })
+
+    const checkedRows = colors.filter(row =>
+      row.text.includes('[text]') ||
+      row.text.includes('fdsafds') ||
+      row.text.includes('dfsafds') ||
+      row.text.includes('---') ||
+      row.text.includes('fdsafdsa')
+    )
+    expect(checkedRows.length).toBeGreaterThanOrEqual(5)
+    expect(checkedRows.every(row => row.background === row.expectedBlockBackground)).toBe(true)
+
+    for (const text of ['fdsafds', 'dfsafds', '---']) {
+      await clickLine(page, text)
+      await expect(page.locator('.cm-activeLine')).toContainText(text)
+      const activeLineColors = await page.evaluate(() => {
+        const activeLine = document.querySelector<HTMLElement>('.cm-activeLine')!
+        const probe = document.createElement('div')
+        document.body.append(probe)
+        probe.style.background = 'var(--active-line-bg)'
+        const expectedActiveBackground = getComputedStyle(probe).backgroundColor
+        probe.style.background = 'var(--surface-block-alt)'
+        const blockBackground = getComputedStyle(probe).backgroundColor
+        probe.style.background = 'var(--surface-editor)'
+        const evenBackground = getComputedStyle(probe).backgroundColor
+        probe.remove()
+        return {
+          text: activeLine.textContent || '',
+          background: getComputedStyle(activeLine).backgroundColor,
+          expectedActiveBackground,
+          blockBackground,
+          evenBackground,
+        }
+      })
+      expect(activeLineColors.text).toContain(text)
+      expect(activeLineColors.background).toBe(activeLineColors.expectedActiveBackground)
+      expect(activeLineColors.background).not.toBe(activeLineColors.blockBackground)
+      expect(activeLineColors.background).not.toBe(activeLineColors.evenBackground)
+    }
+  })
 })

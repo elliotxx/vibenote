@@ -6,6 +6,7 @@
   --surface-block-alt: oklch(96.6% 0.011 160);
   --surface-gutter-even: oklch(96.8% 0.008 232);
   --surface-gutter-odd: oklch(94.8% 0.01 162);
+  --active-line-bg: oklch(91.8% 0.025 222);
   --surface-control: oklch(98.6% 0.005 246);
   --ink: oklch(24% 0.034 250);
   --ink-soft: oklch(38% 0.032 250);
@@ -177,11 +178,16 @@ select:focus {
 }
 
 .block-even {
-  background: var(--surface-editor);
+  background-color: var(--surface-editor) !important;
 }
 
 .block-odd {
-  background: var(--surface-block-alt);
+  background-color: var(--surface-block-alt) !important;
+}
+
+.cm-activeLine,
+.cm-line.cm-activeLine {
+  background-color: var(--active-line-bg) !important;
 }
 
 .cm-line.block-delimiter-line {
