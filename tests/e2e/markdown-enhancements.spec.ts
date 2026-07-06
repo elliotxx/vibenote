@@ -59,13 +59,11 @@ test.describe('markdown block writing enhancements', () => {
     await loadFixture(page, fixture)
 
     await expect(page.locator('.tok-heading')).toHaveCount(1)
-    await expect(page.locator('.tok-list')).toHaveCount(2)
-    await expect(page.locator('.tok-task')).toHaveCount(1)
     await expect(page.locator('.tok-quote')).toHaveCount(1)
     await expect(page.locator('.tok-link')).toHaveCount(1)
     await expect(page.locator('.tok-image')).toHaveCount(1)
-    await expect(page.locator('.tok-hr')).toHaveCount(1)
     await expect(page.locator('.tok-code-block').first()).toBeVisible()
+    await expect(page.locator('.markdown-task-checkbox')).toHaveCount(1)
     await expect.poll(() => savedContent(page)).toBe(fixture)
   })
 

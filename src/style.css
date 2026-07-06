@@ -317,12 +317,38 @@ select:focus {
 }
 
 .markdown-task-checkbox {
-  width: 14px;
-  height: 14px;
-  margin: 0 3px 0 0;
-  vertical-align: -2px;
-  accent-color: var(--ink-soft);
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  font-size: var(--editor-font-size);
+  width: max(12px, 0.62em);
+  height: max(12px, 0.62em);
+  margin: 0;
+  padding: 0;
+  border: max(1px, 0.035em) solid oklch(54% 0.012 246);
+  border-radius: max(3px, 0.07em);
+  background: var(--surface-editor);
+  vertical-align: 0.16em;
   cursor: pointer;
+}
+
+.markdown-task-checkbox::after {
+  content: '';
+  width: 0.17em;
+  height: 0.31em;
+  border: solid var(--surface-editor);
+  border-width: 0 max(2px, 0.035em) max(2px, 0.035em) 0;
+  transform: rotate(45deg) scale(0);
+  transform-origin: center;
+}
+
+.markdown-task-checkbox:checked {
+  border-color: var(--ink-soft);
+  background: var(--ink-soft);
+}
+
+.markdown-task-checkbox:checked::after {
+  transform: rotate(45deg) scale(1);
 }
 
 .image-widget {
