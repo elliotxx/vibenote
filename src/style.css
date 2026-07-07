@@ -21,6 +21,7 @@
   --danger: oklch(54% 0.13 24);
   --status-bg: oklch(94.7% 0.01 238);
   --shadow-modal: oklch(24% 0.034 250 / 0.2);
+  --block-toolbar-safe-space: 110px;
   color: var(--ink);
   background: var(--surface-app);
   font-family:
@@ -133,6 +134,7 @@ select:focus {
 }
 
 .editor-pane {
+  position: relative;
   display: grid;
   grid-template-rows: 1fr 36px;
   min-height: 0;
@@ -175,6 +177,10 @@ select:focus {
   border-radius: 0;
   background-color: oklch(80.5% 0.058 252 / 0.62) !important;
   box-shadow: none;
+}
+
+.cm-editor .cm-line {
+  padding-right: var(--block-toolbar-safe-space) !important;
 }
 
 .block-even {
@@ -399,6 +405,58 @@ select:focus {
 .math-result {
   color: var(--success);
   font-weight: 700;
+}
+
+.block-toolbar {
+  position: absolute;
+  right: 18px;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-control);
+  box-shadow: 0 6px 18px oklch(24% 0.034 250 / 0.1);
+}
+
+.block-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.block-action-button:hover {
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.block-action-button:disabled {
+  color: var(--faint);
+  background: transparent;
+  cursor: default;
+  opacity: 0.55;
+}
+
+.block-action-button.danger {
+  color: var(--danger);
+}
+
+@media (max-width: 640px) {
+  :root {
+    --block-toolbar-safe-space: 92px;
+  }
+
+  .block-toolbar {
+    right: 12px;
+  }
 }
 
 .statusbar {

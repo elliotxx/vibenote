@@ -489,6 +489,89 @@ test.describe('editor text selection shortcuts', () => {
     expect(Math.max(...layout.actionRights)).toBeLessThanOrEqual(layout.viewportWidth)
   })
 
+  test('shows block actions only for the focused editor block', async ({ page }) => {
+    await loadFixture(page)
+
+    const toolbar = page.locator('.block-toolbar')
+    await expect(toolbar).toBeVisible()
+    await expect(toolbar.locator('.block-action-button')).toHaveCount(3)
+
+    const firstBox = await toolbar.boundingBox()
+    expect(firstBox).not.toBeNull()
+
+    await clickLine(page, '{"service"')
+    await expect(toolbar).toBeVisible()
+    const secondBox = await toolbar.boundingBox()
+    expect(secondBox).not.toBeNull()
+    expect(secondBox!.y).toBeGreaterThan(firstBox!.y)
+
+    await page.locator('.status-language select').click()
+    await expect(toolbar).toBeHidden()
+  })
+
+  test('keeps block actions out of long wrapped text', async ({ page }) => {
+    const created = '2026-07-01T10:38:41.565Z'
+    const content = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
+      `---block:markdown;auto=1;created=${created}`,
+      '本周目标：业务规模化 2人日（member-b1、member-c0.7、member-a0.3）、稳定性收敛 1人日（member-c0.3、member-a0.7）、评测+成本 1人日（member-d 1）',
+      '2026.7.6-26.7.10',
+    ].join('\n')}`
+
+    await loadFixture(page, content)
+    await clickLine(page, '本周目标')
+
+    const overlap = await page.evaluate(() => {
+      const toolbar = document.querySelector<HTMLElement>('.block-toolbar')?.getBoundingClientRect()
+      const line = Array.from(document.querySelectorAll<HTMLElement>('.cm-line'))
+        .find(element => (element.textContent || '').includes('本周目标'))
+      if (!toolbar || !line) return true
+      const range = document.createRange()
+      range.selectNodeContents(line)
+      const textRects = Array.from(range.getClientRects()).filter(rect => rect.width > 0 && rect.height > 0)
+      range.detach()
+      return textRects.some(rect =>
+        rect.right > toolbar.left &&
+        rect.left < toolbar.right &&
+        rect.bottom > toolbar.top &&
+        rect.top < toolbar.bottom,
+      )
+    })
+
+    expect(overlap).toBe(false)
+  })
+
+  test('keeps block actions pinned while scrolling inside a long focused block', async ({ page }) => {
+    const created = '2026-07-01T10:38:41.565Z'
+    const lines = Array.from({ length: 90 }, (_, index) => `line ${String(index + 1).padStart(2, '0')} long block content`)
+    const content = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
+      `---block:markdown;auto=1;created=${created}`,
+      ...lines,
+      `---block:markdown;auto=1;created=${created}`,
+      'after long block',
+    ].join('\n')}`
+
+    await loadFixture(page, content)
+    await clickLine(page, 'line 01')
+
+    const toolbar = page.locator('.block-toolbar')
+    await expect(toolbar).toBeVisible()
+
+    await page.evaluate(() => {
+      const scroller = document.querySelector<HTMLElement>('.cm-scroller')
+      if (!scroller) throw new Error('Missing editor scroller')
+      scroller.scrollTop = 900
+      scroller.dispatchEvent(new Event('scroll'))
+    })
+
+    await expect(toolbar).toBeVisible()
+    await expect.poll(() => page.evaluate(() => {
+      const toolbarRect = document.querySelector<HTMLElement>('.block-toolbar')?.getBoundingClientRect()
+      const hostRect = document.querySelector<HTMLElement>('.editor-host')?.getBoundingClientRect()
+      if (!toolbarRect || !hostRect) return null
+      return Math.round(toolbarRect.top - hostRect.top)
+    })).toBeLessThanOrEqual(12)
+  })
+
   test('supports editor font size shortcuts without page zoom', async ({ page }) => {
     await loadFixture(page)
 

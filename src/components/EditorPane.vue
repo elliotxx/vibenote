@@ -42,10 +42,13 @@ const cursorLabel = ref('1:1')
 const saving = ref(false)
 const aiBusy = ref(false)
 const aiStatus = ref('')
+const blockToolbar = ref({ visible: false, top: 0 })
 let view: EditorView | null = null
 let note: LoadedNote | null = null
 let saveTimer: number | null = null
 let aiStatusTimer: number | null = null
+let blockToolbarFrame: number | null = null
+let editorScrollElement: HTMLElement | null = null
 let unsubscribeEditorCommand: (() => void) | null = null
 const EDITOR_FONT_MIN = 11
 const EDITOR_FONT_MAX = 48
@@ -91,6 +94,7 @@ onMounted(() => {
   window.addEventListener('vibenote:goto-line', onGotoLine as EventListener)
   window.addEventListener('keydown', onWindowKeydown)
   window.addEventListener('focus', onWindowFocus)
+  window.addEventListener('resize', onWindowResize)
   window.addEventListener('beforeunload', flushSaveSync)
   window.addEventListener('pagehide', flushSaveSync)
 })
@@ -98,11 +102,15 @@ onMounted(() => {
 onBeforeUnmount(() => {
   flushSaveSync()
   if (aiStatusTimer) window.clearTimeout(aiStatusTimer)
+  if (blockToolbarFrame) window.cancelAnimationFrame(blockToolbarFrame)
+  editorScrollElement?.removeEventListener('scroll', onEditorScroll)
+  editorScrollElement = null
   unsubscribeEditorCommand?.()
   unsubscribeEditorCommand = null
   window.removeEventListener('vibenote:goto-line', onGotoLine as EventListener)
   window.removeEventListener('keydown', onWindowKeydown)
   window.removeEventListener('focus', onWindowFocus)
+  window.removeEventListener('resize', onWindowResize)
   window.removeEventListener('beforeunload', flushSaveSync)
   window.removeEventListener('pagehide', flushSaveSync)
   view?.destroy()
@@ -326,21 +334,25 @@ function mountEditor() {
         if (update.docChanged) {
           scheduleSave()
         }
-        if (update.docChanged || update.selectionSet) {
+        if (update.docChanged || update.selectionSet || update.focusChanged || update.viewportChanged) {
           clearImageEditWhenSelectionLeaves(update.view)
           updateImageFocusClass(update.view)
           if (normalizeSelectionToBlockContent(update.view)) return
           updateStatus(update.view)
+          scheduleBlockToolbarUpdate(update.view)
         }
       }),
     ],
   })
 
   view = new EditorView({ state, parent: editorHost.value })
+  editorScrollElement = view.scrollDOM
+  editorScrollElement.addEventListener('scroll', onEditorScroll, { passive: true })
   applyEditorViewSettings(view)
   moveCursorToEditableContent(view)
   updateImageFocusClass(view)
   updateStatus(view)
+  scheduleBlockToolbarUpdate(view)
   view.focus()
 }
 
@@ -726,6 +738,55 @@ function updateStatus(editor: EditorView) {
   cursorLabel.value = `${line.number - blockStartLine + 1}:${editor.state.selection.main.head - line.from + 1}`
 }
 
+function scheduleBlockToolbarUpdate(editor = view) {
+  if (blockToolbarFrame) {
+    window.cancelAnimationFrame(blockToolbarFrame)
+  }
+  blockToolbarFrame = window.requestAnimationFrame(() => {
+    blockToolbarFrame = null
+    updateBlockToolbar(editor)
+  })
+}
+
+function updateBlockToolbar(editor: EditorView | null) {
+  if (!editor || !editorHost.value || !editor.hasFocus) {
+    blockToolbar.value = { ...blockToolbar.value, visible: false }
+    return
+  }
+
+  const block = activeBlock(editor.state)
+  if (!block) {
+    blockToolbar.value = { ...blockToolbar.value, visible: false }
+    return
+  }
+
+  const blockIsVisible = editor.visibleRanges.some(range =>
+    range.to >= block.content.from && range.from <= block.content.to,
+  )
+  if (!blockIsVisible) {
+    blockToolbar.value = { ...blockToolbar.value, visible: false }
+    return
+  }
+
+  const line = editor.state.doc.lineAt(block.content.from)
+  const coords = editor.coordsAtPos(line.from)
+  const hostRect = editorHost.value.getBoundingClientRect()
+  const stickyTop = 8
+  const blockStartTop = coords ? coords.top - hostRect.top + 4 : stickyTop
+  blockToolbar.value = {
+    visible: true,
+    top: Math.max(stickyTop, blockStartTop),
+  }
+}
+
+function onEditorScroll() {
+  scheduleBlockToolbarUpdate()
+}
+
+function onWindowResize() {
+  scheduleBlockToolbarUpdate()
+}
+
 function scheduleSave() {
   if (saveTimer) window.clearTimeout(saveTimer)
   saveTimer = window.setTimeout(() => {
@@ -761,6 +822,14 @@ function flushSaveSync() {
 function addBlock() {
   if (!view) return
   insertBlock(view, store.settings.defaultLanguage, true)
+  scheduleSave()
+}
+
+function addBlockAfterActive() {
+  if (!view) return
+  insertBlockAfterCurrent(view, store.settings.defaultLanguage, true)
+  updateStatus(view)
+  scheduleBlockToolbarUpdate(view)
   scheduleSave()
 }
 
@@ -1337,6 +1406,39 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
         <span v-if="statusMessage" class="status-feedback" :class="statusTone">
           {{ statusMessage }}
         </span>
+      </div>
+
+      <div
+        v-if="blockToolbar.visible"
+        class="block-toolbar"
+        :style="{ top: `${blockToolbar.top}px` }"
+        aria-label="当前块操作"
+      >
+        <button
+          class="block-action-button"
+          title="在此块后新建块（Cmd/Ctrl+Enter）"
+          @mousedown.prevent
+          @click="addBlockAfterActive"
+        >
+          <FilePlus2 :size="14" />
+        </button>
+        <button
+          class="block-action-button"
+          :disabled="aiBusy || !store.settings.ai.enabled || !store.settings.ai.hasApiKey"
+          title="AI 根据选区或此块生成新块"
+          @mousedown.prevent
+          @click="runAiSuggestion"
+        >
+          <Sparkles :size="14" />
+        </button>
+        <button
+          class="block-action-button danger"
+          title="删除此块（Cmd/Ctrl+Shift+D）"
+          @mousedown.prevent
+          @click="removeBlock"
+        >
+          <Trash2 :size="14" />
+        </button>
       </div>
 
       <div class="statusbar-actions">
