@@ -49,6 +49,18 @@ type AiConnectionTestResult = {
   message: string
 }
 
+type AiCompletionRequest = {
+  input: string
+  language: string
+  scope: 'selection' | 'block'
+}
+
+type AiCompletionResult = {
+  ok: boolean
+  message: string
+  content: string
+}
+
 interface Window {
   vibenote: {
     buffer: {
@@ -77,6 +89,7 @@ interface Window {
       setApiKey(apiKey: string): Promise<AiSettings>
       clearApiKey(): Promise<AiSettings>
       testConnection(): Promise<AiConnectionTestResult>
+      complete(payload: AiCompletionRequest): Promise<AiCompletionResult>
     }
     shell: {
       openExternal(url: string): Promise<boolean>

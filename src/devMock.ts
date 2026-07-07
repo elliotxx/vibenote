@@ -165,6 +165,17 @@ export function installDevMock() {
         if (!settings.model.trim()) return { ok: false, message: 'Model is required' }
         return { ok: true, message: 'Connection OK' }
       },
+      async complete(payload: AiCompletionRequest) {
+        const settings = readMockAiSettings()
+        if (!settings.enabled) return { ok: false, message: 'AI is disabled', content: '' }
+        if (!settings.hasApiKey) return { ok: false, message: 'API key is required', content: '' }
+        if (!payload.input.trim()) return { ok: false, message: 'Nothing to send to AI', content: '' }
+        return {
+          ok: true,
+          message: 'AI suggestion inserted',
+          content: `AI suggestion for ${payload.scope}: ${payload.input.trim()}`,
+        }
+      },
     },
     shell: {
       async openExternal(url: string) {

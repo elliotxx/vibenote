@@ -38,7 +38,13 @@ async function createMockProvider() {
       body,
     })
     response.writeHead(200, { 'content-type': 'application/json' })
-    response.end(JSON.stringify({ choices: [{ message: { content: 'OK' } }] }))
+    if (body.includes('Reply with OK.')) {
+      response.end(JSON.stringify({ choices: [{ message: { content: 'OK' } }] }))
+      return
+    }
+    response.end(JSON.stringify({
+      output: [{ content: [{ type: 'output_text', text: 'AI generated note\\n- keep format' }] }],
+    }))
   })
 
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -73,7 +79,7 @@ async function main() {
     await page.waitForSelector('.cm-editor', { timeout: 15000 })
     ok('packaged app opened with an isolated user data directory')
 
-    await page.getByRole('button', { name: 'Settings' }).click()
+    await page.getByTitle('设置').click()
     await page.getByRole('heading', { name: 'AI' }).waitFor({ timeout: 10000 })
     ok('AI settings section is visible')
 
@@ -105,27 +111,54 @@ async function main() {
     await page.getByRole('button', { name: 'Test connection' }).click()
     await page.getByText('Connection OK').waitFor({ timeout: 10000 })
 
-    if (provider.requests.length !== 2) {
-      fail(`expected 2 provider requests, got ${provider.requests.length}`)
+    await page.getByTitle('Close settings').click()
+    await page.locator('.cm-content').click()
+    await page.keyboard.type('AI setting note')
+    await page.getByTitle('AI 根据选区或当前块生成新块').click()
+    await page.getByText('AI generated note').waitFor({ timeout: 10000 })
+    await page.getByText('- keep format').waitFor({ timeout: 10000 })
+    ok('AI suggestions can be inserted as a new block')
+
+    if (provider.requests.length !== 3) {
+      fail(`expected 3 provider requests, got ${provider.requests.length}`)
     }
 
-    for (const request of provider.requests) {
+    for (const request of provider.requests.slice(0, 2)) {
       if (request.url !== '/v1/chat/completions') {
         fail(`unexpected provider request path: ${request.url}`)
       }
       if (!request.authorization.startsWith('Bearer ')) {
         fail('provider request is missing bearer authorization')
       }
-      if (request.body.includes('Drop plain text notes here') || request.body.includes('AI setting note')) {
-        fail('provider request leaked note content')
-      }
       if (!request.body.includes('Reply with OK.')) {
         fail('provider request did not use the connection-test smoke prompt')
       }
     }
+
+    const suggestionRequest = provider.requests[2]
+    if (suggestionRequest.url !== '/v1/chat/completions') {
+      fail(`unexpected suggestion request path: ${suggestionRequest.url}`)
+    }
+    if (!suggestionRequest.authorization.startsWith('Bearer ')) {
+      fail('suggestion request is missing bearer authorization')
+    }
+    if (!suggestionRequest.body.includes('AI setting note')) {
+      fail('suggestion request did not include the current block text')
+    }
+    if (!suggestionRequest.body.includes('Use the entire current block below as context.')) {
+      fail('suggestion request did not use the current-block prompt')
+    }
+    if (!suggestionRequest.body.includes('Do not summarize it into a single sentence.')) {
+      fail('suggestion request did not guard against single-line summaries')
+    }
+    if (suggestionRequest.body.includes('AI generated note')) {
+      fail('suggestion request leaked generated content back to the provider')
+    }
     ok('provider requests use the normalized chat completions path')
     ok('connection test sends only the short smoke prompt')
 
+    await page.getByTitle('设置').click()
+    await page.getByRole('heading', { name: 'AI' }).waitFor({ timeout: 10000 })
     await page.getByRole('button', { name: 'Clear' }).click()
     await page.getByText('API key cleared').waitFor({ timeout: 10000 })
     ok('API key can be cleared from the packaged app')

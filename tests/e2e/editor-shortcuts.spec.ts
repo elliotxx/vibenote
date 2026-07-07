@@ -533,7 +533,7 @@ test.describe('editor text selection shortcuts', () => {
     ].join('\n')}`
     await loadFixture(page, content)
     await clickLine(page, 'delete me')
-    await page.getByTitle('Delete current block (Cmd/Ctrl+Shift+D)').click()
+    await page.getByTitle('删除当前块（Cmd/Ctrl+Shift+D）').click()
 
     await expect(page.locator('.cm-content')).not.toContainText('delete me')
     await expect(page.locator('.cm-editor')).toHaveClass(/last-block-odd/)

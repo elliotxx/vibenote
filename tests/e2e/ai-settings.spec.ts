@@ -2,27 +2,27 @@ import { expect, test, type Page } from '@playwright/test'
 
 const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
 
-function fixtureContent() {
+function fixtureContent(lines = ['AI setting note']) {
   const created = '2026-07-02T12:00:00.000Z'
   return `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
     `---block:markdown;auto=1;created=${created}`,
-    'AI setting note',
+    ...lines,
   ].join('\n')}`
 }
 
-async function loadFixture(page: Page) {
+async function loadFixture(page: Page, lines?: string[]) {
   await page.addInitScript((content) => {
     localStorage.clear()
     localStorage.setItem('vibenote:mock-buffers', JSON.stringify([
       { path: 'stream.txt', name: 'Stream', tags: [], isScratch: true, content },
     ]))
-  }, fixtureContent())
+  }, fixtureContent(lines))
   await page.goto('/')
   await expect(page.locator('.cm-editor')).toBeVisible()
 }
 
 async function openSettings(page: Page) {
-  await page.getByRole('button', { name: 'Settings' }).click()
+  await page.getByTitle('设置').click()
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
 }
 
@@ -165,6 +165,43 @@ test.describe('AI settings', () => {
       selectionEnd: 'deepseek-chat'.length,
     })
     await expect.poll(() => hasNoVisibleEditorSelection(page)).toBe(true)
+  })
+
+  test('uses the whole current block as AI context when there is no selection', async ({ page }) => {
+    const blockLines = [
+      'first context line',
+      '- keep this list item',
+      'last context line',
+    ]
+    await loadFixture(page, blockLines)
+    await openSettings(page)
+
+    await page.getByLabel('Enable AI').check()
+    await page.getByLabel('API Key').fill('test-api-key-value')
+    await page.getByRole('button', { name: 'Save API key' }).click()
+    await expect(page.getByText('API key saved locally and hidden')).toBeVisible()
+    await page.getByTitle('Close settings').click()
+
+    await page.evaluate(() => {
+      ;(window as any).__aiPayloads = []
+      window.vibenote.ai.complete = async (payload: AiCompletionRequest) => {
+        ;(window as any).__aiPayloads.push(payload)
+        return { ok: true, message: 'AI suggestion inserted', content: 'generated from block' }
+      }
+    })
+
+    await page.getByText('- keep this list item').click()
+    await expect.poll(() => hasNoVisibleEditorSelection(page)).toBe(true)
+    await page.getByTitle('AI 根据选区或当前块生成新块').click()
+    await expect(page.getByText('generated from block')).toBeVisible()
+
+    await expect.poll(() => page.evaluate(() => (window as any).__aiPayloads)).toEqual([
+      {
+        input: blockLines.join('\n'),
+        language: 'markdown',
+        scope: 'block',
+      },
+    ])
   })
 
   test('shows readable connection errors without exposing request secrets', async ({ page }) => {

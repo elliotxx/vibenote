@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('vibenote', {
     setApiKey: apiKey => ipcRenderer.invoke('ai:setApiKey', apiKey),
     clearApiKey: () => ipcRenderer.invoke('ai:clearApiKey'),
     testConnection: () => ipcRenderer.invoke('ai:testConnection'),
+    complete: payload => ipcRenderer.invoke('ai:complete', payload),
   },
   commands: {
     onEditorCommand: callback => {

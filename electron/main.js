@@ -299,6 +299,75 @@ class AiSettingsStore {
     return `${baseUrl}/chat/completions`
   }
 
+  textFromAiValue(value) {
+    if (typeof value === 'string') return value
+    if (Array.isArray(value)) {
+      return value
+        .map(item => {
+          if (typeof item === 'string') return item
+          if (typeof item?.text === 'string') return item.text
+          if (typeof item?.text?.value === 'string') return item.text.value
+          if (typeof item?.content === 'string') return item.content
+          if (Array.isArray(item?.content)) return this.textFromAiValue(item.content)
+          return ''
+        })
+        .filter(Boolean)
+        .join('\n')
+    }
+    return ''
+  }
+
+  normalizeAiContent(content) {
+    const normalized = String(content || '')
+      .replace(/\r\n?/g, '\n')
+      .trim()
+
+    if (!normalized.includes('\n') && normalized.includes('\\n')) {
+      return normalized.replace(/\\n/g, '\n').replace(/\\t/g, '  ').trim()
+    }
+
+    return normalized
+  }
+
+  contentFromChatResponse(data) {
+    const choice = data?.choices?.[0]
+    const responseOutputContent = Array.isArray(data?.output)
+      ? data.output.flatMap(item => item?.content || [])
+      : []
+    return this.normalizeAiContent(
+      this.textFromAiValue(choice?.message?.content) ||
+      this.textFromAiValue(choice?.text) ||
+      this.textFromAiValue(data?.output_text) ||
+      this.textFromAiValue(responseOutputContent),
+    )
+  }
+
+  aiCompletionPrompt({ scope, language, input, isSelection }) {
+    const instruction = isSelection
+      ? [
+          'Rewrite or expand the selected note text below as a useful new note block.',
+          'Keep the selected text structure unless it is clearly malformed.',
+          'If the selection has multiple lines, keep a multi-line shape.',
+        ]
+      : [
+          'Use the entire current block below as context.',
+          'Create a useful follow-up note block from that full context.',
+          'Do not summarize it into a single sentence.',
+          'Prefer a concise multi-line structure: short heading plus bullets, or grouped bullets when that fits the source.',
+          'Carry over the important details, names, decisions, tasks, and open questions from the block.',
+        ]
+
+    return [
+      `Source scope: ${scope}.`,
+      `Source language: ${language}.`,
+      ...instruction,
+      'Keep the original language.',
+      'Return only the new block content.',
+      '',
+      input,
+    ].join('\n')
+  }
+
   async testConnection() {
     const settings = await this.readSettings()
     if (!settings.enabled) {
@@ -332,6 +401,80 @@ class AiSettingsStore {
       return { ok: true, message: 'Connection OK' }
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : 'Connection failed' }
+    }
+  }
+
+  async complete(payload) {
+    const settings = await this.readSettings()
+    const input = String(payload?.input || '').trim()
+    const language = String(payload?.language || 'markdown').trim() || 'markdown'
+    const isSelection = payload?.scope === 'selection'
+    const scope = isSelection ? 'selection' : 'current block'
+
+    if (!settings.enabled) {
+      return { ok: false, message: 'AI is disabled', content: '' }
+    }
+    if (!settings.hasApiKey) {
+      return { ok: false, message: 'API key is required', content: '' }
+    }
+    if (!settings.model) {
+      return { ok: false, message: 'Model is required', content: '' }
+    }
+    if (!input) {
+      return { ok: false, message: 'Nothing to send to AI', content: '' }
+    }
+
+    try {
+      const response = await fetch(this.endpointFor(settings), {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${await this.readApiKey()}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: settings.model,
+          messages: [
+            {
+              role: 'system',
+              content: [
+                'You are Vibenote, an AI-native plain text note assistant.',
+                'Return only the note content that should be inserted as a new block.',
+                'Preserve the source structure: keep line breaks, list markers, indentation, and paragraph spacing.',
+                'Do not collapse multi-line input into one paragraph.',
+                'For multi-line source text, return a multi-line result.',
+                'Never truncate with ellipses or leave a sentence unfinished.',
+                'If the source is already useful, return a lightly cleaned or expanded version; never return an empty response.',
+                'If there is no useful improvement to make, return the original source text exactly.',
+                'Do not include markdown fences unless they are part of the useful note.',
+                'Do not output Vibenote block delimiter metadata.',
+              ].join(' '),
+            },
+            {
+              role: 'user',
+              content: this.aiCompletionPrompt({ scope, language, input, isSelection }),
+            },
+          ],
+          max_tokens: 1400,
+          temperature: 0.3,
+        }),
+      })
+
+      if (!response.ok) {
+        return { ok: false, message: `AI request failed (${response.status})`, content: '' }
+      }
+
+      const data = await response.json()
+      const content = this.contentFromChatResponse(data)
+      if (!content) {
+        return { ok: true, message: 'AI kept the current block', content: input }
+      }
+      return { ok: true, message: 'AI suggestion inserted', content }
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : 'AI request failed',
+        content: '',
+      }
     }
   }
 }
@@ -601,3 +744,4 @@ ipcMain.handle('ai:saveSettings', (_event, settings) => aiSettings.saveSettings(
 ipcMain.handle('ai:setApiKey', (_event, apiKey) => aiSettings.setApiKey(apiKey))
 ipcMain.handle('ai:clearApiKey', () => aiSettings.clearApiKey())
 ipcMain.handle('ai:testConnection', () => aiSettings.testConnection())
+ipcMain.handle('ai:complete', (_event, payload) => aiSettings.complete(payload))

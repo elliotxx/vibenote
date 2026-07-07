@@ -4,7 +4,7 @@ import { addCursorAbove, addCursorBelow, defaultKeymap, history, historyKeymap, 
 import { lineNumbers, keymap, drawSelection, highlightActiveLine, EditorView } from '@codemirror/view'
 import { searchKeymap } from '@codemirror/search'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Code2, FilePlus2, Keyboard, Settings, Trash2, Wand2 } from 'lucide-vue-next'
+import { Code2, FilePlus2, Keyboard, Settings, Sparkles, Trash2 } from 'lucide-vue-next'
 import * as prettier from 'prettier/standalone'
 import { blockDelimiter, loadNote, serializeNote, type LoadedNote } from '../common/noteFormat'
 import { getLanguage, languages } from '../common/languages'
@@ -40,6 +40,8 @@ const languageSelect = ref<HTMLSelectElement | null>(null)
 const currentBlock = ref<ScratchBlock | null>(null)
 const cursorLabel = ref('1:1')
 const saving = ref(false)
+const aiBusy = ref(false)
+const aiStatus = ref('')
 let view: EditorView | null = null
 let note: LoadedNote | null = null
 let saveTimer: number | null = null
@@ -77,12 +79,12 @@ const cursorStatus = computed(() => {
 
 const shortcutSummary = '⌘↵ New · ⌥↵ Before · ⇧⌘↵ End · ⇧⌥F Format'
 const shortcutTitle = [
-  'Cmd/Ctrl+Enter: new block after current',
-  'Alt+Enter: new block before current',
-  'Cmd/Ctrl+Alt+Enter: split current block',
-  'Cmd/Ctrl+Shift+D: delete current block',
-  'Cmd/Ctrl+Up/Down: move between blocks',
-  'Shift+Alt+F: format current block',
+  'Cmd/Ctrl+Enter：在当前块后新建块',
+  'Alt+Enter：在当前块前新建块',
+  'Cmd/Ctrl+Alt+Enter：拆分当前块',
+  'Cmd/Ctrl+Shift+D：删除当前块',
+  'Cmd/Ctrl+Up/Down：在块之间移动',
+  'Shift+Alt+F：格式化当前块',
 ].join('\n')
 
 onMounted(() => {
@@ -379,6 +381,69 @@ function visibleSelectionText(editor: EditorView) {
   return ranges
     .map(range => visibleTextForRange(editor.state, range.from, range.to))
     .join('\n')
+}
+
+function sameBlockPosition(block: ScratchBlock | null, candidate: ScratchBlock) {
+  return Boolean(block &&
+    block.delimiter.from === candidate.delimiter.from &&
+    block.content.from === candidate.content.from &&
+    block.range.to === candidate.range.to)
+}
+
+function blockForAiSource(editor: EditorView) {
+  const blocks = editor.state.field(blockField)
+  const head = editor.state.selection.main.head
+  const inContent = blocks.find(block => block.content.from <= head && block.content.to >= head)
+  if (inContent) return inContent
+
+  const active = activeBlock(editor.state)
+  if (active) return active
+
+  const matchingCurrent = blocks.find(block => sameBlockPosition(currentBlock.value, block))
+  if (matchingCurrent) return matchingCurrent
+
+  return blocks.find(block => block.content.to >= head) || blocks[blocks.length - 1]
+}
+
+function aiSourceForEditor(editor: EditorView) {
+  const selected = visibleSelectionText(editor)?.trim()
+  const block = blockForAiSource(editor)
+  const blockText = block
+    ? editor.state.doc.sliceString(block.content.from, block.content.to).trim()
+    : ''
+  return {
+    input: selected || blockText,
+    language: block?.language || store.settings.defaultLanguage,
+    scope: selected ? 'selection' as const : 'block' as const,
+  }
+}
+
+function sanitizeAiBlockContent(content: string) {
+  return content
+    .replace(/^---block:.*$/gm, '---')
+    .trim()
+}
+
+function insertAiBlockAfterCurrent(editor: EditorView, content: string) {
+  const cleanContent = sanitizeAiBlockContent(content)
+  if (!cleanContent) return false
+
+  const blocks = editor.state.field(blockField)
+  const block = activeBlock(editor.state) || blocks[blocks.length - 1]
+  const position = block?.range.to ?? editor.state.doc.length
+  const delimiter = blockDelimiter('markdown', false)
+  const insert = `${delimiter}${cleanContent}`
+
+  editor.dispatch({
+    changes: { from: position, to: position, insert },
+    selection: EditorSelection.cursor(position + insert.length),
+    annotations: internalBlockEdit.of(true),
+    scrollIntoView: true,
+  })
+  editor.focus()
+  updateStatus(editor)
+  scheduleSave()
+  return true
 }
 
 function activeImageLineRange(editor: EditorView) {
@@ -1182,6 +1247,36 @@ async function formatBlock() {
   }
 }
 
+async function runAiSuggestion() {
+  if (!view || aiBusy.value) return
+
+  aiStatus.value = ''
+  const source = aiSourceForEditor(view)
+  if (!source.input) {
+    aiStatus.value = 'AI：没有可发送内容'
+    return
+  }
+
+  aiBusy.value = true
+  aiStatus.value = 'AI：生成中'
+  try {
+    const result = await store.completeWithAi(source)
+    if (!result.ok) {
+      aiStatus.value = `AI：${result.message}`
+      return
+    }
+    if (!insertAiBlockAfterCurrent(view, result.content)) {
+      aiStatus.value = 'AI：没有可插入内容'
+      return
+    }
+    aiStatus.value = 'AI：已插入新块'
+  } catch (error) {
+    aiStatus.value = `AI：${error instanceof Error ? error.message : '请求失败'}`
+  } finally {
+    aiBusy.value = false
+  }
+}
+
 function onGotoLine(event: CustomEvent<SearchResult>) {
   if (!view) return
   const detail = event.detail
@@ -1203,7 +1298,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
     <footer class="statusbar">
       <div class="statusbar-left">
         <span class="status-pill strong">{{ cursorStatus }}</span>
-        <label class="status-control" title="Current block language (Cmd/Ctrl+L)">
+        <label class="status-control" title="当前块语言（Cmd/Ctrl+L）">
           <Code2 :size="14" />
           <select ref="languageSelect" v-model="activeLanguage" aria-label="Current block language">
             <option v-for="language in languages" :key="language.token" :value="language.token">
@@ -1211,11 +1306,12 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
             </option>
           </select>
         </label>
-        <label class="status-toggle" title="Auto detect language for current block">
+        <label class="status-toggle" title="自动识别当前块语言">
           <input v-model="autoMode" type="checkbox" />
           <span>{{ currentBlock?.auto ? 'Auto' : 'Manual' }}</span>
         </label>
         <span class="status-pill">{{ saving ? 'Saving' : 'Saved' }}</span>
+        <span v-if="aiStatus" class="status-pill">{{ aiStatus }}</span>
       </div>
 
       <div class="statusbar-center" :title="shortcutTitle">
@@ -1224,16 +1320,21 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
       </div>
 
       <div class="statusbar-actions">
-        <button class="status-icon-button" title="New block after current (Cmd/Ctrl+Enter)" @click="addBlock">
+        <button class="status-icon-button" title="在当前块后新建块（Cmd/Ctrl+Enter）" @click="addBlock">
           <FilePlus2 :size="15" />
         </button>
-        <button class="status-icon-button" title="Format current block (Shift+Alt+F)" @click="formatBlock">
-          <Wand2 :size="15" />
+        <button
+          class="status-icon-button"
+          :disabled="aiBusy || !store.settings.ai.enabled || !store.settings.ai.hasApiKey"
+          title="AI 根据选区或当前块生成新块"
+          @click="runAiSuggestion"
+        >
+          <Sparkles :size="15" />
         </button>
-        <button class="status-icon-button danger" title="Delete current block (Cmd/Ctrl+Shift+D)" @click="removeBlock">
+        <button class="status-icon-button danger" title="删除当前块（Cmd/Ctrl+Shift+D）" @click="removeBlock">
           <Trash2 :size="15" />
         </button>
-        <button class="status-icon-button" title="Settings" @click="emit('open-settings')">
+        <button class="status-icon-button" title="设置" @click="emit('open-settings')">
           <Settings :size="15" />
         </button>
       </div>

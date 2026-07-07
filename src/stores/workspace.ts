@@ -154,6 +154,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return window.vibenote.ai.testConnection()
   }
 
+  async function completeWithAi(payload: AiCompletionRequest) {
+    await saveSettings()
+    return window.vibenote.ai.complete(payload)
+  }
+
   return {
     buffers,
     currentPath,
@@ -173,5 +178,6 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     setAiApiKey,
     clearAiApiKey,
     testAiConnection,
+    completeWithAi,
   }
 })
