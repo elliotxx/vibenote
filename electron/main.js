@@ -342,19 +342,42 @@ class AiSettingsStore {
     )
   }
 
+  todoBodyFromLine(line) {
+    return String(line || '').match(/^\s*[-*]\s*\[[ xX]\]\s*(.+?)\s*$/)?.[1]?.trim() || ''
+  }
+
+  isLikelyActionableTodo(body) {
+    const text = String(body || '').trim()
+    if (!text || /[:：]\s*$/.test(text)) return false
+    if (/^(讨论|交流|周报内容|AI\s*工具对齐|模式调整|本周目标|下阶段规划)$/i.test(text)) {
+      return false
+    }
+    return /(确认|判断|修复|处理|重启|读|推进|跟进|申请|建设|支持|交付|评估|测试|验证|自测|跑|收集|补齐|打标|通知|登录|扫描|使用|分析|解决|优化|覆盖|联调|归因|治理|拆解|上线|发布|检查|整理|迁移|接入|创建|更新|改|写|看|找|补|review|fix|update|verify|test|ship|release|deploy|implement|support|create)/i.test(text)
+  }
+
+  normalizeTodoContent(content) {
+    return this.normalizeAiContent(content)
+      .split('\n')
+      .map(line => this.todoBodyFromLine(line))
+      .filter(body => this.isLikelyActionableTodo(body))
+      .map(body => `- [ ] ${body}`)
+      .join('\n')
+      .trim()
+  }
+
   aiCompletionPrompt({ scope, language, input, isSelection }) {
     const instruction = isSelection
       ? [
-          'Rewrite or expand the selected note text below as a useful new note block.',
+          'Polish the selected note text below.',
+          'Improve clarity, wording, and readability without changing the meaning.',
           'Keep the selected text structure unless it is clearly malformed.',
           'If the selection has multiple lines, keep a multi-line shape.',
         ]
       : [
-          'Use the entire current block below as context.',
-          'Create a useful follow-up note block from that full context.',
-          'Do not summarize it into a single sentence.',
-          'Prefer a concise multi-line structure: short heading plus bullets, or grouped bullets when that fits the source.',
-          'Carry over the important details, names, decisions, tasks, and open questions from the block.',
+          'Polish the entire current block below.',
+          'Improve clarity, wording, and readability without changing the meaning.',
+          'Preserve the original structure, line breaks, indentation, list nesting, task checkboxes, names, dates, decisions, and open questions.',
+          'Do not summarize, continue writing, add new ideas, or turn it into a different format.',
         ]
 
     return [
@@ -362,7 +385,28 @@ class AiSettingsStore {
       `Source language: ${language}.`,
       ...instruction,
       'Keep the original language.',
-      'Return only the new block content.',
+      'Return only the polished note content.',
+      '',
+      input,
+    ].join('\n')
+  }
+
+  aiTodoPrompt({ scope, language, input, isSelection }) {
+    return [
+      `Source scope: ${scope}.`,
+      `Source language: ${language}.`,
+      isSelection
+        ? 'Extract actionable todo items from the selected note text below.'
+        : 'Extract actionable todo items from the entire current block below.',
+      'Keep the original language.',
+      'Return only Markdown task list items.',
+      'Use exactly this marker for every item: - [ ]',
+      'Keep each item concise and concrete.',
+      'A valid todo must contain an action verb or a concrete requested outcome.',
+      'Ignore section headings, topic labels, meeting titles, categories, standalone nouns, and lines ending with a colon.',
+      'Do not turn headings such as "成本中心:", "讨论:", "周报内容", "测试应用", or "e2e case" into todos.',
+      'Preserve important owners, dates, names, and context when they clarify the task.',
+      'Do not include headings, commentary, numbering, quotes, or metadata.',
       '',
       input,
     ].join('\n')
@@ -408,6 +452,7 @@ class AiSettingsStore {
     const settings = await this.readSettings()
     const input = String(payload?.input || '').trim()
     const language = String(payload?.language || 'markdown').trim() || 'markdown'
+    const mode = payload?.mode === 'extract-todos' ? 'extract-todos' : 'polish'
     const isSelection = payload?.scope === 'selection'
     const scope = isSelection ? 'selection' : 'current block'
 
@@ -436,22 +481,40 @@ class AiSettingsStore {
           messages: [
             {
               role: 'system',
-              content: [
-                'You are Vibenote, an AI-native plain text note assistant.',
-                'Return only the note content that should be inserted as a new block.',
-                'Preserve the source structure: keep line breaks, list markers, indentation, and paragraph spacing.',
-                'Do not collapse multi-line input into one paragraph.',
-                'For multi-line source text, return a multi-line result.',
-                'Never truncate with ellipses or leave a sentence unfinished.',
-                'If the source is already useful, return a lightly cleaned or expanded version; never return an empty response.',
-                'If there is no useful improvement to make, return the original source text exactly.',
-                'Do not include markdown fences unless they are part of the useful note.',
-                'Do not output Vibenote block delimiter metadata.',
-              ].join(' '),
+              content: mode === 'extract-todos'
+                ? [
+                    'You are Vibenote, an AI-native plain text note assistant.',
+                    'Extract actionable todos from note content.',
+                    'Return only directly insertable Markdown checklist lines.',
+                    'Every line must begin with "- [ ] ".',
+                    'Do not collapse separate tasks together.',
+                    'Only include concrete actions. Exclude headings, topics, categories, standalone nouns, and colon-ended labels.',
+                    'A valid todo should contain an action verb or a clearly requested outcome.',
+                    'Do not include headings, explanations, quotes, or metadata.',
+                    'If the content has no explicit task, infer only strongly implied next actions.',
+                    'If there is still no actionable todo, return an empty response.',
+                    'Do not output Vibenote block delimiter metadata.',
+                  ].join(' ')
+                : [
+                    'You are Vibenote, an AI-native plain text note assistant.',
+                    'Polish note content for clearer expression.',
+                    'Return only the polished note content that should be inserted as a new block.',
+                    'Preserve the source structure: keep line breaks, list markers, indentation, and paragraph spacing.',
+                    'Do not collapse multi-line input into one paragraph.',
+                    'For multi-line source text, return a multi-line result.',
+                    'Never truncate with ellipses or leave a sentence unfinished.',
+                    'Do not summarize, continue writing, add new ideas, or change the original meaning.',
+                    'If the source is already useful, return a lightly cleaned version; never return an empty response.',
+                    'If there is no useful improvement to make, return the original source text exactly.',
+                    'Do not include markdown fences unless they are part of the useful note.',
+                    'Do not output Vibenote block delimiter metadata.',
+                  ].join(' '),
             },
             {
               role: 'user',
-              content: this.aiCompletionPrompt({ scope, language, input, isSelection }),
+              content: mode === 'extract-todos'
+                ? this.aiTodoPrompt({ scope, language, input, isSelection })
+                : this.aiCompletionPrompt({ scope, language, input, isSelection }),
             },
           ],
           max_tokens: 1400,
@@ -464,11 +527,19 @@ class AiSettingsStore {
       }
 
       const data = await response.json()
-      const content = this.contentFromChatResponse(data)
-      if (!content) {
+      const rawContent = this.contentFromChatResponse(data)
+      const content = mode === 'extract-todos' ? this.normalizeTodoContent(rawContent) : rawContent
+      if (!content && mode === 'polish') {
         return { ok: true, message: 'AI kept the current block', content: input }
       }
-      return { ok: true, message: 'AI suggestion inserted', content }
+      if (!content) {
+        return { ok: true, message: 'No todos found', content: '' }
+      }
+      return {
+        ok: true,
+        message: mode === 'extract-todos' ? 'Todo list inserted' : 'Polished note inserted',
+        content,
+      }
     } catch (error) {
       return {
         ok: false,

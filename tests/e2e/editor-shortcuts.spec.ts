@@ -470,8 +470,8 @@ test.describe('editor text selection shortcuts', () => {
     await loadFixture(page)
 
     const actions = page.locator('.statusbar-actions .status-icon-button')
-    await expect(actions).toHaveCount(4)
-    await expect(actions.nth(3)).toBeVisible()
+    await expect(actions).toHaveCount(2)
+    await expect(actions.nth(1)).toBeVisible()
 
     const layout = await page.evaluate(() => {
       const viewportWidth = window.innerWidth
@@ -494,7 +494,7 @@ test.describe('editor text selection shortcuts', () => {
 
     const toolbar = page.locator('.block-toolbar')
     await expect(toolbar).toBeVisible()
-    await expect(toolbar.locator('.block-action-button')).toHaveCount(3)
+    await expect(toolbar.locator('.block-action-button')).toHaveCount(5)
 
     const firstBox = await toolbar.boundingBox()
     expect(firstBox).not.toBeNull()

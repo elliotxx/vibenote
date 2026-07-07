@@ -4,7 +4,7 @@ import { addCursorAbove, addCursorBelow, defaultKeymap, history, historyKeymap, 
 import { lineNumbers, keymap, drawSelection, highlightActiveLine, EditorView } from '@codemirror/view'
 import { searchKeymap } from '@codemirror/search'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { FilePlus2, Settings, Sparkles, Trash2 } from 'lucide-vue-next'
+import { AlignLeft, FilePlus2, ListTodo, Settings, Sparkles, Trash2 } from 'lucide-vue-next'
 import * as prettier from 'prettier/standalone'
 import { blockDelimiter, loadNote, serializeNote, type LoadedNote } from '../common/noteFormat'
 import { getLanguage, languages } from '../common/languages'
@@ -17,7 +17,6 @@ import {
   currentBlockText,
   deleteCurrentBlock,
   delimiterChangeProtection,
-  insertBlock,
   insertBlockAtEnd,
   insertBlockAtStart,
   insertBlockAfterCurrent,
@@ -74,6 +73,11 @@ const autoMode = computed({
       scheduleSave()
     }
   },
+})
+
+const canFormatCurrentBlock = computed(() => {
+  if (!currentBlock.value || currentBlock.value.language === 'math') return false
+  return Boolean(getLanguage(currentBlock.value.language).prettier)
 })
 
 const cursorStatus = computed(() => {
@@ -453,8 +457,30 @@ function sanitizeAiBlockContent(content: string) {
     .trim()
 }
 
-function insertAiBlockAfterCurrent(editor: EditorView, content: string) {
-  const cleanContent = sanitizeAiBlockContent(content)
+function todoBodyFromLine(line: string) {
+  return line.match(/^\s*[-*]\s*\[[ xX]\]\s*(.+?)\s*$/)?.[1]?.trim() || ''
+}
+
+function isLikelyActionableTodo(body: string) {
+  const text = body.trim()
+  if (!text || /[:：]\s*$/.test(text)) return false
+  if (/^(讨论|交流|周报内容|AI\s*工具对齐|模式调整|本周目标|下阶段规划)$/i.test(text)) return false
+
+  return /(确认|判断|修复|处理|重启|读|推进|跟进|申请|建设|支持|交付|评估|测试|验证|自测|跑|收集|补齐|打标|通知|登录|扫描|使用|分析|解决|优化|覆盖|联调|归因|治理|拆解|上线|发布|检查|整理|迁移|接入|创建|更新|改|写|看|找|补|review|fix|update|verify|test|ship|release|deploy|implement|support|create)/i.test(text)
+}
+
+function sanitizeAiTodoContent(content: string) {
+  return sanitizeAiBlockContent(content)
+    .split('\n')
+    .map(line => todoBodyFromLine(line))
+    .filter(body => isLikelyActionableTodo(body))
+    .map(body => `- [ ] ${body}`)
+    .join('\n')
+    .trim()
+}
+
+function insertAiBlockAfterCurrent(editor: EditorView, content: string, options: { todo?: boolean } = {}) {
+  const cleanContent = options.todo ? sanitizeAiTodoContent(content) : sanitizeAiBlockContent(content)
   if (!cleanContent) return false
 
   const blocks = editor.state.field(blockField)
@@ -817,12 +843,6 @@ function flushSaveSync() {
   note.content = view.state.doc.toString()
   store.saveCurrentSync(serializeNote(note))
   saving.value = false
-}
-
-function addBlock() {
-  if (!view) return
-  insertBlock(view, store.settings.defaultLanguage, true)
-  scheduleSave()
 }
 
 function addBlockAfterActive() {
@@ -1333,7 +1353,7 @@ async function formatBlock() {
   }
 }
 
-async function runAiSuggestion() {
+async function runAiAction(mode: AiCompletionMode) {
   if (!view || aiBusy.value) return
 
   setAiStatus('')
@@ -1344,23 +1364,31 @@ async function runAiSuggestion() {
   }
 
   aiBusy.value = true
-  setAiStatus('AI：生成中')
+  setAiStatus(mode === 'extract-todos' ? 'AI：提取 Todo 中' : 'AI：优化表述中')
   try {
-    const result = await store.completeWithAi(source)
+    const result = await store.completeWithAi({ ...source, mode })
     if (!result.ok) {
       setAiStatus(`AI：${result.message}`)
       return
     }
-    if (!insertAiBlockAfterCurrent(view, result.content)) {
-      setAiStatus('AI：没有可插入内容')
+    if (!insertAiBlockAfterCurrent(view, result.content, { todo: mode === 'extract-todos' })) {
+      setAiStatus(mode === 'extract-todos' ? 'AI：没有识别到明确 Todo' : 'AI：没有可插入内容')
       return
     }
-    setAiStatus('AI：已插入新块', true)
+    setAiStatus(mode === 'extract-todos' ? 'AI：已插入 Todo' : 'AI：已插入优化版本', true)
   } catch (error) {
     setAiStatus(`AI：${error instanceof Error ? error.message : '请求失败'}`)
   } finally {
     aiBusy.value = false
   }
+}
+
+function runAiSuggestion() {
+  return runAiAction('polish')
+}
+
+function runAiTodoExtraction() {
+  return runAiAction('extract-todos')
 }
 
 function onGotoLine(event: CustomEvent<SearchResult>) {
@@ -1417,6 +1445,8 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
         <button
           class="block-action-button"
           title="在此块后新建块（Cmd/Ctrl+Enter）"
+          aria-label="在此块后新建块"
+          data-tooltip="在此块后新建块"
           @mousedown.prevent
           @click="addBlockAfterActive"
         >
@@ -1425,15 +1455,41 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
         <button
           class="block-action-button"
           :disabled="aiBusy || !store.settings.ai.enabled || !store.settings.ai.hasApiKey"
-          title="AI 根据选区或此块生成新块"
+          title="AI 优化选区或此块表述"
+          aria-label="AI 优化选区或此块表述"
+          data-tooltip="AI 优化表述"
           @mousedown.prevent
           @click="runAiSuggestion"
         >
           <Sparkles :size="14" />
         </button>
         <button
+          class="block-action-button"
+          :disabled="aiBusy || !store.settings.ai.enabled || !store.settings.ai.hasApiKey"
+          title="AI 提取选区或此块 Todo"
+          aria-label="AI 提取选区或此块 Todo"
+          data-tooltip="AI 提取 Todo"
+          @mousedown.prevent
+          @click="runAiTodoExtraction"
+        >
+          <ListTodo :size="14" />
+        </button>
+        <button
+          class="block-action-button"
+          :disabled="!canFormatCurrentBlock"
+          title="格式化当前块（Shift+Alt+F）"
+          aria-label="格式化当前块"
+          data-tooltip="格式化当前块"
+          @mousedown.prevent
+          @click="formatBlock"
+        >
+          <AlignLeft :size="14" />
+        </button>
+        <button
           class="block-action-button danger"
           title="删除此块（Cmd/Ctrl+Shift+D）"
+          aria-label="删除此块"
+          data-tooltip="删除此块"
           @mousedown.prevent
           @click="removeBlock"
         >
@@ -1442,17 +1498,6 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
       </div>
 
       <div class="statusbar-actions">
-        <button class="status-icon-button" title="在当前块后新建块（Cmd/Ctrl+Enter）" @click="addBlock">
-          <FilePlus2 :size="15" />
-        </button>
-        <button
-          class="status-icon-button"
-          :disabled="aiBusy || !store.settings.ai.enabled || !store.settings.ai.hasApiKey"
-          title="AI 根据选区或当前块生成新块"
-          @click="runAiSuggestion"
-        >
-          <Sparkles :size="15" />
-        </button>
         <button class="status-icon-button danger" title="删除当前块（Cmd/Ctrl+Shift+D）" @click="removeBlock">
           <Trash2 :size="15" />
         </button>

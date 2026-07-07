@@ -21,7 +21,7 @@
   --danger: oklch(54% 0.13 24);
   --status-bg: oklch(94.7% 0.01 238);
   --shadow-modal: oklch(24% 0.034 250 / 0.2);
-  --block-toolbar-safe-space: 110px;
+  --block-toolbar-safe-space: 166px;
   color: var(--ink);
   background: var(--surface-app);
   font-family:
@@ -422,6 +422,7 @@ select:focus {
 }
 
 .block-action-button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -431,6 +432,35 @@ select:focus {
   color: var(--muted);
   background: transparent;
   cursor: pointer;
+}
+
+.block-action-button[data-tooltip]::after {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+  max-width: 160px;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink-soft);
+  background: var(--surface-control);
+  box-shadow: 0 6px 16px oklch(24% 0.034 250 / 0.12);
+  content: attr(data-tooltip);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(2px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  white-space: nowrap;
+}
+
+.block-action-button[data-tooltip]:hover::after,
+.block-action-button[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .block-action-button:hover {
@@ -451,7 +481,7 @@ select:focus {
 
 @media (max-width: 640px) {
   :root {
-    --block-toolbar-safe-space: 92px;
+    --block-toolbar-safe-space: 150px;
   }
 
   .block-toolbar {

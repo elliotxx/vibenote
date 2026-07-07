@@ -170,10 +170,27 @@ export function installDevMock() {
         if (!settings.enabled) return { ok: false, message: 'AI is disabled', content: '' }
         if (!settings.hasApiKey) return { ok: false, message: 'API key is required', content: '' }
         if (!payload.input.trim()) return { ok: false, message: 'Nothing to send to AI', content: '' }
+        if (payload.mode === 'extract-todos') {
+          const items = payload.input
+            .split(/\n+/)
+            .map(line => line.replace(/^[-*]\s*(?:\[[ xX]\]\s*)?/, '').trim())
+            .filter(Boolean)
+            .filter(line =>
+              !/[:：]\s*$/.test(line) &&
+              /(确认|判断|修复|处理|重启|读|推进|跟进|申请|建设|支持|交付|评估|测试|验证|自测|跑|收集|补齐|打标|通知|登录|扫描|使用|分析|解决|优化|覆盖|联调|归因|治理|拆解|上线|发布|检查|整理|迁移|接入|创建|更新|改|写|看|找|补|review|fix|update|verify|test|ship|release|deploy|implement|support|create)/i.test(line),
+            )
+            .slice(0, 5)
+            .map(line => `- [ ] ${line}`)
+          return {
+            ok: true,
+            message: 'Todo list inserted',
+            content: items.join('\n') || '- [ ] Review current note',
+          }
+        }
         return {
           ok: true,
-          message: 'AI suggestion inserted',
-          content: `AI suggestion for ${payload.scope}: ${payload.input.trim()}`,
+          message: 'Polished note inserted',
+          content: `Polished ${payload.scope}: ${payload.input.trim()}`,
         }
       },
     },

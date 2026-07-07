@@ -34,6 +34,7 @@ type EditorCommand =
 
 type AiProviderKind = 'openai' | 'deepseek' | 'custom-openai-compatible'
 type AiKeyStorageKind = 'none' | 'secure' | 'local-fallback' | 'unknown'
+type AiCompletionMode = 'polish' | 'extract-todos'
 
 type AiSettings = {
   enabled: boolean
@@ -53,6 +54,7 @@ type AiCompletionRequest = {
   input: string
   language: string
   scope: 'selection' | 'block'
+  mode?: AiCompletionMode
 }
 
 type AiCompletionResult = {

@@ -186,19 +186,71 @@ test.describe('AI settings', () => {
       ;(window as any).__aiPayloads = []
       window.vibenote.ai.complete = async (payload: AiCompletionRequest) => {
         ;(window as any).__aiPayloads.push(payload)
-        return { ok: true, message: 'AI suggestion inserted', content: 'generated from block' }
+        return { ok: true, message: 'Polished note inserted', content: 'polished from block' }
       }
     })
 
     await page.getByText('- keep this list item').click()
     await expect.poll(() => hasNoVisibleEditorSelection(page)).toBe(true)
-    await page.getByTitle('AI 根据选区或当前块生成新块').click()
-    await expect(page.getByText('generated from block')).toBeVisible()
+    await page.getByTitle('AI 优化选区或此块表述').click()
+    await expect(page.getByText('polished from block')).toBeVisible()
 
     await expect.poll(() => page.evaluate(() => (window as any).__aiPayloads)).toEqual([
       {
         input: blockLines.join('\n'),
         language: 'markdown',
+        mode: 'polish',
+        scope: 'block',
+      },
+    ])
+  })
+
+  test('extracts todos from the current block as a Markdown checklist', async ({ page }) => {
+    const blockLines = [
+      '本周推进发布前检查',
+      '- 确认安装提示词可用',
+      '- 修复设置保存问题',
+      '讨论是否需要发布新版本',
+    ]
+    await loadFixture(page, blockLines)
+    await openSettings(page)
+
+    await page.getByLabel('Enable AI').check()
+    await page.getByLabel('API Key').fill('test-api-key-value')
+    await page.getByRole('button', { name: 'Save API key' }).click()
+    await expect(page.getByText('API key saved locally and hidden')).toBeVisible()
+    await page.getByTitle('Close settings').click()
+
+    await page.evaluate(() => {
+      ;(window as any).__aiPayloads = []
+      window.vibenote.ai.complete = async (payload: AiCompletionRequest) => {
+        ;(window as any).__aiPayloads.push(payload)
+        return {
+          ok: true,
+          message: 'Todo list inserted',
+          content: [
+            '- [ ] 成本中心:',
+            '- [ ] e2e case',
+            '- [ ] 确认安装提示词可用',
+            '- [ ] 修复设置保存问题',
+            '- [ ] 判断是否发布新版本',
+          ].join('\n'),
+        }
+      }
+    })
+
+    await page.getByText('修复设置保存问题').click()
+    await page.getByTitle('AI 提取选区或此块 Todo').click()
+    await expect(page.getByText('- 判断是否发布新版本')).toBeVisible()
+    await expect(page.getByText('- 确认安装提示词可用')).toHaveCount(2)
+    await expect(page.getByText('成本中心:')).toHaveCount(0)
+    await expect(page.getByText('e2e case')).toHaveCount(0)
+
+    await expect.poll(() => page.evaluate(() => (window as any).__aiPayloads)).toEqual([
+      {
+        input: blockLines.join('\n'),
+        language: 'markdown',
+        mode: 'extract-todos',
         scope: 'block',
       },
     ])
