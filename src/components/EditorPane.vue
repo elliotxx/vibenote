@@ -4,7 +4,7 @@ import { addCursorAbove, addCursorBelow, defaultKeymap, history, historyKeymap, 
 import { lineNumbers, keymap, drawSelection, highlightActiveLine, EditorView } from '@codemirror/view'
 import { searchKeymap } from '@codemirror/search'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Code2, FilePlus2, Keyboard, Settings, Sparkles, Trash2 } from 'lucide-vue-next'
+import { FilePlus2, Settings, Sparkles, Trash2 } from 'lucide-vue-next'
 import * as prettier from 'prettier/standalone'
 import { blockDelimiter, loadNote, serializeNote, type LoadedNote } from '../common/noteFormat'
 import { getLanguage, languages } from '../common/languages'
@@ -45,6 +45,7 @@ const aiStatus = ref('')
 let view: EditorView | null = null
 let note: LoadedNote | null = null
 let saveTimer: number | null = null
+let aiStatusTimer: number | null = null
 let unsubscribeEditorCommand: (() => void) | null = null
 const EDITOR_FONT_MIN = 11
 const EDITOR_FONT_MAX = 48
@@ -74,18 +75,15 @@ const autoMode = computed({
 
 const cursorStatus = computed(() => {
   const [line = '1', column = '1'] = cursorLabel.value.split(':')
-  return `Ln ${line} Col ${column}`
+  return `${line}:${column}`
 })
 
-const shortcutSummary = '⌘↵ New · ⌥↵ Before · ⇧⌘↵ End · ⇧⌥F Format'
-const shortcutTitle = [
-  'Cmd/Ctrl+Enter：在当前块后新建块',
-  'Alt+Enter：在当前块前新建块',
-  'Cmd/Ctrl+Alt+Enter：拆分当前块',
-  'Cmd/Ctrl+Shift+D：删除当前块',
-  'Cmd/Ctrl+Up/Down：在块之间移动',
-  'Shift+Alt+F：格式化当前块',
-].join('\n')
+const statusMessage = computed(() => saving.value ? '正在保存...' : aiStatus.value)
+const statusTone = computed(() => {
+  const message = statusMessage.value
+  if (!message) return ''
+  return message.includes('失败') || message.includes('错误') || message.includes('required') ? 'error' : 'info'
+})
 
 onMounted(() => {
   mountEditor()
@@ -99,6 +97,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   flushSaveSync()
+  if (aiStatusTimer) window.clearTimeout(aiStatusTimer)
   unsubscribeEditorCommand?.()
   unsubscribeEditorCommand = null
   window.removeEventListener('vibenote:goto-line', onGotoLine as EventListener)
@@ -109,6 +108,24 @@ onBeforeUnmount(() => {
   view?.destroy()
   view = null
 })
+
+function setAiStatus(message: string, autoClear = false) {
+  if (aiStatusTimer) {
+    window.clearTimeout(aiStatusTimer)
+    aiStatusTimer = null
+  }
+  aiStatus.value = message
+  if (autoClear && message) {
+    aiStatusTimer = window.setTimeout(() => {
+      if (aiStatus.value === message) aiStatus.value = ''
+      aiStatusTimer = null
+    }, 2800)
+  }
+}
+
+function toggleAutoMode() {
+  autoMode.value = !autoMode.value
+}
 
 watch(
   () => [store.settings.fontSize, store.settings.tabSize, store.settings.theme],
@@ -1250,28 +1267,28 @@ async function formatBlock() {
 async function runAiSuggestion() {
   if (!view || aiBusy.value) return
 
-  aiStatus.value = ''
+  setAiStatus('')
   const source = aiSourceForEditor(view)
   if (!source.input) {
-    aiStatus.value = 'AI：没有可发送内容'
+    setAiStatus('AI：没有可发送内容')
     return
   }
 
   aiBusy.value = true
-  aiStatus.value = 'AI：生成中'
+  setAiStatus('AI：生成中')
   try {
     const result = await store.completeWithAi(source)
     if (!result.ok) {
-      aiStatus.value = `AI：${result.message}`
+      setAiStatus(`AI：${result.message}`)
       return
     }
     if (!insertAiBlockAfterCurrent(view, result.content)) {
-      aiStatus.value = 'AI：没有可插入内容'
+      setAiStatus('AI：没有可插入内容')
       return
     }
-    aiStatus.value = 'AI：已插入新块'
+    setAiStatus('AI：已插入新块', true)
   } catch (error) {
-    aiStatus.value = `AI：${error instanceof Error ? error.message : '请求失败'}`
+    setAiStatus(`AI：${error instanceof Error ? error.message : '请求失败'}`)
   } finally {
     aiBusy.value = false
   }
@@ -1297,26 +1314,29 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
 
     <footer class="statusbar">
       <div class="statusbar-left">
-        <span class="status-pill strong">{{ cursorStatus }}</span>
-        <label class="status-control" title="当前块语言（Cmd/Ctrl+L）">
-          <Code2 :size="14" />
+        <span class="status-coordinate" title="当前光标位置">{{ cursorStatus }}</span>
+        <label class="status-language" title="当前块语言（Cmd/Ctrl+L）">
           <select ref="languageSelect" v-model="activeLanguage" aria-label="Current block language">
             <option v-for="language in languages" :key="language.token" :value="language.token">
               {{ language.name }}
             </option>
           </select>
         </label>
-        <label class="status-toggle" title="自动识别当前块语言">
-          <input v-model="autoMode" type="checkbox" />
-          <span>{{ currentBlock?.auto ? 'Auto' : 'Manual' }}</span>
-        </label>
-        <span class="status-pill">{{ saving ? 'Saving' : 'Saved' }}</span>
-        <span v-if="aiStatus" class="status-pill">{{ aiStatus }}</span>
+        <button
+          type="button"
+          class="status-auto-toggle"
+          :class="{ active: currentBlock?.auto }"
+          title="切换当前块自动识别语言"
+          @click="toggleAutoMode"
+        >
+          {{ currentBlock?.auto ? 'Auto' : 'Manual' }}
+        </button>
       </div>
 
-      <div class="statusbar-center" :title="shortcutTitle">
-        <Keyboard :size="14" />
-        <span>{{ shortcutSummary }}</span>
+      <div class="statusbar-center" aria-live="polite">
+        <span v-if="statusMessage" class="status-feedback" :class="statusTone">
+          {{ statusMessage }}
+        </span>
       </div>
 
       <div class="statusbar-actions">

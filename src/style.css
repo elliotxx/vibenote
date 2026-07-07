@@ -403,9 +403,9 @@ select:focus {
 
 .statusbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, auto) max-content;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   border-top: 1px solid var(--line);
   background: var(--status-bg);
   color: var(--ink-soft);
@@ -425,22 +425,25 @@ select:focus {
 }
 
 .statusbar-left {
-  gap: 10px;
+  gap: 8px;
   justify-self: start;
   overflow: hidden;
 }
 
 .statusbar-center {
-  gap: 6px;
   justify-content: center;
   color: var(--muted);
   white-space: nowrap;
   justify-self: center;
+  overflow: hidden;
 }
 
-.statusbar-center span {
+.status-feedback {
+  display: block;
+  max-width: min(42vw, 440px);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .statusbar-actions {
@@ -451,30 +454,30 @@ select:focus {
   min-width: max-content;
 }
 
-.status-pill {
-  color: var(--muted);
+.status-coordinate {
+  color: var(--accent);
+  font-weight: 700;
+  min-width: 40px;
+  text-align: left;
   white-space: nowrap;
 }
 
-.status-pill.strong {
-  color: var(--accent);
-  font-weight: 700;
+.status-feedback.info {
+  color: var(--muted);
 }
 
-.status-control,
-.status-toggle {
+.status-feedback.error {
+  color: var(--danger);
+}
+
+.status-language {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
   min-width: 0;
 }
 
-.status-control {
-  flex: 0 1 auto;
-}
-
-.status-control select {
-  width: clamp(100px, 14vw, 126px);
+.status-language select {
+  width: clamp(112px, 12vw, 136px);
   height: 28px;
   border-color: var(--line);
   background: var(--surface-control);
@@ -483,25 +486,37 @@ select:focus {
   font-size: 12px;
 }
 
-.status-control select:focus {
+.status-language select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px oklch(52% 0.12 265 / 0.13);
 }
 
-.status-control option {
+.status-language option {
   color: var(--ink);
 }
 
-.status-toggle {
+.status-auto-toggle {
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
   color: var(--muted);
-  white-space: nowrap;
+  cursor: pointer;
+  font: inherit;
+  padding: 0 6px;
+  line-height: 1;
   flex: 0 0 auto;
+  white-space: nowrap;
 }
 
-.status-toggle input {
-  width: 13px;
-  height: 13px;
-  accent-color: var(--accent);
+.status-auto-toggle:hover {
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.status-auto-toggle.active {
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .status-icon-button {
@@ -539,13 +554,9 @@ select:focus {
 
 @media (max-width: 1040px) {
   .statusbar {
-    grid-template-columns: minmax(0, 1fr) max-content;
+    grid-template-columns: max-content minmax(0, 1fr) max-content;
     gap: 8px;
     padding-left: 12px;
-  }
-
-  .statusbar-center {
-    display: none;
   }
 
   .statusbar-left {
@@ -553,14 +564,17 @@ select:focus {
     overflow: hidden;
   }
 
-  .status-control select {
+  .status-language select {
     width: clamp(104px, 18vw, 126px);
   }
 }
 
 @media (max-width: 640px) {
-  .status-pill:not(.strong),
-  .status-toggle span {
+  .statusbar {
+    grid-template-columns: minmax(0, 1fr) max-content;
+  }
+
+  .statusbar-center {
     display: none;
   }
 
@@ -568,7 +582,7 @@ select:focus {
     gap: 7px;
   }
 
-  .status-control select {
+  .status-language select {
     width: clamp(96px, 28vw, 118px);
   }
 }
@@ -579,7 +593,7 @@ select:focus {
     padding: 0 8px;
   }
 
-  .status-toggle {
+  .status-auto-toggle {
     display: none;
   }
 
@@ -588,7 +602,7 @@ select:focus {
     height: 28px;
   }
 
-  .status-control select {
+  .status-language select {
     width: 104px;
   }
 }
