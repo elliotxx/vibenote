@@ -10,13 +10,22 @@ function fixtureContent(lines = ['AI setting note']) {
   ].join('\n')}`
 }
 
-async function loadFixture(page: Page, lines?: string[]) {
-  await page.addInitScript((content) => {
+async function loadFixture(page: Page, lines?: string[], settings?: Record<string, unknown>) {
+  await page.addInitScript(({ content, settings }) => {
     localStorage.clear()
     localStorage.setItem('vibenote:mock-buffers', JSON.stringify([
       { path: 'stream.txt', name: 'Stream', tags: [], isScratch: true, content },
     ]))
-  }, fixtureContent(lines))
+    if (settings) {
+      localStorage.setItem('vibenote:settings', JSON.stringify({
+        theme: 'light',
+        fontSize: 13,
+        tabSize: 2,
+        defaultLanguage: 'markdown',
+        ...settings,
+      }))
+    }
+  }, { content: fixtureContent(lines), settings })
   await page.goto('/')
   await expect(page.locator('.cm-editor')).toBeVisible()
 }
@@ -198,7 +207,7 @@ test.describe('AI settings', () => {
     await expect.poll(() => hasNoVisibleEditorSelection(page)).toBe(true)
   })
 
-  test('uses the whole current block as AI context when there is no selection', async ({ page }) => {
+  test('shows a reviewable AI polish suggestion for the current block', async ({ page }) => {
     const blockLines = [
       'first context line',
       '- keep this list item',
@@ -224,7 +233,29 @@ test.describe('AI settings', () => {
     await page.getByText('- keep this list item').click()
     await expect.poll(() => hasNoVisibleEditorSelection(page)).toBe(true)
     await page.getByTitle('AI 优化选区或此块表述').click()
+    await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
+    await expect(page.getByText('当前块表述优化')).toBeVisible()
     await expect(page.getByText('polished from block')).toBeVisible()
+    await expect(page.locator('[data-testid="ai-diff-source"] .ai-diff-segment.removed').first()).toBeVisible()
+    await expect(page.locator('[data-testid="ai-diff-target"] .ai-diff-segment.added').first()).toBeVisible()
+    await expect(page.getByText('first context line')).toHaveCount(2)
+
+    const diffStyles = await page.evaluate(() => {
+      const sourceColumn = document.querySelector<HTMLElement>('.ai-suggestion-column')
+      const targetColumn = document.querySelector<HTMLElement>('.ai-suggestion-column.suggestion')
+      const changedLine = document.querySelector<HTMLElement>('[data-testid="ai-diff-target"] .ai-diff-line.changed')
+      const addedSegment = document.querySelector<HTMLElement>('[data-testid="ai-diff-target"] .ai-diff-segment.added')
+      return {
+        sourceColumnBackground: sourceColumn ? getComputedStyle(sourceColumn).backgroundColor : '',
+        targetColumnBackground: targetColumn ? getComputedStyle(targetColumn).backgroundColor : '',
+        changedLineBackground: changedLine ? getComputedStyle(changedLine).backgroundColor : '',
+        addedSegmentBackground: addedSegment ? getComputedStyle(addedSegment).backgroundColor : '',
+      }
+    })
+
+    expect(diffStyles.targetColumnBackground).toBe(diffStyles.sourceColumnBackground)
+    expect(diffStyles.changedLineBackground).toBe('rgba(0, 0, 0, 0)')
+    expect(diffStyles.addedSegmentBackground).not.toBe('rgba(0, 0, 0, 0)')
 
     await expect.poll(() => page.evaluate(() => (window as any).__aiPayloads)).toEqual([
       {
@@ -234,6 +265,170 @@ test.describe('AI settings', () => {
         scope: 'block',
       },
     ])
+
+    await page.getByRole('button', { name: '替换原文' }).click()
+    await expect(page.getByLabel('AI 表述优化建议')).toHaveCount(0)
+    await expect(page.getByText('polished from block')).toBeVisible()
+    await expect(page.getByText('- keep this list item')).toHaveCount(0)
+  })
+
+  test('can insert or copy an AI polish suggestion without replacing text', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+      origin: 'http://127.0.0.1:3344',
+    })
+    const blockLines = ['rough sentence', 'second line']
+    await loadFixture(page, blockLines)
+    await openSettings(page)
+
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await expect(page.getByText('API 密钥已本地保存并隐藏')).toBeVisible()
+    await page.getByTitle('关闭设置').click()
+
+    await page.evaluate(() => {
+      window.vibenote.ai.complete = async () => ({
+        ok: true,
+        message: 'Polished note inserted',
+        content: 'polished sentence\nkeeps line breaks',
+      })
+    })
+
+    await page.getByText('rough sentence').click()
+    await page.getByTitle('AI 优化选区或此块表述').click()
+    await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
+
+    await page.getByRole('button', { name: '复制' }).click()
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('polished sentence\nkeeps line breaks')
+    await expect(page.getByText('rough sentence')).toHaveCount(2)
+
+    await page.getByRole('button', { name: '插入新块' }).click()
+    await expect(page.getByLabel('AI 表述优化建议')).toHaveCount(0)
+    await expect(page.getByText('rough sentence')).toBeVisible()
+    await expect(page.getByText('polished sentence')).toBeVisible()
+    await expect(page.getByText('keeps line breaks')).toBeVisible()
+  })
+
+  test('highlights only changed tokens in AI suggestion diffs', async ({ page }) => {
+    await loadFixture(page, [
+      '申请 code-host service-alpha service-beta service-gamma 大账号权限 P0 @member-a',
+      '业务场景分类和打标，进一步打标 P3 @member-b token 消耗',
+    ])
+    await openSettings(page)
+
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await expect(page.getByText('API 密钥已本地保存并隐藏')).toBeVisible()
+    await page.getByTitle('关闭设置').click()
+
+    await page.evaluate(() => {
+      window.vibenote.ai.complete = async () => ({
+        ok: true,
+        message: 'Polished note inserted',
+        content: [
+          '申请 code-host、service-alpha、service-beta、service-gamma 大账号权限 P0 @member-a',
+          '业务场景分类和打标，继续推进 P3 @member-b，关注 token 消耗',
+        ].join('\n'),
+      })
+    })
+
+    await page.getByText('申请 code-host').click()
+    await page.getByTitle('AI 优化选区或此块表述').click()
+    await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
+
+    const diffState = await page.evaluate(() => {
+      const source = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="ai-diff-source"] .ai-diff-line'))
+      const target = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="ai-diff-target"] .ai-diff-line'))
+      return {
+        sourceChangedText: source.flatMap(line => Array.from(line.querySelectorAll<HTMLElement>('.removed')).map(segment => segment.textContent || '')),
+        targetChangedText: target.flatMap(line => Array.from(line.querySelectorAll<HTMLElement>('.added')).map(segment => segment.textContent || '')),
+        targetFirstLineText: target[0]?.textContent || '',
+        targetFirstLineChangedText: Array.from(target[0]?.querySelectorAll<HTMLElement>('.added') || []).map(segment => segment.textContent || '').join(''),
+      }
+    })
+
+    expect(diffState.sourceChangedText.join('')).toContain('进一步打标')
+    expect(diffState.targetChangedText.join('')).toContain('继续推进')
+    expect(diffState.targetFirstLineText).toContain('申请 code-host')
+    expect(diffState.targetFirstLineChangedText).not.toContain('申请 code-host')
+  })
+
+  test('explains when AI polish returns unchanged content', async ({ page }) => {
+    const blockLines = [
+      '- 已经足够清晰',
+      '- 保持原样即可',
+    ]
+    await loadFixture(page, blockLines)
+    await openSettings(page)
+
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await expect(page.getByText('API 密钥已本地保存并隐藏')).toBeVisible()
+    await page.getByTitle('关闭设置').click()
+
+    await page.evaluate((content) => {
+      window.vibenote.ai.complete = async () => ({
+        ok: true,
+        message: 'No visible edits',
+        content,
+      })
+    }, blockLines.join('\n'))
+
+    await page.getByText('已经足够清晰').click()
+    await page.getByTitle('AI 优化选区或此块表述').click()
+
+    await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
+    await expect(page.getByText('AI 返回内容与原文基本一致，未检测到文字差异。')).toBeVisible()
+    await expect(page.locator('.ai-diff-segment.added')).toHaveCount(0)
+    await expect(page.locator('.ai-diff-segment.removed')).toHaveCount(0)
+  })
+
+  test('scales the AI suggestion diff with editor font size', async ({ page }) => {
+    await loadFixture(page, [
+      '申请 code-host service-alpha service-beta service-gamma 大账号权限 P0 @member-a',
+      '业务场景分类和打标，进一步打标 P3 @member-b token 消耗',
+    ], { fontSize: 36 })
+    await openSettings(page)
+
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await expect(page.getByText('API 密钥已本地保存并隐藏')).toBeVisible()
+    await page.getByTitle('关闭设置').click()
+
+    await page.evaluate(() => {
+      window.vibenote.ai.complete = async () => ({
+        ok: true,
+        message: 'Polished note inserted',
+        content: [
+          '申请 code-host、service-alpha、service-beta、service-gamma 大账号权限 P0 @member-a',
+          '业务场景分类和打标，继续推进 P3 @member-b，关注 token 消耗',
+          '右侧最后一行需要完整展示',
+        ].join('\n'),
+      })
+    })
+
+    await page.getByText('申请 code-host').click()
+    await page.getByTitle('AI 优化选区或此块表述').click()
+    await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
+    await expect(page.getByText('右侧最后一行需要完整展示')).toBeVisible()
+
+    const metrics = await page.evaluate(() => {
+      const popover = document.querySelector<HTMLElement>('.ai-suggestion-popover')
+      const diff = document.querySelector<HTMLElement>('[data-testid="ai-diff-target"]')
+      const body = document.querySelector<HTMLElement>('.ai-suggestion-body')
+      return {
+        width: popover?.getBoundingClientRect().width ?? 0,
+        diffFontSize: diff ? Number.parseFloat(getComputedStyle(diff).fontSize) : 0,
+        bodyMaxHeight: body ? Number.parseFloat(getComputedStyle(body).maxHeight) : 0,
+      }
+    })
+
+    expect(metrics.width).toBeGreaterThan(900)
+    expect(metrics.diffFontSize).toBeGreaterThan(20)
+    expect(metrics.bodyMaxHeight).toBeGreaterThan(300)
   })
 
   test('extracts todos from the current block as a Markdown checklist', async ({ page }) => {

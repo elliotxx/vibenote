@@ -908,12 +908,16 @@ class AiSettingsStore {
       ? [
           'Polish the selected note text below.',
           'Improve clarity, wording, and readability without changing the meaning.',
-          'Keep the selected text structure unless it is clearly malformed.',
-          'If the selection has multiple lines, keep a multi-line shape.',
+          'Make concrete wording improvements where possible instead of echoing the source unchanged.',
+          'Preserve every selected item, line, owner, date, decision, and open question.',
+          'Keep the selected text structure, line breaks, indentation, list nesting, and paragraph spacing unless it is clearly malformed.',
+          'If the selection has multiple lines, return a complete multi-line result with all source items still represented.',
         ]
       : [
           'Polish the entire current block below.',
           'Improve clarity, wording, and readability without changing the meaning.',
+          'Make concrete wording improvements where possible instead of echoing the source unchanged.',
+          'Preserve every original item, line, owner, date, decision, and open question.',
           'Preserve the original structure, line breaks, indentation, list nesting, task checkboxes, names, dates, decisions, and open questions.',
           'Do not summarize, continue writing, add new ideas, or turn it into a different format.',
         ]
@@ -923,10 +927,17 @@ class AiSettingsStore {
       `Source language: ${language}.`,
       ...instruction,
       'Keep the original language.',
+      'Do not omit low-level details just because they look repetitive.',
+      'Do not summarize, shorten, truncate, or replace a list with a high-level overview.',
       'Return only the polished note content.',
       '',
       input,
     ].join('\n')
+  }
+
+  maxTokensForCompletion(input, mode) {
+    if (mode === 'extract-todos') return 1400
+    return Math.min(6000, Math.max(1800, Math.ceil(String(input || '').length * 1.35)))
   }
 
   aiTodoPrompt({ scope, language, input, isSelection }) {
@@ -1036,10 +1047,13 @@ class AiSettingsStore {
                 : [
                     'You are Vibenote, an AI-native plain text note assistant.',
                     'Polish note content for clearer expression.',
-                    'Return only the polished note content that should be inserted as a new block.',
+                    'Make concrete wording improvements where possible instead of echoing the source unchanged.',
+                    'Return only the complete polished note content that should be inserted as a new block.',
+                    'Preserve every source item; do not omit lines, bullets, owners, dates, decisions, or open questions.',
                     'Preserve the source structure: keep line breaks, list markers, indentation, and paragraph spacing.',
                     'Do not collapse multi-line input into one paragraph.',
                     'For multi-line source text, return a multi-line result.',
+                    'Do not summarize, shorten, or replace detailed notes with a high-level overview.',
                     'Never truncate with ellipses or leave a sentence unfinished.',
                     'Do not summarize, continue writing, add new ideas, or change the original meaning.',
                     'If the source is already useful, return a lightly cleaned version; never return an empty response.',
@@ -1055,7 +1069,7 @@ class AiSettingsStore {
                 : this.aiCompletionPrompt({ scope, language, input, isSelection }),
             },
           ],
-          max_tokens: 1400,
+          max_tokens: this.maxTokensForCompletion(input, mode),
           temperature: 0.3,
         }),
       })

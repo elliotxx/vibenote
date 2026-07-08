@@ -83,18 +83,18 @@ async function main() {
     await page.getByRole('heading', { name: 'AI' }).waitFor({ timeout: 10000 })
     ok('AI settings section is visible')
 
-    await page.getByText(/API key saved/).waitFor({ timeout: 10000 })
-    await page.getByRole('button', { name: 'Clear' }).click()
-    await page.getByText('API key cleared').waitFor({ timeout: 10000 })
+    await page.getByText(/API 密钥已.*保存/).waitFor({ timeout: 10000 })
+    await page.getByRole('button', { name: '清除' }).click()
+    await page.getByText('API 密钥已清除').waitFor({ timeout: 10000 })
     ok('legacy Keychain API key records can be cleared without prompting')
 
-    await page.getByLabel('Enable AI').check()
-    await page.getByLabel('Provider').selectOption('custom-openai-compatible')
-    await page.getByLabel('Base URL').fill(`${provider.baseUrl}/v1/`)
-    await page.getByLabel('Model').fill('mock-chat')
-    await page.getByLabel('API Key').fill('test-api-key-value')
-    await page.getByRole('button', { name: 'Save API key' }).click()
-    await page.getByText(/API key saved/).waitFor({ timeout: 10000 })
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('服务商').selectOption('custom-openai-compatible')
+    await page.getByLabel('基础 URL').fill(`${provider.baseUrl}/v1/`)
+    await page.getByLabel('模型').fill('mock-chat')
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await page.getByText(/API 密钥已.*保存/).waitFor({ timeout: 10000 })
     ok('API key can be saved from the packaged app')
 
     const localStorageDump = await page.evaluate(() => JSON.stringify(localStorage))
@@ -103,20 +103,22 @@ async function main() {
     }
     ok('renderer localStorage does not contain the API key')
 
-    await page.getByRole('button', { name: 'Test connection' }).click()
-    await page.getByText('Connection OK').waitFor({ timeout: 10000 })
+    await page.getByRole('button', { name: '测试连接' }).click()
+    await page.getByText('连接成功').waitFor({ timeout: 10000 })
 
-    await page.getByLabel('Base URL').fill(`${provider.baseUrl}/v1/chat/completions`)
-    await page.getByLabel('Base URL').blur()
-    await page.getByRole('button', { name: 'Test connection' }).click()
-    await page.getByText('Connection OK').waitFor({ timeout: 10000 })
+    await page.getByLabel('基础 URL').fill(`${provider.baseUrl}/v1/chat/completions`)
+    await page.getByLabel('基础 URL').blur()
+    await page.getByRole('button', { name: '测试连接' }).click()
+    await page.getByText('连接成功').waitFor({ timeout: 10000 })
 
-    await page.getByTitle('Close settings').click()
+    await page.getByTitle('关闭设置').click()
     await page.locator('.cm-content').click()
     await page.keyboard.type('AI setting note')
-    await page.getByTitle('AI 根据选区或当前块生成新块').click()
+    await page.getByTitle('AI 优化选区或此块表述').click()
+    await page.getByLabel('AI 表述优化建议').waitFor({ timeout: 10000 })
     await page.getByText('AI generated note').waitFor({ timeout: 10000 })
     await page.getByText('- keep format').waitFor({ timeout: 10000 })
+    await page.getByRole('button', { name: '插入新块' }).click()
     ok('AI suggestions can be inserted as a new block')
 
     if (provider.requests.length !== 3) {
@@ -145,11 +147,15 @@ async function main() {
     if (!suggestionRequest.body.includes('AI setting note')) {
       fail('suggestion request did not include the current block text')
     }
-    if (!suggestionRequest.body.includes('Use the entire current block below as context.')) {
+    if (!suggestionRequest.body.includes('Polish the entire current block below.')) {
       fail('suggestion request did not use the current-block prompt')
     }
-    if (!suggestionRequest.body.includes('Do not summarize it into a single sentence.')) {
-      fail('suggestion request did not guard against single-line summaries')
+    if (!suggestionRequest.body.includes('Do not summarize, shorten, truncate, or replace a list with a high-level overview.')) {
+      fail('suggestion request did not guard against incomplete summaries')
+    }
+    const suggestionPayload = JSON.parse(suggestionRequest.body)
+    if (suggestionPayload.max_tokens < 1800) {
+      fail(`suggestion request used too small max_tokens: ${suggestionPayload.max_tokens}`)
     }
     if (suggestionRequest.body.includes('AI generated note')) {
       fail('suggestion request leaked generated content back to the provider')
@@ -159,8 +165,8 @@ async function main() {
 
     await page.getByTitle('设置').click()
     await page.getByRole('heading', { name: 'AI' }).waitFor({ timeout: 10000 })
-    await page.getByRole('button', { name: 'Clear' }).click()
-    await page.getByText('API key cleared').waitFor({ timeout: 10000 })
+    await page.getByRole('button', { name: '清除' }).click()
+    await page.getByText('API 密钥已清除').waitFor({ timeout: 10000 })
     ok('API key can be cleared from the packaged app')
   } finally {
     if (app) await app.close()

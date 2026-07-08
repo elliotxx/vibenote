@@ -488,6 +488,188 @@ select:focus {
   color: var(--danger);
 }
 
+.ai-suggestion-popover {
+  position: absolute;
+  z-index: 12;
+  --ai-popover-margin: 12px;
+  --ai-popover-font: clamp(12px, calc(var(--editor-font-size, 13px) * 0.86), 24px);
+  width: min(calc(100% - var(--ai-popover-margin) * 2), max(560px, calc(var(--editor-font-size, 13px) * 36)));
+  border: 1px solid var(--line);
+  border-radius: clamp(8px, calc(var(--editor-font-size, 13px) * 0.6), 14px);
+  background: var(--surface-control);
+  box-shadow: 0 18px 48px oklch(24% 0.034 250 / 0.16);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+.ai-suggestion-header,
+.ai-suggestion-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ai-suggestion-header {
+  padding: clamp(10px, calc(var(--editor-font-size, 13px) * 0.72), 18px) clamp(12px, calc(var(--editor-font-size, 13px) * 0.86), 22px);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.ai-suggestion-header div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ai-suggestion-header strong {
+  font-size: clamp(13px, calc(var(--editor-font-size, 13px) * 0.82), 20px);
+  line-height: 1.2;
+}
+
+.ai-suggestion-header span,
+.ai-suggestion-column span {
+  color: var(--muted);
+  font-size: clamp(11px, calc(var(--editor-font-size, 13px) * 0.72), 17px);
+  font-weight: 650;
+}
+
+.ai-suggestion-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: clamp(24px, calc(var(--editor-font-size, 13px) * 1.6), 34px);
+  height: clamp(24px, calc(var(--editor-font-size, 13px) * 1.6), 34px);
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.ai-suggestion-close:hover {
+  color: var(--ink);
+  background: var(--accent-tint);
+}
+
+.ai-suggestion-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--line-soft);
+  max-height: min(68vh, max(320px, calc(var(--editor-font-size, 13px) * 20)));
+  overflow: auto;
+}
+
+.ai-suggestion-column {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+  padding: clamp(10px, calc(var(--editor-font-size, 13px) * 0.74), 20px) clamp(12px, calc(var(--editor-font-size, 13px) * 0.86), 24px);
+  background: var(--surface-editor);
+}
+
+.ai-suggestion-column.suggestion {
+  background: var(--surface-editor);
+}
+
+.ai-suggestion-empty-diff {
+  margin: 0;
+  padding: 8px clamp(12px, calc(var(--editor-font-size, 13px) * 0.86), 22px);
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--muted);
+  background: var(--surface-editor);
+  font-size: clamp(11px, calc(var(--editor-font-size, 13px) * 0.7), 16px);
+  line-height: 1.45;
+}
+
+.ai-diff-lines {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow: visible;
+  color: var(--ink);
+  font: var(--ai-popover-font)/1.55 JetBrains Mono, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.ai-diff-line {
+  min-height: 1.55em;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ai-diff-line.changed {
+  background: transparent;
+}
+
+.ai-diff-segment {
+  border-radius: 3px;
+}
+
+.ai-diff-segment.removed {
+  color: color-mix(in srgb, #8f2d25 78%, var(--ink));
+  background: color-mix(in srgb, #f2b8b5 68%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #c4463a 20%, transparent);
+}
+
+.ai-diff-segment.added {
+  color: color-mix(in srgb, #176a43 82%, var(--ink));
+  background: color-mix(in srgb, #b8e4c7 70%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #278454 20%, transparent);
+}
+
+.ai-suggestion-actions {
+  justify-content: flex-end;
+  padding: clamp(9px, calc(var(--editor-font-size, 13px) * 0.68), 16px) clamp(12px, calc(var(--editor-font-size, 13px) * 0.86), 22px);
+  border-top: 1px solid var(--line-soft);
+}
+
+.primary-button {
+  flex: 0 0 auto;
+  height: clamp(30px, calc(var(--editor-font-size, 13px) * 2.05), 44px);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 0 clamp(10px, calc(var(--editor-font-size, 13px) * 0.78), 18px);
+  color: white;
+  background: var(--accent);
+  cursor: pointer;
+  font-size: clamp(12px, calc(var(--editor-font-size, 13px) * 0.78), 18px);
+  font-weight: 700;
+}
+
+.primary-button:hover {
+  filter: brightness(0.96);
+}
+
+.ghost-button.compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ai-suggestion-actions .secondary-button,
+.ai-suggestion-actions .ghost-button {
+  height: clamp(30px, calc(var(--editor-font-size, 13px) * 2.05), 44px);
+  padding: 0 clamp(10px, calc(var(--editor-font-size, 13px) * 0.78), 18px);
+  font-size: clamp(12px, calc(var(--editor-font-size, 13px) * 0.78), 18px);
+}
+
+.ai-suggestion-actions svg {
+  width: 1em;
+  height: 1em;
+}
+
+@media (max-width: 680px) {
+  .ai-suggestion-popover {
+    left: 12px !important;
+  }
+
+  .ai-suggestion-body {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 640px) {
   .block-toolbar {
     right: 12px;

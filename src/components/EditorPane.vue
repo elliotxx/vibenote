@@ -4,7 +4,7 @@ import { addCursorAbove, addCursorBelow, defaultKeymap, history, historyKeymap, 
 import { lineNumbers, keymap, drawSelection, highlightActiveLine, EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view'
 import { searchKeymap } from '@codemirror/search'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AlignLeft, FilePlus2, ListTodo, Settings, Sparkles, Trash2 } from 'lucide-vue-next'
+import { AlignLeft, Copy, FilePlus2, ListTodo, Settings, Sparkles, Trash2, X } from 'lucide-vue-next'
 import * as prettier from 'prettier/standalone'
 import { blockDelimiter, loadNote, serializeNote, type LoadedNote } from '../common/noteFormat'
 import { getLanguage, languages } from '../common/languages'
@@ -42,6 +42,24 @@ const saving = ref(false)
 const aiBusy = ref(false)
 const aiStatus = ref('')
 const blockToolbar = ref({ visible: false, top: 0 })
+const aiSuggestion = ref<{
+  sourceText: string
+  content: string
+  from: number
+  to: number
+  scope: 'selection' | 'block'
+  top: number
+  left: number
+} | null>(null)
+type AiDiffSegment = { text: string; changed: boolean }
+type AiDiffLine = { key: string; segments: AiDiffSegment[]; changed: boolean }
+type AiSuggestionDiff = { sourceLines: AiDiffLine[]; targetLines: AiDiffLine[]; changed: boolean }
+type AiDiffToken = { text: string; changed: boolean }
+
+const aiSuggestionDiff = computed<AiSuggestionDiff | null>(() => {
+  if (!aiSuggestion.value) return null
+  return buildAiSuggestionDiff(aiSuggestion.value.sourceText, aiSuggestion.value.content)
+})
 let view: EditorView | null = null
 let note: LoadedNote | null = null
 let saveTimer: number | null = null
@@ -53,6 +71,8 @@ let editorBufferPath: string | null = null
 const EDITOR_FONT_MIN = 11
 const EDITOR_FONT_MAX = 48
 const EDITOR_FONT_DEFAULT = 13
+const AI_POPOVER_MIN_WIDTH = 560
+const AI_POPOVER_WIDTH_FACTOR = 36
 
 const activeLanguage = computed({
   get: () => currentBlock.value?.language || store.settings.defaultLanguage,
@@ -142,6 +162,10 @@ function setAiStatus(message: string, autoClear = false) {
   }
 }
 
+function dismissAiSuggestion() {
+  aiSuggestion.value = null
+}
+
 function toggleAutoMode() {
   autoMode.value = !autoMode.value
 }
@@ -156,6 +180,7 @@ watch(
 function applyEditorViewSettings(editor: EditorView | null) {
   if (!editor) return
   editor.dom.style.setProperty('--editor-font-size', `${store.settings.fontSize}px`)
+  editorHost.value?.style.setProperty('--editor-font-size', `${store.settings.fontSize}px`)
   editor.dom.classList.toggle('dark-editor', store.settings.theme === 'dark')
   editor.requestMeasure()
   window.requestAnimationFrame(() => {
@@ -429,6 +454,7 @@ function mountEditor() {
       }),
       EditorView.updateListener.of(update => {
         if (update.docChanged) {
+          dismissAiSuggestion()
           scheduleSave()
         }
         if (update.docChanged || update.selectionSet || update.focusChanged || update.viewportChanged) {
@@ -509,6 +535,15 @@ function visibleSelectionText(editor: EditorView) {
     .join('\n')
 }
 
+function visibleSelectionRange(editor: EditorView) {
+  const ranges = editor.state.selection.ranges.filter(range => !range.empty)
+  if (ranges.length === 0) return null
+  return {
+    from: Math.min(...ranges.map(range => range.from)),
+    to: Math.max(...ranges.map(range => range.to)),
+  }
+}
+
 function sameBlockPosition(block: ScratchBlock | null, candidate: ScratchBlock) {
   return Boolean(block &&
     block.delimiter.from === candidate.delimiter.from &&
@@ -532,6 +567,7 @@ function blockForAiSource(editor: EditorView) {
 }
 
 function aiSourceForEditor(editor: EditorView) {
+  const selectionRange = visibleSelectionRange(editor)
   const selected = visibleSelectionText(editor)?.trim()
   const block = blockForAiSource(editor)
   const blockText = block
@@ -541,6 +577,7 @@ function aiSourceForEditor(editor: EditorView) {
     input: selected || blockText,
     language: block?.language || store.settings.defaultLanguage,
     scope: selected ? 'selection' as const : 'block' as const,
+    range: selectionRange || (block ? { from: block.content.from, to: block.content.to } : null),
   }
 }
 
@@ -592,6 +629,195 @@ function insertAiBlockAfterCurrent(editor: EditorView, content: string, options:
   updateStatus(editor)
   scheduleSave()
   return true
+}
+
+function aiSuggestionPosition(editor: EditorView, from: number) {
+  const host = editorHost.value
+  if (!host) return { top: 12, left: 12 }
+  const hostRect = host.getBoundingClientRect()
+  const coords = editor.coordsAtPos(from)
+  const margin = Math.max(12, Math.round(store.settings.fontSize * 0.7))
+  const expectedWidth = Math.min(
+    Math.max(AI_POPOVER_MIN_WIDTH, store.settings.fontSize * AI_POPOVER_WIDTH_FACTOR),
+    Math.max(AI_POPOVER_MIN_WIDTH, host.clientWidth - margin * 2),
+  )
+  const maxLeft = Math.max(margin, host.clientWidth - expectedWidth - margin)
+  return {
+    top: Math.max(margin, (coords?.bottom ?? hostRect.top + margin) - hostRect.top + margin),
+    left: Math.min(Math.max(margin, (coords?.left ?? hostRect.left + margin) - hostRect.left), maxLeft),
+  }
+}
+
+function tokenizeDiffText(value: string) {
+  const tokens: string[] = []
+  const pattern = /\r\n|\n|[ \t]+|[A-Za-z0-9_@./:-]+|\p{Script=Han}+|[^\s]/gu
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(value))) {
+    tokens.push(match[0])
+  }
+  return tokens
+}
+
+function mergeDiffToken(tokens: AiDiffToken[], text: string, changed: boolean) {
+  if (!text) return
+  const previous = tokens[tokens.length - 1]
+  if (previous && previous.changed === changed && previous.text !== '\n' && text !== '\n') {
+    previous.text += text
+    return
+  }
+  tokens.push({ text, changed })
+}
+
+function diffTextTokens(sourceText: string, targetText: string) {
+  const source = tokenizeDiffText(sourceText)
+  const target = tokenizeDiffText(targetText)
+  const sourceDiff: AiDiffToken[] = []
+  const targetDiff: AiDiffToken[] = []
+  const columnCount = target.length + 1
+  const table = new Uint32Array((source.length + 1) * columnCount)
+
+  for (let sourceIndex = source.length - 1; sourceIndex >= 0; sourceIndex -= 1) {
+    for (let targetIndex = target.length - 1; targetIndex >= 0; targetIndex -= 1) {
+      const offset = sourceIndex * columnCount + targetIndex
+      table[offset] = source[sourceIndex] === target[targetIndex]
+        ? table[(sourceIndex + 1) * columnCount + targetIndex + 1] + 1
+        : Math.max(
+          table[(sourceIndex + 1) * columnCount + targetIndex],
+          table[sourceIndex * columnCount + targetIndex + 1],
+        )
+    }
+  }
+
+  let sourceIndex = 0
+  let targetIndex = 0
+  while (sourceIndex < source.length && targetIndex < target.length) {
+    if (source[sourceIndex] === target[targetIndex]) {
+      mergeDiffToken(sourceDiff, source[sourceIndex], false)
+      mergeDiffToken(targetDiff, target[targetIndex], false)
+      sourceIndex += 1
+      targetIndex += 1
+    } else if (
+      table[(sourceIndex + 1) * columnCount + targetIndex] >=
+      table[sourceIndex * columnCount + targetIndex + 1]
+    ) {
+      mergeDiffToken(sourceDiff, source[sourceIndex], true)
+      sourceIndex += 1
+    } else {
+      mergeDiffToken(targetDiff, target[targetIndex], true)
+      targetIndex += 1
+    }
+  }
+
+  while (sourceIndex < source.length) {
+    mergeDiffToken(sourceDiff, source[sourceIndex], true)
+    sourceIndex += 1
+  }
+  while (targetIndex < target.length) {
+    mergeDiffToken(targetDiff, target[targetIndex], true)
+    targetIndex += 1
+  }
+
+  return { sourceDiff, targetDiff }
+}
+
+function tokensToDiffLines(tokens: AiDiffToken[], keyPrefix: string): AiDiffLine[] {
+  const lines: AiDiffLine[] = []
+  let segments: AiDiffSegment[] = []
+  let changed = false
+
+  const pushLine = () => {
+    lines.push({
+      key: `${keyPrefix}-${lines.length}`,
+      changed,
+      segments: segments.length > 0 ? segments : [{ text: ' ', changed: false }],
+    })
+    segments = []
+    changed = false
+  }
+
+  for (const token of tokens) {
+    const parts = token.text.split('\n')
+    for (let index = 0; index < parts.length; index += 1) {
+      if (index > 0) pushLine()
+      const part = parts[index]
+      if (!part) continue
+      const previous = segments[segments.length - 1]
+      if (previous && previous.changed === token.changed) {
+        previous.text += part
+      } else {
+        segments.push({ text: part, changed: token.changed })
+      }
+      changed = changed || token.changed
+    }
+  }
+
+  pushLine()
+  return lines
+}
+
+function buildAiSuggestionDiff(sourceText: string, targetText: string): AiSuggestionDiff {
+  const { sourceDiff, targetDiff } = diffTextTokens(sourceText, targetText)
+  const sourceLines = tokensToDiffLines(sourceDiff, 'source')
+  const targetLines = tokensToDiffLines(targetDiff, 'target')
+  return {
+    sourceLines,
+    targetLines,
+    changed: sourceLines.some(line => line.changed) || targetLines.some(line => line.changed),
+  }
+}
+
+function showAiSuggestion(editor: EditorView, source: ReturnType<typeof aiSourceForEditor>, content: string) {
+  const cleanContent = sanitizeAiBlockContent(content)
+  if (!cleanContent || !source.range) return false
+  const position = aiSuggestionPosition(editor, source.range.from)
+  aiSuggestion.value = {
+    sourceText: source.input,
+    content: cleanContent,
+    from: source.range.from,
+    to: source.range.to,
+    scope: source.scope,
+    ...position,
+  }
+  return true
+}
+
+function replaceWithAiSuggestion() {
+  if (!view || !aiSuggestion.value) return
+  const suggestion = aiSuggestion.value
+  if (!snapshotCurrentSync('ai-polish-replace')) return
+  view.dispatch({
+    changes: { from: suggestion.from, to: suggestion.to, insert: suggestion.content },
+    selection: EditorSelection.cursor(suggestion.from + suggestion.content.length),
+    annotations: internalBlockEdit.of(true),
+    scrollIntoView: true,
+  })
+  dismissAiSuggestion()
+  view.focus()
+  updateStatus(view)
+  scheduleSave()
+  setAiStatus('AI：已替换原文', true)
+}
+
+function insertAiSuggestionAsBlock() {
+  if (!view || !aiSuggestion.value) return
+  const content = aiSuggestion.value.content
+  if (!snapshotCurrentSync('ai-polish-insert-block')) return
+  if (insertAiBlockAfterCurrent(view, content)) {
+    dismissAiSuggestion()
+    setAiStatus('AI：已插入新块', true)
+  } else {
+    setAiStatus('AI：没有可插入内容')
+  }
+}
+
+async function copyAiSuggestion() {
+  if (!aiSuggestion.value) return
+  try {
+    await navigator.clipboard.writeText(aiSuggestion.value.content)
+    setAiStatus('AI：已复制建议', true)
+  } catch {
+    setAiStatus('AI：复制失败')
+  }
 }
 
 function activeImageLineRange(editor: EditorView) {
@@ -899,11 +1125,21 @@ function updateBlockToolbar(editor: EditorView | null) {
 }
 
 function onEditorScroll() {
+  updateAiSuggestionPosition()
   scheduleBlockToolbarUpdate()
 }
 
 function onWindowResize() {
+  updateAiSuggestionPosition()
   scheduleBlockToolbarUpdate()
+}
+
+function updateAiSuggestionPosition() {
+  if (!view || !aiSuggestion.value) return
+  aiSuggestion.value = {
+    ...aiSuggestion.value,
+    ...aiSuggestionPosition(view, aiSuggestion.value.from),
+  }
 }
 
 function scheduleSave() {
@@ -1530,9 +1766,22 @@ async function runAiAction(mode: AiCompletionMode) {
   aiBusy.value = true
   setAiStatus(mode === 'extract-todos' ? 'AI：提取 Todo 中' : 'AI：优化表述中')
   try {
-    const result = await store.completeWithAi({ ...source, mode })
+    const result = await store.completeWithAi({
+      input: source.input,
+      language: source.language,
+      scope: source.scope,
+      mode,
+    })
     if (!result.ok) {
       setAiStatus(`AI：${result.message}`)
+      return
+    }
+    if (mode === 'polish') {
+      if (!showAiSuggestion(view, source, result.content)) {
+        setAiStatus('AI：没有可展示的建议')
+        return
+      }
+      setAiStatus('AI：已生成建议', true)
       return
     }
     if (!snapshotCurrentSync(mode === 'extract-todos' ? 'ai-extract-todos' : 'ai-polish')) return
@@ -1572,7 +1821,74 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
 
 <template>
   <section class="editor-pane">
-    <div ref="editorHost" class="editor-host" @mousedown.self="focusEditorContent"></div>
+    <div ref="editorHost" class="editor-host" @mousedown.self="focusEditorContent">
+      <aside
+        v-if="aiSuggestion"
+        class="ai-suggestion-popover"
+        :style="{ top: `${aiSuggestion.top}px`, left: `${aiSuggestion.left}px` }"
+        aria-label="AI 表述优化建议"
+        @mousedown.stop
+      >
+        <header class="ai-suggestion-header">
+          <div>
+            <strong>AI 建议</strong>
+            <span>{{ aiSuggestion.scope === 'selection' ? '选区表述优化' : '当前块表述优化' }}</span>
+          </div>
+          <button type="button" class="ai-suggestion-close" title="丢弃建议" @click="dismissAiSuggestion">
+            <X :size="14" />
+          </button>
+        </header>
+        <p v-if="aiSuggestionDiff && !aiSuggestionDiff.changed" class="ai-suggestion-empty-diff">
+          AI 返回内容与原文基本一致，未检测到文字差异。
+        </p>
+        <div class="ai-suggestion-body">
+          <div class="ai-suggestion-column">
+            <span>原文</span>
+            <div class="ai-diff-lines" data-testid="ai-diff-source">
+              <div
+                v-for="line in aiSuggestionDiff?.sourceLines || []"
+                :key="line.key"
+                class="ai-diff-line"
+                :class="{ changed: line.changed }"
+              >
+                <span
+                  v-for="(segment, index) in line.segments"
+                  :key="index"
+                  class="ai-diff-segment"
+                  :class="{ removed: segment.changed }"
+                >{{ segment.text }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="ai-suggestion-column suggestion">
+            <span>优化后</span>
+            <div class="ai-diff-lines" data-testid="ai-diff-target">
+              <div
+                v-for="line in aiSuggestionDiff?.targetLines || []"
+                :key="line.key"
+                class="ai-diff-line"
+                :class="{ changed: line.changed }"
+              >
+                <span
+                  v-for="(segment, index) in line.segments"
+                  :key="index"
+                  class="ai-diff-segment"
+                  :class="{ added: segment.changed }"
+                >{{ segment.text }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <footer class="ai-suggestion-actions">
+          <button type="button" class="primary-button" @click="replaceWithAiSuggestion">替换原文</button>
+          <button type="button" class="secondary-button" @click="insertAiSuggestionAsBlock">插入新块</button>
+          <button type="button" class="ghost-button compact" @click="copyAiSuggestion">
+            <Copy :size="13" />
+            复制
+          </button>
+        </footer>
+      </aside>
+    </div>
 
     <footer class="statusbar">
       <div class="statusbar-left">
