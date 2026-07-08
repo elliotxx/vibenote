@@ -49,6 +49,7 @@ let aiStatusTimer: number | null = null
 let blockToolbarFrame: number | null = null
 let editorScrollElement: HTMLElement | null = null
 let unsubscribeEditorCommand: (() => void) | null = null
+let editorBufferPath: string | null = null
 const EDITOR_FONT_MIN = 11
 const EDITOR_FONT_MAX = 48
 const EDITOR_FONT_DEFAULT = 13
@@ -158,6 +159,7 @@ function applyEditorViewSettings(editor: EditorView | null) {
 
 function mountEditor() {
   if (!editorHost.value) return
+  editorBufferPath = store.currentPath
   note = loadNote(store.currentContent)
   if (!note.content.includes('---block:')) {
     note.content = blockDelimiter(store.settings.defaultLanguage, true).trimStart() + note.content
@@ -834,7 +836,7 @@ function flushSave() {
   saving.value = true
   note.content = view.state.doc.toString()
   const raw = serializeNote(note)
-  store.saveCurrent(raw).finally(() => {
+  store.saveBuffer(editorBufferPath, raw).finally(() => {
     saving.value = false
   })
 }
@@ -846,7 +848,7 @@ function flushSaveSync() {
     saveTimer = null
   }
   note.content = view.state.doc.toString()
-  store.saveCurrentSync(serializeNote(note))
+  store.saveBufferSync(editorBufferPath, serializeNote(note))
   saving.value = false
 }
 
@@ -1221,7 +1223,13 @@ function handleEditorShortcut(event: KeyboardEvent, editor: EditorView) {
   const key = event.key.toLowerCase()
   let handled = false
 
-  if (key === 'arrowleft' && !primary && !event.altKey && !event.shiftKey) {
+  if (key === 'n' && primary) {
+    void store.createExternalFile()
+    handled = true
+  } else if (key === 'o' && primary) {
+    void store.openExternalFile()
+    handled = true
+  } else if (key === 'arrowleft' && !primary && !event.altKey && !event.shiftKey) {
     handled = revealCursorAroundActiveImage(editor, 'left')
   } else if (key === 'arrowright' && !primary && !event.altKey && !event.shiftKey) {
     handled = revealCursorAroundActiveImage(editor, 'right')
@@ -1279,6 +1287,14 @@ function handleEditorShortcut(event: KeyboardEvent, editor: EditorView) {
 }
 
 function runEditorCommand(command: EditorCommand, editor: EditorView) {
+  if (command === 'file:new') {
+    void store.createExternalFile()
+    return true
+  }
+  if (command === 'file:open') {
+    void store.openExternalFile()
+    return true
+  }
   if (command === 'block:split') return splitBlockFromKeymap(editor)
   if (command === 'block:add-end') return addBlockAtEnd(editor)
   if (command === 'block:add-start') return addBlockAtStart(editor)

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, protocol, shell } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, protocol, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -17,6 +17,8 @@ let mainWindow = null
 let library = null
 let aiSettings = null
 let currentSearch = null
+let pendingOpenBuffer = null
+const pendingOpenFiles = []
 
 function runtimeIconPath() {
   const candidate = app.isPackaged
@@ -57,6 +59,25 @@ function initialContent(name = 'Scratch') {
   return `${JSON.stringify({ formatVersion: '1.0.0', name, cursors: null, foldedRanges: [] })}\n---block:markdown;auto=1;created=${created}\n`
 }
 
+function isVibenoteContent(content) {
+  return content.startsWith('---block:') || content.includes('\n---block:')
+}
+
+function noteNameFromFile(filePath) {
+  const parsed = path.parse(filePath)
+  return parsed.name || 'Untitled'
+}
+
+function wrapExternalContent(content, name) {
+  if (isVibenoteContent(content)) return content
+  const created = new Date().toISOString()
+  return `${JSON.stringify({ formatVersion: '1.0.0', name, cursors: null, foldedRanges: [] })}\n---block:markdown;auto=1;created=${created}\n${content}`
+}
+
+function withVibenoteExtension(filePath) {
+  return path.extname(filePath) ? filePath : `${filePath}.vibenote`
+}
+
 async function writeAtomic(filePath, content) {
   const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`
   await fs.promises.writeFile(tmp, content, { encoding: 'utf8', mode: 0o600 })
@@ -93,6 +114,8 @@ class FileLibrary {
     this.userDataPath = userDataPath
     this.legacyImagesPath = path.join(basePath, '.images')
     this.appImagesPath = path.join(userDataPath, 'images')
+    this.externalRegistryPath = path.join(userDataPath, 'external-documents.json')
+    this.externalDocuments = new Map()
     this.loaded = new Map()
   }
 
@@ -100,10 +123,77 @@ class FileLibrary {
     await fs.promises.mkdir(this.basePath, { recursive: true })
     await fs.promises.mkdir(this.legacyImagesPath, { recursive: true })
     await fs.promises.mkdir(this.appImagesPath, { recursive: true })
+    await this.loadExternalRegistry()
     const streamPath = path.join(this.basePath, STREAM_FILE)
     if (!fs.existsSync(streamPath)) {
       await writeAtomic(streamPath, initialContent('Stream'))
     }
+  }
+
+  async loadExternalRegistry() {
+    try {
+      const raw = await fs.promises.readFile(this.externalRegistryPath, 'utf8')
+      const records = JSON.parse(raw)
+      if (!Array.isArray(records)) return
+      this.externalDocuments = new Map(
+        records
+          .filter(record => record?.id && record?.filePath)
+          .map(record => [String(record.id), path.resolve(String(record.filePath))]),
+      )
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        console.warn('Failed to read external document registry', error)
+      }
+    }
+  }
+
+  async saveExternalRegistry() {
+    const records = Array.from(this.externalDocuments.entries())
+      .map(([id, filePath]) => ({ id, filePath }))
+    await writeAtomic(this.externalRegistryPath, JSON.stringify(records, null, 2))
+  }
+
+  documentIdForPath(filePath) {
+    const resolved = path.resolve(filePath)
+    const hash = crypto.createHash('sha256').update(resolved).digest('hex').slice(0, 16)
+    return `external:${hash}`
+  }
+
+  async registerExternal(filePath) {
+    const resolved = path.resolve(filePath)
+    const id = this.documentIdForPath(resolved)
+    this.externalDocuments.set(id, resolved)
+    await this.saveExternalRegistry()
+    return id
+  }
+
+  async bufferInfoForExternal(id, filePath) {
+    const metadata = fs.existsSync(filePath) ? await readMetadata(filePath) : {}
+    return {
+      path: id,
+      name: metadata.name || noteNameFromFile(filePath),
+      tags: metadata.tags || [],
+      isScratch: false,
+      isExternal: true,
+      filePath,
+    }
+  }
+
+  resolveBufferPath(identifier = STREAM_FILE) {
+    const requestedPath = String(identifier || STREAM_FILE)
+    if (this.externalDocuments.has(requestedPath)) {
+      return this.externalDocuments.get(requestedPath)
+    }
+
+    if (path.isAbsolute(requestedPath)) {
+      const resolved = path.resolve(requestedPath)
+      const registered = Array.from(this.externalDocuments.values())
+        .find(filePath => path.resolve(filePath) === resolved)
+      if (registered) return registered
+      throw new Error('External document is not registered')
+    }
+
+    return safeJoin(this.basePath, requestedPath)
   }
 
   async list() {
@@ -121,31 +211,40 @@ class FileLibrary {
         isScratch: entry.name === STREAM_FILE,
       })
     }
+    for (const [id, filePath] of this.externalDocuments.entries()) {
+      if (!fs.existsSync(filePath)) continue
+      buffers.push(await this.bufferInfoForExternal(id, filePath))
+    }
     return buffers.sort((a, b) => {
       if (a.isScratch) return -1
       if (b.isScratch) return 1
+      if (a.isExternal && !b.isExternal) return 1
+      if (!a.isExternal && b.isExternal) return -1
       return a.name.localeCompare(b.name)
     })
   }
 
-  async load(relativePath) {
-    const filePath = safeJoin(this.basePath, relativePath)
-    const content = await fs.promises.readFile(filePath, 'utf8')
-    this.loaded.set(relativePath, content)
+  async load(identifier) {
+    const filePath = this.resolveBufferPath(identifier)
+    const raw = await fs.promises.readFile(filePath, 'utf8')
+    const content = this.externalDocuments.has(String(identifier))
+      ? wrapExternalContent(raw, noteNameFromFile(filePath))
+      : raw
+    this.loaded.set(identifier, content)
     return content
   }
 
-  async save(relativePath, content) {
-    const filePath = safeJoin(this.basePath, relativePath)
+  async save(identifier, content) {
+    const filePath = this.resolveBufferPath(identifier)
     await writeAtomic(filePath, content)
-    this.loaded.set(relativePath, content)
+    this.loaded.set(identifier, content)
     return true
   }
 
-  saveSync(relativePath, content) {
-    const filePath = safeJoin(this.basePath, relativePath)
+  saveSync(identifier, content) {
+    const filePath = this.resolveBufferPath(identifier)
     writeAtomicSync(filePath, content)
-    this.loaded.set(relativePath, content)
+    this.loaded.set(identifier, content)
     return true
   }
 
@@ -163,6 +262,9 @@ class FileLibrary {
   async delete(relativePath) {
     if (relativePath === STREAM_FILE) {
       throw new Error('Main note stream cannot be deleted')
+    }
+    if (this.externalDocuments.has(String(relativePath))) {
+      throw new Error('External files cannot be deleted from Vibenote')
     }
     await fs.promises.unlink(safeJoin(this.basePath, relativePath))
     this.loaded.delete(relativePath)
@@ -183,16 +285,7 @@ class FileLibrary {
   }
 
   resolveDocumentPath(documentPath = STREAM_FILE) {
-    const requestedPath = String(documentPath || STREAM_FILE)
-    if (path.isAbsolute(requestedPath)) {
-      const resolved = path.resolve(requestedPath)
-      const base = path.resolve(this.basePath)
-      if (resolved !== base && !resolved.startsWith(base + path.sep)) {
-        throw new Error('External document image storage is not enabled yet')
-      }
-      return resolved
-    }
-    return safeJoin(this.basePath, requestedPath)
+    return this.resolveBufferPath(documentPath)
   }
 
   documentAssetKey(documentPath = STREAM_FILE) {
@@ -233,6 +326,47 @@ class FileLibrary {
     const parsed = new URL(url)
     const fileName = decodeURIComponent(parsed.hostname || parsed.pathname.replace(/^\//, ''))
     return safeJoin(this.legacyImagesPath, fileName)
+  }
+
+  async openExternalPath(filePath) {
+    const resolved = path.resolve(filePath)
+    if (!fs.existsSync(resolved)) {
+      throw new Error('File does not exist')
+    }
+    const id = await this.registerExternal(resolved)
+    return this.bufferInfoForExternal(id, resolved)
+  }
+
+  async openExternalWithDialog() {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '打开 Vibenote 文件',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Vibenote 文件', extensions: ['vibenote', 'txt', 'md'] },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return this.openExternalPath(result.filePaths[0])
+  }
+
+  async createExternalWithDialog() {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '新建 Vibenote 文件',
+      defaultPath: 'Untitled.vibenote',
+      filters: [
+        { name: 'Vibenote 文件', extensions: ['vibenote'] },
+        { name: 'Markdown / Text', extensions: ['md', 'txt'] },
+      ],
+    })
+    if (result.canceled || !result.filePath) return null
+    const filePath = withVibenoteExtension(result.filePath)
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true })
+    if (!fs.existsSync(filePath)) {
+      await writeAtomic(filePath, initialContent(noteNameFromFile(filePath)))
+    }
+    const id = await this.registerExternal(filePath)
+    return this.bufferInfoForExternal(id, filePath)
   }
 }
 
@@ -635,6 +769,38 @@ function sendEditorCommandWhenFocused(command) {
   mainWindow.webContents.send('editor:command', command)
 }
 
+function notifyBufferOpened(buffer) {
+  if (!buffer || !mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.webContents.send('buffer:opened', buffer)
+}
+
+async function openExternalPathAndNotify(filePath) {
+  try {
+    const buffer = await library.openExternalPath(filePath)
+    notifyBufferOpened(buffer)
+    return buffer
+  } catch (error) {
+    dialog.showErrorBox('无法打开文件', error instanceof Error ? error.message : String(error))
+    return null
+  }
+}
+
+async function openExternalWithDialogAndNotify() {
+  try {
+    notifyBufferOpened(await library.openExternalWithDialog())
+  } catch (error) {
+    dialog.showErrorBox('无法打开文件', error instanceof Error ? error.message : String(error))
+  }
+}
+
+async function createExternalWithDialogAndNotify() {
+  try {
+    notifyBufferOpened(await library.createExternalWithDialog())
+  } catch (error) {
+    dialog.showErrorBox('无法创建文件', error instanceof Error ? error.message : String(error))
+  }
+}
+
 function setupApplicationMenu() {
   const template = [
     {
@@ -647,6 +813,23 @@ function setupApplicationMenu() {
         { role: 'unhide' },
         { type: 'separator' },
         { role: 'quit' },
+      ],
+    },
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: '新建 Vibenote 文件...',
+          accelerator: 'CommandOrControl+N',
+          click: () => createExternalWithDialogAndNotify(),
+        },
+        {
+          label: '打开...',
+          accelerator: 'CommandOrControl+O',
+          click: () => openExternalWithDialogAndNotify(),
+        },
+        { type: 'separator' },
+        { role: 'close' },
       ],
     },
     {
@@ -718,6 +901,8 @@ function editorCommandForInput(input) {
   if (input.type !== 'keyDown' || input.isAutoRepeat) return null
   const primary = input.meta || input.control
   const key = input.key.toLowerCase()
+  if (primary && key === 'n') return 'file:new'
+  if (primary && key === 'o') return 'file:open'
   if (primary && (key === '=' || key === '+')) return 'view:font-increase'
   if (primary && key === '-') return 'view:font-decrease'
   if (primary && key === '0') return 'view:font-reset'
@@ -789,6 +974,9 @@ app.whenReady().then(async () => {
   library = new FileLibrary(basePath, userDataPath)
   aiSettings = new AiSettingsStore(userDataPath)
   await library.init()
+  for (const filePath of pendingOpenFiles.splice(0)) {
+    pendingOpenBuffer = await library.openExternalPath(filePath)
+  }
   protocol.handle('vibenote-image', async request => {
     const fileName = decodeURIComponent(new URL(request.url).hostname || new URL(request.url).pathname.replace(/^\//, ''))
     const filePath = safeJoin(library.legacyImagesPath, fileName)
@@ -813,6 +1001,15 @@ app.whenReady().then(async () => {
   })
 })
 
+app.on('open-file', (event, filePath) => {
+  event.preventDefault()
+  if (!library) {
+    pendingOpenFiles.push(filePath)
+    return
+  }
+  void openExternalPathAndNotify(filePath)
+})
+
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
 })
@@ -834,6 +1031,13 @@ ipcMain.on('buffer:saveSync', (event, relativePath, content) => {
 ipcMain.handle('buffer:create', (_event, name) => library.create(name))
 ipcMain.handle('buffer:delete', (_event, relativePath) => library.delete(relativePath))
 ipcMain.handle('buffer:archiveStream', (_event, name) => library.archiveStream(name))
+ipcMain.handle('buffer:openExternal', () => library.openExternalWithDialog())
+ipcMain.handle('buffer:createExternal', () => library.createExternalWithDialog())
+ipcMain.handle('buffer:consumePendingOpen', () => {
+  const buffer = pendingOpenBuffer
+  pendingOpenBuffer = null
+  return buffer
+})
 ipcMain.handle('library:search', (_event, query) => startSearch(query))
 ipcMain.handle('image:save', (_event, payload) => library.saveImage(payload))
 ipcMain.handle('image:resolveLegacyUrl', (_event, url) => library.resolveLegacyImageUrl(url))

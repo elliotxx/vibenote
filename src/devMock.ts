@@ -6,6 +6,15 @@ const AI_SETTINGS_KEY = 'vibenote:mock-ai-settings'
 let mockApiKey = ''
 
 type MockBuffer = BufferInfo & { content: string }
+type BufferOpenedCallback = (buffer: BufferInfo | null) => void
+
+const openedCallbacks = new Set<BufferOpenedCallback>()
+
+function toBufferInfo(buffer: MockBuffer): BufferInfo {
+  const { content, ...info } = buffer
+  void content
+  return info
+}
 
 function readBuffers(): MockBuffer[] {
   const stored = localStorage.getItem(STORAGE_KEY)
@@ -97,6 +106,45 @@ export function installDevMock() {
         stream.content = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${formatInitialContent('markdown')}`
         writeBuffers(buffers)
         return path
+      },
+      async openExternal() {
+        const path = 'external:mock-open'
+        const buffers = readBuffers().filter(buffer => buffer.path !== path)
+        const buffer: MockBuffer = {
+          path,
+          name: 'Opened Note',
+          tags: [],
+          isScratch: false,
+          isExternal: true,
+          filePath: '/tmp/opened-note.vibenote',
+          content: `${JSON.stringify({ formatVersion: '1.0.0', name: 'Opened Note' })}\n${formatInitialContent('markdown')}Opened external note\n`,
+        }
+        buffers.push(buffer)
+        writeBuffers(buffers)
+        return toBufferInfo(buffer)
+      },
+      async createExternal() {
+        const path = `external:mock-created-${Date.now()}`
+        const buffer: MockBuffer = {
+          path,
+          name: 'New External Note',
+          tags: [],
+          isScratch: false,
+          isExternal: true,
+          filePath: '/tmp/new-external-note.vibenote',
+          content: `${JSON.stringify({ formatVersion: '1.0.0', name: 'New External Note' })}\n${formatInitialContent('markdown')}New external note\n`,
+        }
+        const buffers = readBuffers()
+        buffers.push(buffer)
+        writeBuffers(buffers)
+        return toBufferInfo(buffer)
+      },
+      async consumePendingOpen() {
+        return null
+      },
+      onOpened(callback: BufferOpenedCallback) {
+        openedCallbacks.add(callback)
+        return () => openedCallbacks.delete(callback)
       },
     },
     library: {

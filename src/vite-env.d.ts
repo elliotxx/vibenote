@@ -5,6 +5,8 @@ type BufferInfo = {
   name: string
   tags: string[]
   isScratch: boolean
+  isExternal?: boolean
+  filePath?: string
 }
 
 type SearchResult = {
@@ -15,6 +17,8 @@ type SearchResult = {
 }
 
 type EditorCommand =
+  | 'file:new'
+  | 'file:open'
   | 'block:split'
   | 'block:add-end'
   | 'block:add-start'
@@ -74,6 +78,10 @@ interface Window {
       create(name: string): Promise<string>
       delete(path: string): Promise<boolean>
       archiveStream(name: string): Promise<string>
+      openExternal(): Promise<BufferInfo | null>
+      createExternal(): Promise<BufferInfo | null>
+      consumePendingOpen(): Promise<BufferInfo | null>
+      onOpened(callback: (buffer: BufferInfo | null) => void): () => void
     }
     library: {
       search(query: string): Promise<SearchResult[]>

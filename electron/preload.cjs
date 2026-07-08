@@ -15,6 +15,14 @@ contextBridge.exposeInMainWorld('vibenote', {
     create: name => ipcRenderer.invoke('buffer:create', name),
     delete: path => ipcRenderer.invoke('buffer:delete', path),
     archiveStream: name => ipcRenderer.invoke('buffer:archiveStream', name),
+    openExternal: () => ipcRenderer.invoke('buffer:openExternal'),
+    createExternal: () => ipcRenderer.invoke('buffer:createExternal'),
+    consumePendingOpen: () => ipcRenderer.invoke('buffer:consumePendingOpen'),
+    onOpened: callback => {
+      const listener = (_event, buffer) => callback(buffer)
+      ipcRenderer.on('buffer:opened', listener)
+      return () => ipcRenderer.removeListener('buffer:opened', listener)
+    },
   },
   library: {
     search: query => ipcRenderer.invoke('library:search', query),

@@ -21,6 +21,8 @@ const defaultAiSettings: AiSettings = {
   keyStorage: 'none',
 }
 
+let unsubscribeOpenedBuffer: (() => void) | null = null
+
 export const useWorkspaceStore = defineStore('workspace', () => {
   const buffers = ref<BufferInfo[]>([])
   const currentPath = ref<string | null>(null)
@@ -48,10 +50,26 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       settings.ai = { ...defaultAiSettings, ...parsed.ai, hasApiKey: false }
     }
     settings.ai = { ...settings.ai, ...(await window.vibenote.ai.getSettings()) }
+    watchOpenedBuffers()
     await refreshBuffers()
     localStorage.removeItem('vibenote:openTabs')
-    const stream = buffers.value.find(buffer => buffer.isScratch) || buffers.value[0]
-    await openBuffer(stream?.path)
+    const pending = await window.vibenote.buffer.consumePendingOpen()
+    if (pending) {
+      await refreshBuffers()
+      await openBuffer(pending.path)
+    } else {
+      const stream = buffers.value.find(buffer => buffer.isScratch) || buffers.value[0]
+      await openBuffer(stream?.path)
+    }
+  }
+
+  function watchOpenedBuffers() {
+    if (unsubscribeOpenedBuffer) return
+    unsubscribeOpenedBuffer = window.vibenote.buffer.onOpened(async buffer => {
+      if (!buffer) return
+      await refreshBuffers()
+      await openBuffer(buffer.path)
+    })
   }
 
   async function refreshBuffers() {
@@ -91,17 +109,29 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return normalized
   }
 
-  async function saveCurrent(content: string) {
-    if (!currentPath.value) return
-    currentContent.value = content
-    await window.vibenote.buffer.save(currentPath.value, content)
+  async function saveBuffer(path: string | null | undefined, content: string) {
+    if (!path) return
+    if (currentPath.value === path) {
+      currentContent.value = content
+    }
+    await window.vibenote.buffer.save(path, content)
     await refreshBuffers()
   }
 
+  async function saveCurrent(content: string) {
+    await saveBuffer(currentPath.value, content)
+  }
+
+  function saveBufferSync(path: string | null | undefined, content: string) {
+    if (!path) return
+    if (currentPath.value === path) {
+      currentContent.value = content
+    }
+    window.vibenote.buffer.saveSync(path, content)
+  }
+
   function saveCurrentSync(content: string) {
-    if (!currentPath.value) return
-    currentContent.value = content
-    window.vibenote.buffer.saveSync(currentPath.value, content)
+    saveBufferSync(currentPath.value, content)
   }
 
   async function archiveStream(name: string) {
@@ -109,6 +139,20 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     await refreshBuffers()
     const stream = buffers.value.find(buffer => buffer.isScratch) || buffers.value[0]
     await openBuffer(stream?.path)
+  }
+
+  async function openExternalFile() {
+    const buffer = await window.vibenote.buffer.openExternal()
+    if (!buffer) return
+    await refreshBuffers()
+    await openBuffer(buffer.path)
+  }
+
+  async function createExternalFile() {
+    const buffer = await window.vibenote.buffer.createExternal()
+    if (!buffer) return
+    await refreshBuffers()
+    await openBuffer(buffer.path)
   }
 
   async function searchLibrary(query: string) {
@@ -174,8 +218,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     init,
     refreshBuffers,
     openBuffer,
+    openExternalFile,
+    createExternalFile,
     saveCurrent,
     saveCurrentSync,
+    saveBuffer,
+    saveBufferSync,
     archiveStream,
     searchLibrary,
     openSearchResult,

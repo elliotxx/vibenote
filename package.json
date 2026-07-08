@@ -51,6 +51,14 @@
       "target": [
         "dir"
       ],
+      "fileAssociations": [
+        {
+          "ext": "vibenote",
+          "name": "Vibenote Note",
+          "description": "Vibenote note file",
+          "role": "Editor"
+        }
+      ],
       "category": "public.app-category.developer-tools"
     },
     "dmg": {

@@ -725,3 +725,19 @@ test.describe('editor text selection shortcuts', () => {
     }
   })
 })
+
+test.describe('external Vibenote files', () => {
+  test.beforeEach(async ({ page }) => {
+    await loadFixture(page)
+  })
+
+  test('creates and opens external notes from app shortcuts', async ({ page }) => {
+    await page.keyboard.press(`${modifier}+N`)
+    await expect(page.locator('.window-title')).toContainText('New External Note')
+    await expect(page.locator('.cm-content')).toContainText('New external note')
+
+    await page.keyboard.press(`${modifier}+O`)
+    await expect(page.locator('.window-title')).toContainText('Opened Note')
+    await expect(page.locator('.cm-content')).toContainText('Opened external note')
+  })
+})
