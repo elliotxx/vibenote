@@ -12,6 +12,9 @@ const APP_NAME = 'vibenote'
 const STREAM_FILE = 'stream.txt'
 
 app.setName('Vibenote')
+if (process.env.VIBENOTE_USER_DATA_DIR) {
+  app.setPath('userData', path.resolve(process.env.VIBENOTE_USER_DATA_DIR))
+}
 
 let mainWindow = null
 let library = null
@@ -90,6 +93,276 @@ function writeAtomicSync(filePath, content) {
   fs.renameSync(tmp, filePath)
 }
 
+function compactTimestamp(date = new Date()) {
+  return date.toISOString().replace(/[-:]/g, '').replace('T', '-').replace('Z', '').replace('.', '-')
+}
+
+function contentHash(content) {
+  return crypto.createHash('sha256').update(content).digest('hex')
+}
+
+function documentKey(documentId) {
+  return String(documentId).replace(/[^a-z0-9._-]+/gi, '_')
+}
+
+function imageRefsForContent(content) {
+  const refs = []
+  const pattern = /!\[[^\]]*]\((<([^>]+)>|([^)]+))\)/g
+  for (const match of content.matchAll(pattern)) {
+    const target = (match[2] || match[3] || '').trim()
+    if (!target) continue
+    const exists = path.isAbsolute(target) && fs.existsSync(target)
+    let size = null
+    let hash = null
+    if (exists) {
+      try {
+        const buffer = fs.readFileSync(target)
+        size = buffer.length
+        hash = crypto.createHash('sha256').update(buffer).digest('hex')
+      } catch {
+        // Keep the reference, but leave file metadata empty when unreadable.
+      }
+    }
+    refs.push({ path: target, exists, size, hash })
+  }
+  return refs
+}
+
+class BackupManager {
+  constructor(userDataPath) {
+    this.backupsPath = path.join(userDataPath, 'backups')
+    this.recoveryPath = path.join(userDataPath, 'recovery')
+    this.maxSnapshots = 100
+  }
+
+  async init() {
+    await fs.promises.mkdir(this.backupsPath, { recursive: true })
+    await fs.promises.mkdir(this.recoveryPath, { recursive: true })
+  }
+
+  initSync() {
+    fs.mkdirSync(this.backupsPath, { recursive: true })
+    fs.mkdirSync(this.recoveryPath, { recursive: true })
+  }
+
+  docDir(documentId) {
+    return path.join(this.backupsPath, documentKey(documentId))
+  }
+
+  manifestPath(documentId) {
+    return path.join(this.docDir(documentId), 'manifest.json')
+  }
+
+  recoveryFilePath(documentId) {
+    return path.join(this.recoveryPath, `${documentKey(documentId)}.vibenote`)
+  }
+
+  recoveryMetaPath(documentId) {
+    return path.join(this.recoveryPath, `${documentKey(documentId)}.json`)
+  }
+
+  readManifestSync(documentId) {
+    try {
+      return JSON.parse(fs.readFileSync(this.manifestPath(documentId), 'utf8'))
+    } catch {
+      return { documentId, snapshots: [] }
+    }
+  }
+
+  async readManifest(documentId) {
+    try {
+      return JSON.parse(await fs.promises.readFile(this.manifestPath(documentId), 'utf8'))
+    } catch {
+      return { documentId, snapshots: [] }
+    }
+  }
+
+  async writeManifest(documentId, manifest) {
+    await fs.promises.mkdir(this.docDir(documentId), { recursive: true })
+    await writeAtomic(this.manifestPath(documentId), JSON.stringify(manifest, null, 2))
+  }
+
+  writeManifestSync(documentId, manifest) {
+    fs.mkdirSync(this.docDir(documentId), { recursive: true })
+    writeAtomicSync(this.manifestPath(documentId), JSON.stringify(manifest, null, 2))
+  }
+
+  snapshotRecord(document, fileName, content, reason, highRisk) {
+    return {
+      fileName,
+      reason,
+      highRisk: Boolean(highRisk),
+      createdAt: new Date().toISOString(),
+      sourcePath: document.filePath,
+      sourceIdentifier: document.identifier,
+      sourceKind: document.kind,
+      sourceSize: Buffer.byteLength(content, 'utf8'),
+      contentHash: contentHash(content),
+      appVersion: app.getVersion(),
+      images: imageRefsForContent(content),
+    }
+  }
+
+  snapshotFileName(reason) {
+    const label = String(reason || 'snapshot')
+      .replace(/[^a-z0-9._-]+/gi, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'snapshot'
+    return `${compactTimestamp()}-${process.pid}-${crypto.randomBytes(3).toString('hex')}-${label}.vibenote`
+  }
+
+  shouldCreateSnapshot(documentId, content, reason, force, manifest) {
+    const hash = contentHash(content)
+    const latest = manifest.snapshots?.at(-1)
+    if (latest?.contentHash === hash) return false
+    if (force) return true
+    return true
+  }
+
+  trimManifestSync(documentId, manifest) {
+    const snapshots = manifest.snapshots || []
+    while (snapshots.length > this.maxSnapshots) {
+      const removed = snapshots.shift()
+      if (removed?.fileName) {
+        try {
+          fs.unlinkSync(path.join(this.docDir(documentId), removed.fileName))
+        } catch {
+          // Missing old snapshots should not block saving new content.
+        }
+      }
+    }
+    manifest.snapshots = snapshots
+  }
+
+  async trimManifest(documentId, manifest) {
+    const snapshots = manifest.snapshots || []
+    while (snapshots.length > this.maxSnapshots) {
+      const removed = snapshots.shift()
+      if (removed?.fileName) {
+        try {
+          await fs.promises.unlink(path.join(this.docDir(documentId), removed.fileName))
+        } catch {
+          // Missing old snapshots should not block saving new content.
+        }
+      }
+    }
+    manifest.snapshots = snapshots
+  }
+
+  async writeRecovery(document, content) {
+    await fs.promises.mkdir(this.recoveryPath, { recursive: true })
+    await writeAtomic(this.recoveryFilePath(document.documentId), content)
+    await writeAtomic(this.recoveryMetaPath(document.documentId), JSON.stringify({
+      documentId: document.documentId,
+      identifier: document.identifier,
+      filePath: document.filePath,
+      kind: document.kind,
+      contentHash: contentHash(content),
+      updatedAt: new Date().toISOString(),
+    }, null, 2))
+  }
+
+  writeRecoverySync(document, content) {
+    fs.mkdirSync(this.recoveryPath, { recursive: true })
+    writeAtomicSync(this.recoveryFilePath(document.documentId), content)
+    writeAtomicSync(this.recoveryMetaPath(document.documentId), JSON.stringify({
+      documentId: document.documentId,
+      identifier: document.identifier,
+      filePath: document.filePath,
+      kind: document.kind,
+      contentHash: contentHash(content),
+      updatedAt: new Date().toISOString(),
+    }, null, 2))
+  }
+
+  async snapshot(document, content, options = {}) {
+    const reason = options.reason || 'autosave'
+    const force = Boolean(options.force)
+    const highRisk = Boolean(options.highRisk)
+    const manifest = await this.readManifest(document.documentId)
+    manifest.documentId = document.documentId
+    manifest.identifier = document.identifier
+    manifest.filePath = document.filePath
+    manifest.kind = document.kind
+    manifest.updatedAt = new Date().toISOString()
+    manifest.snapshots = manifest.snapshots || []
+    if (!this.shouldCreateSnapshot(document.documentId, content, reason, force, manifest)) {
+      return null
+    }
+
+    await fs.promises.mkdir(this.docDir(document.documentId), { recursive: true })
+    const fileName = this.snapshotFileName(reason)
+    await writeAtomic(path.join(this.docDir(document.documentId), fileName), content)
+    manifest.snapshots.push(this.snapshotRecord(document, fileName, content, reason, highRisk))
+    await this.trimManifest(document.documentId, manifest)
+    await this.writeManifest(document.documentId, manifest)
+    return manifest.snapshots.at(-1)
+  }
+
+  snapshotSync(document, content, options = {}) {
+    const reason = options.reason || 'manual'
+    const force = Boolean(options.force)
+    const highRisk = Boolean(options.highRisk)
+    this.initSync()
+    const manifest = this.readManifestSync(document.documentId)
+    manifest.documentId = document.documentId
+    manifest.identifier = document.identifier
+    manifest.filePath = document.filePath
+    manifest.kind = document.kind
+    manifest.updatedAt = new Date().toISOString()
+    manifest.snapshots = manifest.snapshots || []
+    if (!this.shouldCreateSnapshot(document.documentId, content, reason, force, manifest)) {
+      return null
+    }
+
+    fs.mkdirSync(this.docDir(document.documentId), { recursive: true })
+    const fileName = this.snapshotFileName(reason)
+    writeAtomicSync(path.join(this.docDir(document.documentId), fileName), content)
+    manifest.snapshots.push(this.snapshotRecord(document, fileName, content, reason, highRisk))
+    this.trimManifestSync(document.documentId, manifest)
+    this.writeManifestSync(document.documentId, manifest)
+    return manifest.snapshots.at(-1)
+  }
+
+  async recoveriesFor(documents) {
+    const results = []
+    for (const document of documents) {
+      const recoveryFile = this.recoveryFilePath(document.documentId)
+      if (!fs.existsSync(recoveryFile)) continue
+      const recoveryStat = await fs.promises.stat(recoveryFile)
+      const targetExists = fs.existsSync(document.filePath)
+      if (targetExists) {
+        const targetStat = await fs.promises.stat(document.filePath)
+        if (recoveryStat.mtimeMs <= targetStat.mtimeMs + 1) continue
+      }
+      results.push({
+        documentId: document.documentId,
+        identifier: document.identifier,
+        filePath: document.filePath,
+        kind: document.kind,
+        targetExists,
+        updatedAt: recoveryStat.mtime.toISOString(),
+      })
+    }
+    return results
+  }
+
+  async readRecovery(document) {
+    const recoveryFile = this.recoveryFilePath(document.documentId)
+    const content = await fs.promises.readFile(recoveryFile, 'utf8')
+    const recoveryStat = await fs.promises.stat(recoveryFile)
+    return {
+      documentId: document.documentId,
+      identifier: document.identifier,
+      filePath: document.filePath,
+      kind: document.kind,
+      targetExists: fs.existsSync(document.filePath),
+      updatedAt: recoveryStat.mtime.toISOString(),
+      content,
+    }
+  }
+}
+
 async function readMetadata(filePath) {
   const handle = await fs.promises.open(filePath, 'r')
   try {
@@ -115,6 +388,7 @@ class FileLibrary {
     this.legacyImagesPath = path.join(basePath, '.images')
     this.appImagesPath = path.join(userDataPath, 'images')
     this.externalRegistryPath = path.join(userDataPath, 'external-documents.json')
+    this.backups = new BackupManager(userDataPath)
     this.externalDocuments = new Map()
     this.loaded = new Map()
   }
@@ -123,6 +397,7 @@ class FileLibrary {
     await fs.promises.mkdir(this.basePath, { recursive: true })
     await fs.promises.mkdir(this.legacyImagesPath, { recursive: true })
     await fs.promises.mkdir(this.appImagesPath, { recursive: true })
+    await this.backups.init()
     await this.loadExternalRegistry()
     const streamPath = path.join(this.basePath, STREAM_FILE)
     if (!fs.existsSync(streamPath)) {
@@ -157,6 +432,58 @@ class FileLibrary {
     const resolved = path.resolve(filePath)
     const hash = crypto.createHash('sha256').update(resolved).digest('hex').slice(0, 16)
     return `external:${hash}`
+  }
+
+  documentRecord(identifier = STREAM_FILE) {
+    const requestedPath = String(identifier || STREAM_FILE)
+    const filePath = this.resolveBufferPath(requestedPath)
+    if (this.externalDocuments.has(requestedPath)) {
+      return {
+        documentId: requestedPath,
+        identifier: requestedPath,
+        filePath,
+        kind: 'external',
+      }
+    }
+
+    const relativePath = path.relative(this.basePath, filePath)
+    const documentId = relativePath === STREAM_FILE
+      ? 'internal:stream'
+      : `internal:${crypto.createHash('sha256').update(relativePath).digest('hex').slice(0, 16)}`
+    return {
+      documentId,
+      identifier: requestedPath,
+      filePath,
+      kind: 'internal',
+    }
+  }
+
+  allDocumentRecords() {
+    const seen = new Set()
+    const records = []
+    const addRecord = identifier => {
+      try {
+        const record = this.documentRecord(identifier)
+        if (seen.has(record.documentId)) return
+        seen.add(record.documentId)
+        records.push(record)
+      } catch {
+        // Ignore documents that disappeared before recovery scanning.
+      }
+    }
+
+    addRecord(STREAM_FILE)
+    try {
+      for (const entry of fs.readdirSync(this.basePath, { withFileTypes: true })) {
+        if (entry.isFile() && entry.name.endsWith('.txt')) addRecord(entry.name)
+      }
+    } catch {
+      // The notes directory may not exist during early startup.
+    }
+    for (const [id] of this.externalDocuments.entries()) {
+      addRecord(id)
+    }
+    return records
   }
 
   async registerExternal(filePath) {
@@ -235,17 +562,55 @@ class FileLibrary {
   }
 
   async save(identifier, content) {
-    const filePath = this.resolveBufferPath(identifier)
+    const document = this.documentRecord(identifier)
+    const filePath = document.filePath
+    await this.backups.writeRecovery(document, content)
+    if (fs.existsSync(filePath)) {
+      const previous = await fs.promises.readFile(filePath, 'utf8')
+      if (previous !== content) {
+        await this.backups.snapshot(document, previous, { reason: 'autosave' })
+      }
+    }
     await writeAtomic(filePath, content)
     this.loaded.set(identifier, content)
     return true
   }
 
   saveSync(identifier, content) {
-    const filePath = this.resolveBufferPath(identifier)
+    const document = this.documentRecord(identifier)
+    const filePath = document.filePath
+    this.backups.writeRecoverySync(document, content)
+    if (fs.existsSync(filePath)) {
+      const previous = fs.readFileSync(filePath, 'utf8')
+      if (previous !== content) {
+        this.backups.snapshotSync(document, previous, { reason: 'autosave' })
+      }
+    }
     writeAtomicSync(filePath, content)
     this.loaded.set(identifier, content)
     return true
+  }
+
+  async snapshot(identifier, content, reason = 'manual') {
+    const document = this.documentRecord(identifier)
+    await this.backups.writeRecovery(document, content)
+    await this.backups.snapshot(document, content, { reason, force: true, highRisk: true })
+    return true
+  }
+
+  snapshotSync(identifier, content, reason = 'manual') {
+    const document = this.documentRecord(identifier)
+    this.backups.writeRecoverySync(document, content)
+    this.backups.snapshotSync(document, content, { reason, force: true, highRisk: true })
+    return true
+  }
+
+  async listRecoveries() {
+    return this.backups.recoveriesFor(this.allDocumentRecords())
+  }
+
+  async readRecovery(identifier) {
+    return this.backups.readRecovery(this.documentRecord(identifier))
   }
 
   async create(name) {
@@ -1028,11 +1393,21 @@ ipcMain.on('buffer:saveSync', (event, relativePath, content) => {
     event.returnValue = { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 })
+ipcMain.handle('buffer:snapshot', (_event, relativePath, content, reason) => library.snapshot(relativePath, content, reason))
+ipcMain.on('buffer:snapshotSync', (event, relativePath, content, reason) => {
+  try {
+    event.returnValue = { ok: library.snapshotSync(relativePath, content, reason) }
+  } catch (error) {
+    event.returnValue = { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
 ipcMain.handle('buffer:create', (_event, name) => library.create(name))
 ipcMain.handle('buffer:delete', (_event, relativePath) => library.delete(relativePath))
 ipcMain.handle('buffer:archiveStream', (_event, name) => library.archiveStream(name))
 ipcMain.handle('buffer:openExternal', () => library.openExternalWithDialog())
 ipcMain.handle('buffer:createExternal', () => library.createExternalWithDialog())
+ipcMain.handle('buffer:listRecoveries', () => library.listRecoveries())
+ipcMain.handle('buffer:readRecovery', (_event, relativePath) => library.readRecovery(relativePath))
 ipcMain.handle('buffer:consumePendingOpen', () => {
   const buffer = pendingOpenBuffer
   pendingOpenBuffer = null

@@ -524,11 +524,28 @@ select:focus {
 }
 
 .statusbar-center {
+  gap: 8px;
   justify-content: center;
   color: var(--muted);
   white-space: nowrap;
   justify-self: center;
   overflow: hidden;
+}
+
+.status-recovery-button {
+  height: 26px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--status-bg));
+  color: var(--accent);
+  padding: 0 9px;
+  font: inherit;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-recovery-button:hover {
+  background: color-mix(in srgb, var(--accent) 16%, var(--status-bg));
 }
 
 .status-feedback {

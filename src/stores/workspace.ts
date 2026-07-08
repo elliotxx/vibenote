@@ -28,6 +28,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const currentPath = ref<string | null>(null)
   const currentContent = ref('')
   const searchResults = ref<SearchResult[]>([])
+  const recoveries = ref<RecoveryInfo[]>([])
   const settings = reactive<Settings>({
     theme: 'light',
     fontSize: 13,
@@ -61,6 +62,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const stream = buffers.value.find(buffer => buffer.isScratch) || buffers.value[0]
       await openBuffer(stream?.path)
     }
+    await refreshRecoveries()
   }
 
   function watchOpenedBuffers() {
@@ -116,6 +118,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
     await window.vibenote.buffer.save(path, content)
     await refreshBuffers()
+    await refreshRecoveries()
   }
 
   async function saveCurrent(content: string) {
@@ -132,6 +135,29 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function saveCurrentSync(content: string) {
     saveBufferSync(currentPath.value, content)
+  }
+
+  async function snapshotBuffer(path: string | null | undefined, content: string, reason: string) {
+    if (!path) return
+    await window.vibenote.buffer.snapshot(path, content, reason)
+  }
+
+  function snapshotBufferSync(path: string | null | undefined, content: string, reason: string) {
+    if (!path) return
+    window.vibenote.buffer.snapshotSync(path, content, reason)
+  }
+
+  async function listRecoveries() {
+    return window.vibenote.buffer.listRecoveries()
+  }
+
+  async function readRecovery(path: string) {
+    return window.vibenote.buffer.readRecovery(path)
+  }
+
+  async function refreshRecoveries() {
+    recoveries.value = await listRecoveries()
+    return recoveries.value
   }
 
   async function archiveStream(name: string) {
@@ -213,6 +239,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     currentPath,
     currentContent,
     searchResults,
+    recoveries,
     settings,
     bufferTitle,
     init,
@@ -224,6 +251,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     saveCurrentSync,
     saveBuffer,
     saveBufferSync,
+    snapshotBuffer,
+    snapshotBufferSync,
+    listRecoveries,
+    readRecovery,
+    refreshRecoveries,
     archiveStream,
     searchLibrary,
     openSearchResult,

@@ -269,7 +269,12 @@ export function deleteCurrentBlock(view: EditorView) {
   const fallbackBlock = blocks[Math.min(index + 1, blocks.length - 1)] === block
     ? blocks[Math.max(0, index - 1)]
     : blocks[Math.min(index + 1, blocks.length - 1)]
-  const nextPos = fallbackBlock ? fallbackBlock.content.from : Math.max(0, block.range.from - 1)
+  const deleteLength = block.range.to - block.range.from
+  const nextPos = fallbackBlock
+    ? fallbackBlock.range.from > block.range.from
+      ? Math.max(block.range.from, fallbackBlock.content.from - deleteLength)
+      : Math.max(fallbackBlock.content.from, Math.min(fallbackBlock.content.to, block.range.from - 1))
+    : Math.max(0, block.range.from - 1)
   view.dispatch({
     changes: { from: block.range.from, to: block.range.to, insert: '' },
     selection: { anchor: nextPos },

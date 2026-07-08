@@ -12,11 +12,21 @@ contextBridge.exposeInMainWorld('vibenote', {
       }
       return true
     },
+    snapshot: (path, content, reason) => ipcRenderer.invoke('buffer:snapshot', path, content, reason),
+    snapshotSync: (path, content, reason) => {
+      const result = ipcRenderer.sendSync('buffer:snapshotSync', path, content, reason)
+      if (!result?.ok) {
+        throw new Error(result?.error || 'Failed to create snapshot synchronously')
+      }
+      return true
+    },
     create: name => ipcRenderer.invoke('buffer:create', name),
     delete: path => ipcRenderer.invoke('buffer:delete', path),
     archiveStream: name => ipcRenderer.invoke('buffer:archiveStream', name),
     openExternal: () => ipcRenderer.invoke('buffer:openExternal'),
     createExternal: () => ipcRenderer.invoke('buffer:createExternal'),
+    listRecoveries: () => ipcRenderer.invoke('buffer:listRecoveries'),
+    readRecovery: path => ipcRenderer.invoke('buffer:readRecovery', path),
     consumePendingOpen: () => ipcRenderer.invoke('buffer:consumePendingOpen'),
     onOpened: callback => {
       const listener = (_event, buffer) => callback(buffer)

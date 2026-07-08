@@ -68,6 +68,19 @@ type AiCompletionResult = {
   content: string
 }
 
+type RecoveryInfo = {
+  documentId: string
+  identifier: string
+  filePath: string
+  kind: 'internal' | 'external'
+  targetExists: boolean
+  updatedAt: string
+}
+
+type RecoveryContent = RecoveryInfo & {
+  content: string
+}
+
 interface Window {
   vibenote: {
     buffer: {
@@ -75,11 +88,15 @@ interface Window {
       load(path: string): Promise<string>
       save(path: string, content: string): Promise<boolean>
       saveSync(path: string, content: string): boolean
+      snapshot(path: string, content: string, reason?: string): Promise<boolean>
+      snapshotSync(path: string, content: string, reason?: string): boolean
       create(name: string): Promise<string>
       delete(path: string): Promise<boolean>
       archiveStream(name: string): Promise<string>
       openExternal(): Promise<BufferInfo | null>
       createExternal(): Promise<BufferInfo | null>
+      listRecoveries(): Promise<RecoveryInfo[]>
+      readRecovery(path: string): Promise<RecoveryContent>
       consumePendingOpen(): Promise<BufferInfo | null>
       onOpened(callback: (buffer: BufferInfo | null) => void): () => void
     }

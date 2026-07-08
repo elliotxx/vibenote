@@ -2,6 +2,7 @@ import { formatInitialContent } from './common/noteFormat'
 
 const STORAGE_KEY = 'vibenote:mock-buffers'
 const AI_SETTINGS_KEY = 'vibenote:mock-ai-settings'
+const RECOVERIES_KEY = 'vibenote:mock-recoveries'
 
 let mockApiKey = ''
 
@@ -43,6 +44,11 @@ function writeBuffers(buffers: MockBuffer[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(buffers))
 }
 
+function readRecoveries(): RecoveryContent[] {
+  const stored = localStorage.getItem(RECOVERIES_KEY)
+  return stored ? JSON.parse(stored) : []
+}
+
 function readMockAiSettings(): AiSettings {
   const stored = localStorage.getItem(AI_SETTINGS_KEY)
   return {
@@ -78,6 +84,12 @@ export function installDevMock() {
         const buffer = buffers.find(item => item.path === path)
         if (buffer) buffer.content = content
         writeBuffers(buffers)
+        return true
+      },
+      async snapshot() {
+        return true
+      },
+      snapshotSync() {
         return true
       },
       async create(name: string) {
@@ -138,6 +150,14 @@ export function installDevMock() {
         buffers.push(buffer)
         writeBuffers(buffers)
         return toBufferInfo(buffer)
+      },
+      async listRecoveries() {
+        return readRecoveries().map(({ content, ...recovery }) => recovery)
+      },
+      async readRecovery(path: string) {
+        const recovery = readRecoveries().find(item => item.identifier === path)
+        if (!recovery) throw new Error('Recovery draft not found')
+        return recovery
       },
       async consumePendingOpen() {
         return null

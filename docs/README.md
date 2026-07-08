@@ -13,3 +13,4 @@
 - 保持单一 stream、block 化、纯文本的核心体验。
 - Markdown 增强只做低干扰输入辅助，不引入重型知识库或富文本编辑器复杂度。
 - AI Native 能力默认作用于当前 block 或选区，避免自动重写全局内容。
+- 数据安全采用原子保存、覆盖前备份、草稿恢复和资源隔离的分层策略。见 [Data Safety](design/2026-07-08-data-safety.md)、[Data Safety Implementation Plan](plans/2026-07-08-data-safety-implementation-plan.md) 与 [Data Safety Acceptance](reports/2026-07-08-data-safety-acceptance.md)。

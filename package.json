@@ -22,6 +22,7 @@
     "release:trial": "npm run release:mac",
     "verify:package": "node scripts/verify-package.mjs",
     "verify:runtime": "node scripts/smoke-runtime.mjs",
+    "verify:data-safety": "node scripts/data-safety-runtime.mjs",
     "verify:ai-runtime": "node scripts/ai-runtime.mjs",
     "verify:stability": "node scripts/stability-runtime.mjs",
     "verify:edges": "node scripts/edge-runtime.mjs",

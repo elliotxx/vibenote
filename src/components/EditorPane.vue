@@ -86,7 +86,13 @@ const cursorStatus = computed(() => {
   return `${line}:${column}`
 })
 
-const statusMessage = computed(() => saving.value ? '正在保存...' : aiStatus.value)
+const recoveryStatus = computed(() => {
+  const count = store.recoveries.length
+  if (count === 0) return ''
+  return count === 1 ? '发现可恢复草稿' : `发现 ${count} 个可恢复草稿`
+})
+const currentRecovery = computed(() => store.recoveries.find(item => item.identifier === store.currentPath) || null)
+const statusMessage = computed(() => saving.value ? '正在保存...' : aiStatus.value || recoveryStatus.value)
 const statusTone = computed(() => {
   const message = statusMessage.value
   if (!message) return ''
@@ -916,9 +922,14 @@ function flushSave() {
   saving.value = true
   note.content = view.state.doc.toString()
   const raw = serializeNote(note)
-  store.saveBuffer(editorBufferPath, raw).finally(() => {
-    saving.value = false
-  })
+  store.saveBuffer(editorBufferPath, raw)
+    .catch(error => {
+      setAiStatus(`保存失败：${error instanceof Error ? error.message : '无法写入文件'}`)
+      void store.refreshRecoveries()
+    })
+    .finally(() => {
+      saving.value = false
+    })
 }
 
 function flushSaveSync() {
@@ -932,6 +943,19 @@ function flushSaveSync() {
   saving.value = false
 }
 
+function snapshotCurrentSync(reason: string) {
+  if (!view || !note) return false
+  note.content = view.state.doc.toString()
+  try {
+    store.snapshotBufferSync(editorBufferPath, serializeNote(note), reason)
+    void store.refreshRecoveries()
+    return true
+  } catch (error) {
+    setAiStatus(`数据保护失败：${error instanceof Error ? error.message : '无法创建快照'}`)
+    return false
+  }
+}
+
 function addBlockAfterActive() {
   if (!view) return
   insertBlockAfterCurrent(view, store.settings.defaultLanguage, true)
@@ -940,12 +964,45 @@ function addBlockAfterActive() {
   scheduleSave()
 }
 
+async function restoreRecoveryDraft() {
+  if (!view || !note || !store.currentPath || !currentRecovery.value) return
+  try {
+    const recovery = await store.readRecovery(store.currentPath)
+    const recovered = loadNote(recovery.content).content.trim()
+    if (!recovered) {
+      setAiStatus('恢复草稿为空', true)
+      return
+    }
+    if (!snapshotCurrentSync('restore-recovery')) return
+
+    const doc = view.state.doc.toString()
+    const body = recovered.startsWith('---block:')
+      ? recovered
+      : `${blockDelimiter(store.settings.defaultLanguage, true).trimStart()}${recovered}`
+    const insert = `${doc.endsWith('\n') || doc.length === 0 ? '' : '\n'}${body}`
+    const from = view.state.doc.length
+    view.dispatch({
+      changes: { from, insert },
+      selection: EditorSelection.cursor(from + insert.length),
+      annotations: internalBlockEdit.of(true),
+      scrollIntoView: true,
+    })
+    view.focus()
+    updateStatus(view)
+    scheduleSave()
+    setAiStatus('已插入恢复草稿', true)
+  } catch (error) {
+    setAiStatus(`恢复失败：${error instanceof Error ? error.message : '无法读取恢复草稿'}`)
+  }
+}
+
 function removeBlock() {
   if (!view) return
   removeBlockFromKeymap(view)
 }
 
 function removeBlockFromKeymap(editor: EditorView) {
+  if (!snapshotCurrentSync('delete-block')) return true
   if (deleteCurrentBlock(editor)) {
     updateStatus(editor)
     scheduleSave()
@@ -965,6 +1022,8 @@ function removeBlankBlockFromDeleteKey(editor: EditorView) {
 
   const blocks = editor.state.field(blockField)
   if (blocks.length <= 1) return true
+
+  if (!snapshotCurrentSync('delete-empty-block')) return true
 
   const index = blocks.indexOf(block)
   const previousBlock = blocks[index - 1]
@@ -999,6 +1058,8 @@ function removeActiveImageLineFromDeleteKey(editor: EditorView) {
   const line = editor.state.doc.lineAt(activeImageLine.from)
   const block = activeBlock(editor.state)
   if (!block || line.from < block.content.from || line.to > block.content.to) return false
+
+  if (!snapshotCurrentSync('delete-image')) return true
 
   let deleteFrom = line.from
   let deleteTo = line.to
@@ -1443,6 +1504,8 @@ async function formatBlock() {
       plugins: language.prettier.plugins as any,
       tabWidth: store.settings.tabSize,
     })
+    if (formatted === content) return
+    if (!snapshotCurrentSync('format-block')) return
     view.dispatch({
       changes: { from: block.content.from, to: block.content.to, insert: formatted },
       selection: { anchor: Math.min(block.content.from + formatted.length, view.state.doc.length) },
@@ -1472,6 +1535,7 @@ async function runAiAction(mode: AiCompletionMode) {
       setAiStatus(`AI：${result.message}`)
       return
     }
+    if (!snapshotCurrentSync(mode === 'extract-todos' ? 'ai-extract-todos' : 'ai-polish')) return
     if (!insertAiBlockAfterCurrent(view, result.content, { todo: mode === 'extract-todos' })) {
       setAiStatus(mode === 'extract-todos' ? 'AI：没有识别到明确 Todo' : 'AI：没有可插入内容')
       return
@@ -1532,6 +1596,15 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
       </div>
 
       <div class="statusbar-center" aria-live="polite">
+        <button
+          v-if="currentRecovery"
+          type="button"
+          class="status-recovery-button"
+          title="将可恢复草稿插入为新块"
+          @click="restoreRecoveryDraft"
+        >
+          恢复草稿
+        </button>
         <span v-if="statusMessage" class="status-feedback" :class="statusTone">
           {{ statusMessage }}
         </span>
