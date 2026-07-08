@@ -21,7 +21,6 @@
   --danger: oklch(54% 0.13 24);
   --status-bg: oklch(94.7% 0.01 238);
   --shadow-modal: oklch(24% 0.034 250 / 0.2);
-  --block-toolbar-safe-space: 166px;
   color: var(--ink);
   background: var(--surface-app);
   font-family:
@@ -148,6 +147,7 @@ select:focus {
 }
 
 .cm-editor {
+  position: relative;
   height: 100%;
   outline: none;
 }
@@ -175,12 +175,21 @@ select:focus {
 
 .cm-editor .cm-selectionBackground {
   border-radius: 0;
-  background-color: oklch(80.5% 0.058 252 / 0.62) !important;
+  background-color: oklch(79% 0.055 252 / 0.52) !important;
   box-shadow: none;
 }
 
-.cm-editor .cm-line {
-  padding-right: var(--block-toolbar-safe-space) !important;
+.selection-right-fill-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.selection-right-fill {
+  position: absolute;
+  background-color: oklch(79% 0.055 252 / 0.52);
 }
 
 .block-even {
@@ -480,10 +489,6 @@ select:focus {
 }
 
 @media (max-width: 640px) {
-  :root {
-    --block-toolbar-safe-space: 150px;
-  }
-
   .block-toolbar {
     right: 12px;
   }

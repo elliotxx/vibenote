@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { EditorSelection, EditorState } from '@codemirror/state'
 import { addCursorAbove, addCursorBelow, defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { lineNumbers, keymap, drawSelection, highlightActiveLine, EditorView } from '@codemirror/view'
+import { lineNumbers, keymap, drawSelection, highlightActiveLine, EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view'
 import { searchKeymap } from '@codemirror/search'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { AlignLeft, FilePlus2, ListTodo, Settings, Sparkles, Trash2 } from 'lucide-vue-next'
@@ -157,6 +157,85 @@ function applyEditorViewSettings(editor: EditorView | null) {
   })
 }
 
+const selectionRightFill = ViewPlugin.fromClass(class {
+  readonly view: EditorView
+  private layer: HTMLElement
+  private frame = 0
+  private scroller: HTMLElement | null = null
+  private onScroll = () => this.schedule()
+
+  constructor(view: EditorView) {
+    this.view = view
+    this.layer = document.createElement('div')
+    this.layer.className = 'selection-right-fill-layer'
+    this.view.dom.appendChild(this.layer)
+    this.scroller = this.view.dom.querySelector<HTMLElement>('.cm-scroller')
+    this.scroller?.addEventListener('scroll', this.onScroll, { passive: true })
+    this.schedule()
+  }
+
+  update(update: ViewUpdate) {
+    if (
+      update.selectionSet ||
+      update.docChanged ||
+      update.viewportChanged ||
+      update.geometryChanged
+    ) {
+      this.schedule()
+    }
+  }
+
+  destroy() {
+    if (this.frame) window.cancelAnimationFrame(this.frame)
+    this.scroller?.removeEventListener('scroll', this.onScroll)
+    this.layer.remove()
+  }
+
+  private schedule() {
+    if (this.frame) window.cancelAnimationFrame(this.frame)
+    this.frame = window.requestAnimationFrame(() => {
+      this.frame = 0
+      this.render()
+    })
+  }
+
+  private render() {
+    this.layer.replaceChildren()
+    if (!this.hasMultilineSelection()) return
+
+    const scroller = this.view.dom.querySelector<HTMLElement>('.cm-scroller')
+    if (!scroller) return
+
+    const editorRect = this.view.dom.getBoundingClientRect()
+    const scrollerRect = scroller.getBoundingClientRect()
+    const rightEdge = scrollerRect.left + scroller.clientWidth
+    const backgrounds = Array.from(this.view.dom.querySelectorAll<HTMLElement>('.cm-selectionBackground'))
+
+    for (const background of backgrounds) {
+      const rect = background.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0 || rect.right >= rightEdge - 1) continue
+      if (rect.bottom <= scrollerRect.top || rect.top >= scrollerRect.bottom) continue
+
+      const fill = document.createElement('div')
+      fill.className = 'selection-right-fill'
+      fill.style.left = `${rect.right - editorRect.left}px`
+      fill.style.top = `${rect.top - editorRect.top}px`
+      fill.style.width = `${Math.max(0, rightEdge - rect.right)}px`
+      fill.style.height = `${rect.height}px`
+      this.layer.appendChild(fill)
+    }
+  }
+
+  private hasMultilineSelection() {
+    return this.view.state.selection.ranges.some((range) => {
+      if (range.empty) return false
+      const fromLine = this.view.state.doc.lineAt(range.from).number
+      const toLine = this.view.state.doc.lineAt(range.to).number
+      return fromLine !== toLine
+    })
+  }
+})
+
 function mountEditor() {
   if (!editorHost.value) return
   editorBufferPath = store.currentPath
@@ -267,9 +346,10 @@ function mountEditor() {
           opacity: '0',
         },
         '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
-          backgroundColor: 'oklch(80.5% 0.058 252 / 0.62)',
+          backgroundColor: 'oklch(79% 0.055 252 / 0.52)',
         },
       }),
+      selectionRightFill,
       blockField,
       blockDecorations,
       blockGutterDecorations,

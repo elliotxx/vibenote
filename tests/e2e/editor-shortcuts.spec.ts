@@ -105,14 +105,32 @@ async function hasNaturalSelectionStyling(page: Page) {
     const backgrounds = Array.from(document.querySelectorAll<HTMLElement>('.cm-selectionBackground'))
     if (backgrounds.length === 0) return false
 
-    const selectionIsFlat = backgrounds.every((background) => {
+    const selectionIsContinuous = backgrounds.every((background) => {
       const style = getComputedStyle(background)
-      return style.boxShadow === 'none' && style.borderRadius === '0px'
+      return (
+        style.boxShadow === 'none' &&
+        style.borderRadius === '0px' &&
+        (style.clipPath === 'none' || style.clipPath === '')
+      )
     })
     const activeLine = document.querySelector<HTMLElement>('.cm-activeLine')
     const activeLineBackground = activeLine ? getComputedStyle(activeLine).backgroundColor : 'rgba(0, 0, 0, 0)'
 
-    return selectionIsFlat && activeLineBackground !== 'rgba(0, 0, 0, 0)'
+    return selectionIsContinuous && activeLineBackground !== 'rgba(0, 0, 0, 0)'
+  })
+}
+
+async function multilineSelectionReachesRightEdge(page: Page) {
+  return page.evaluate(() => {
+    const scroller = document.querySelector<HTMLElement>('.cm-scroller')
+    const fills = Array.from(document.querySelectorAll<HTMLElement>('.selection-right-fill'))
+    if (!scroller || fills.length === 0) return false
+
+    const rightEdge = scroller.getBoundingClientRect().left + scroller.clientWidth
+    return fills.every((fill) => {
+      const rect = fill.getBoundingClientRect()
+      return rect.width > 0 && rect.height > 0 && Math.abs(rect.right - rightEdge) <= 2
+    })
   })
 }
 
@@ -166,6 +184,7 @@ test.describe('editor text selection shortcuts', () => {
     await page.keyboard.press(`${modifier}+A`)
     await expect.poll(() => hasVisibleSelectionHighlight(page)).toBe(true)
     await expect.poll(() => hasNaturalSelectionStyling(page)).toBe(true)
+    await expect.poll(() => multilineSelectionReachesRightEdge(page)).toBe(true)
     await expect.poll(() => copySelection(page)).toBe('# Stream\n\nDrop plain text notes here.')
 
     await page.keyboard.press(`${modifier}+A`)
@@ -509,7 +528,7 @@ test.describe('editor text selection shortcuts', () => {
     await expect(toolbar).toBeHidden()
   })
 
-  test('keeps block actions out of long wrapped text', async ({ page }) => {
+  test('keeps block actions floating above long wrapped text', async ({ page }) => {
     const created = '2026-07-01T10:38:41.565Z'
     const content = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
       `---block:markdown;auto=1;created=${created}`,
@@ -520,24 +539,23 @@ test.describe('editor text selection shortcuts', () => {
     await loadFixture(page, content)
     await clickLine(page, '本周目标')
 
-    const overlap = await page.evaluate(() => {
+    const layout = await page.evaluate(() => {
       const toolbar = document.querySelector<HTMLElement>('.block-toolbar')?.getBoundingClientRect()
       const line = Array.from(document.querySelectorAll<HTMLElement>('.cm-line'))
         .find(element => (element.textContent || '').includes('本周目标'))
-      if (!toolbar || !line) return true
-      const range = document.createRange()
-      range.selectNodeContents(line)
-      const textRects = Array.from(range.getClientRects()).filter(rect => rect.width > 0 && rect.height > 0)
-      range.detach()
-      return textRects.some(rect =>
-        rect.right > toolbar.left &&
-        rect.left < toolbar.right &&
-        rect.bottom > toolbar.top &&
-        rect.top < toolbar.bottom,
-      )
+      if (!toolbar || !line) return null
+      return {
+        lineRight: line.getBoundingClientRect().right,
+        linePaddingRight: Number.parseFloat(getComputedStyle(line).paddingRight || '0'),
+        toolbarPosition: getComputedStyle(document.querySelector<HTMLElement>('.block-toolbar')!).position,
+        toolbarRight: toolbar.right,
+      }
     })
 
-    expect(overlap).toBe(false)
+    expect(layout).not.toBeNull()
+    expect(layout!.linePaddingRight).toBeLessThanOrEqual(20)
+    expect(layout!.toolbarPosition).toBe('absolute')
+    expect(layout!.lineRight).toBeGreaterThan(layout!.toolbarRight)
   })
 
   test('keeps block actions pinned while scrolling inside a long focused block', async ({ page }) => {
