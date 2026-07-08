@@ -23,7 +23,7 @@ async function loadFixture(page: Page, lines?: string[]) {
 
 async function openSettings(page: Page) {
   await page.getByTitle('设置').click()
-  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '设置' })).toBeVisible()
 }
 
 async function hasNoVisibleEditorSelection(page: Page) {
@@ -37,35 +37,66 @@ async function hasNoVisibleEditorSelection(page: Page) {
 }
 
 test.describe('AI settings', () => {
+  test('persists image storage preference', async ({ page }) => {
+    await loadFixture(page)
+    await openSettings(page)
+
+    await page.getByLabel('图片存储').selectOption('app-data')
+    await expect(page.getByLabel('图片存储')).toHaveValue('app-data')
+
+    const stored = await page.evaluate(() => localStorage.getItem('vibenote:settings') || '')
+    expect(stored).toContain('"imageStorage":"app-data"')
+  })
+
+  test('loads persisted image storage preference on startup', async ({ page }) => {
+    await page.addInitScript((content) => {
+      localStorage.clear()
+      localStorage.setItem('vibenote:mock-buffers', JSON.stringify([
+        { path: 'stream.txt', name: 'Stream', tags: [], isScratch: true, content },
+      ]))
+      localStorage.setItem('vibenote:settings', JSON.stringify({
+        theme: 'light',
+        fontSize: 13,
+        tabSize: 2,
+        defaultLanguage: 'markdown',
+        imageStorage: 'app-data',
+      }))
+    }, fixtureContent())
+    await page.goto('/')
+    await expect(page.locator('.cm-editor')).toBeVisible()
+    await openSettings(page)
+    await expect(page.getByLabel('图片存储')).toHaveValue('app-data')
+  })
+
   test('configures OpenAI-compatible providers without storing API keys in localStorage', async ({ page }) => {
     await loadFixture(page)
     await openSettings(page)
 
     await expect(page.getByRole('heading', { name: 'AI' })).toBeVisible()
-    await expect(page.getByLabel('Enable AI')).not.toBeChecked()
-    await expect(page.getByRole('button', { name: 'Test connection' })).toBeDisabled()
+    await expect(page.getByLabel('启用 AI')).not.toBeChecked()
+    await expect(page.getByRole('button', { name: '测试连接' })).toBeDisabled()
 
-    await page.getByLabel('Enable AI').check()
-    await page.getByLabel('Provider').selectOption('deepseek')
-    await expect(page.getByLabel('Base URL')).toHaveValue('https://api.deepseek.com')
-    await expect(page.getByLabel('Model')).toHaveValue('deepseek-chat')
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('服务商').selectOption('deepseek')
+    await expect(page.getByLabel('基础 URL')).toHaveValue('https://api.deepseek.com')
+    await expect(page.getByLabel('模型')).toHaveValue('deepseek-chat')
 
-    await page.getByLabel('API Key').fill('test-api-key-value')
-    await page.getByRole('button', { name: 'Save API key' }).click()
-    await expect(page.getByText('API key saved locally and hidden')).toBeVisible()
-    await expect(page.getByLabel('API Key')).toHaveValue('')
-    await expect(page.getByLabel('API Key')).toHaveAttribute('placeholder', 'API key saved - paste a new key to replace')
-    await page.getByRole('button', { name: 'Test connection' }).click()
-    await expect(page.getByText('Connection OK')).toBeVisible()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await expect(page.getByText('API 密钥已本地保存并隐藏')).toBeVisible()
+    await expect(page.getByLabel('API 密钥')).toHaveValue('')
+    await expect(page.getByLabel('API 密钥')).toHaveAttribute('placeholder', '已保存 API 密钥，粘贴新密钥可替换')
+    await page.getByRole('button', { name: '测试连接' }).click()
+    await expect(page.getByText('连接成功')).toBeVisible()
 
-    await page.getByLabel('Provider').selectOption('openai')
-    await expect(page.getByLabel('Base URL')).toHaveValue('https://api.openai.com/v1')
-    await expect(page.getByLabel('Model')).toHaveValue('gpt-4.1-mini')
+    await page.getByLabel('服务商').selectOption('openai')
+    await expect(page.getByLabel('基础 URL')).toHaveValue('https://api.openai.com/v1')
+    await expect(page.getByLabel('模型')).toHaveValue('gpt-4.1-mini')
 
-    await page.getByLabel('Provider').selectOption('custom-openai-compatible')
-    await page.getByLabel('Base URL').fill('https://llm.example.com/v1')
-    await page.getByLabel('Model').fill('custom-chat-model')
-    await page.getByLabel('Model').blur()
+    await page.getByLabel('服务商').selectOption('custom-openai-compatible')
+    await page.getByLabel('基础 URL').fill('https://llm.example.com/v1')
+    await page.getByLabel('模型').fill('custom-chat-model')
+    await page.getByLabel('模型').blur()
 
     const stored = await page.evaluate(() => ({
       settings: localStorage.getItem('vibenote:settings') || '',
@@ -92,11 +123,11 @@ test.describe('AI settings', () => {
       }
     })
 
-    await page.getByLabel('API Key').fill('test-api-key-value')
-    await page.getByRole('button', { name: 'Save API key' }).click()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
 
-    await expect(page.getByText('Could not save API key: Secure storage is not available')).toBeVisible()
-    await expect(page.getByLabel('API Key')).toHaveValue('test-api-key-value')
+    await expect(page.getByText('无法保存 API 密钥：安全存储不可用')).toBeVisible()
+    await expect(page.getByLabel('API 密钥')).toHaveValue('test-api-key-value')
   })
 
   test('shows local fallback key storage and supports clearing the key', async ({ page }) => {
@@ -114,37 +145,37 @@ test.describe('AI settings', () => {
       })
     })
 
-    await page.getByLabel('API Key').fill('test-api-key-value')
-    await page.getByRole('button', { name: 'Save API key' }).click()
-    await expect(page.getByText('API key saved locally and hidden')).toBeVisible()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await expect(page.getByText('API 密钥已本地保存并隐藏')).toBeVisible()
 
-    await page.getByRole('button', { name: 'Clear' }).click()
-    await expect(page.getByText('API key cleared')).toBeVisible()
-    await expect(page.getByLabel('API Key')).toHaveAttribute('placeholder', 'Paste API key')
-    await expect(page.getByRole('button', { name: 'Test connection' })).toBeDisabled()
+    await page.getByRole('button', { name: '清除' }).click()
+    await expect(page.getByText('API 密钥已清除')).toBeVisible()
+    await expect(page.getByLabel('API 密钥')).toHaveAttribute('placeholder', '粘贴 API 密钥')
+    await expect(page.getByRole('button', { name: '测试连接' })).toBeDisabled()
   })
 
   test('keeps API key state while switching providers', async ({ page }) => {
     await loadFixture(page)
     await openSettings(page)
 
-    await page.getByLabel('API Key').fill('test-api-key-value')
-    await page.getByRole('button', { name: 'Save API key' }).click()
-    await expect(page.getByText('API key saved locally and hidden')).toBeVisible()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await expect(page.getByText('API 密钥已本地保存并隐藏')).toBeVisible()
 
-    await page.getByLabel('Provider').selectOption('openai')
-    await expect(page.getByText('API key saved locally and hidden')).toBeVisible()
-    await expect(page.getByLabel('Base URL')).toHaveValue('https://api.openai.com/v1')
+    await page.getByLabel('服务商').selectOption('openai')
+    await expect(page.getByText('API 密钥已本地保存并隐藏')).toBeVisible()
+    await expect(page.getByLabel('基础 URL')).toHaveValue('https://api.openai.com/v1')
 
-    await page.getByLabel('Provider').selectOption('custom-openai-compatible')
-    await expect(page.getByText('API key saved locally and hidden')).toBeVisible()
+    await page.getByLabel('服务商').selectOption('custom-openai-compatible')
+    await expect(page.getByText('API 密钥已本地保存并隐藏')).toBeVisible()
   })
 
   test('keeps select all scoped to focused settings inputs', async ({ page }) => {
     await loadFixture(page)
     await openSettings(page)
 
-    const modelInput = page.getByLabel('Model')
+    const modelInput = page.getByLabel('模型')
     await modelInput.click()
     await page.keyboard.press(`${modifier}+A`)
 
@@ -176,11 +207,11 @@ test.describe('AI settings', () => {
     await loadFixture(page, blockLines)
     await openSettings(page)
 
-    await page.getByLabel('Enable AI').check()
-    await page.getByLabel('API Key').fill('test-api-key-value')
-    await page.getByRole('button', { name: 'Save API key' }).click()
-    await expect(page.getByText('API key saved locally and hidden')).toBeVisible()
-    await page.getByTitle('Close settings').click()
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await expect(page.getByText('API 密钥已本地保存并隐藏')).toBeVisible()
+    await page.getByTitle('关闭设置').click()
 
     await page.evaluate(() => {
       ;(window as any).__aiPayloads = []
@@ -215,11 +246,11 @@ test.describe('AI settings', () => {
     await loadFixture(page, blockLines)
     await openSettings(page)
 
-    await page.getByLabel('Enable AI').check()
-    await page.getByLabel('API Key').fill('test-api-key-value')
-    await page.getByRole('button', { name: 'Save API key' }).click()
-    await expect(page.getByText('API key saved locally and hidden')).toBeVisible()
-    await page.getByTitle('Close settings').click()
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await expect(page.getByText('API 密钥已本地保存并隐藏')).toBeVisible()
+    await page.getByTitle('关闭设置').click()
 
     await page.evaluate(() => {
       ;(window as any).__aiPayloads = []
@@ -260,21 +291,21 @@ test.describe('AI settings', () => {
     await loadFixture(page)
     await openSettings(page)
 
-    await page.getByLabel('Enable AI').check()
-    await page.getByLabel('API Key').fill('test-api-key-value')
-    await page.getByRole('button', { name: 'Save API key' }).click()
-    await expect(page.getByText('API key saved locally and hidden')).toBeVisible()
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await expect(page.getByText('API 密钥已本地保存并隐藏')).toBeVisible()
 
     await page.evaluate(() => {
       window.vibenote.ai.testConnection = async () => ({ ok: false, message: 'Connection failed (401)' })
     })
-    await page.getByRole('button', { name: 'Test connection' }).click()
-    await expect(page.getByText('Connection failed (401)')).toBeVisible()
+    await page.getByRole('button', { name: '测试连接' }).click()
+    await expect(page.getByText('连接失败（401）')).toBeVisible()
     await expect(page.getByText('test-api-key-value')).toHaveCount(0)
     await expect(page.getByText('Authorization')).toHaveCount(0)
 
-    await page.getByLabel('Model').fill('')
-    await page.getByLabel('Model').blur()
+    await page.getByLabel('模型').fill('')
+    await page.getByLabel('模型').blur()
     await page.evaluate(() => {
       delete (window.vibenote.ai as any).testConnection
     })
@@ -284,14 +315,14 @@ test.describe('AI settings', () => {
     await loadFixture(page)
     await openSettings(page)
 
-    await page.getByLabel('Enable AI').check()
-    await page.getByLabel('API Key').fill('test-api-key-value')
-    await page.getByRole('button', { name: 'Save API key' }).click()
-    await page.getByLabel('Model').fill('')
-    await page.getByLabel('Model').blur()
-    await page.getByRole('button', { name: 'Test connection' }).click()
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await page.getByLabel('模型').fill('')
+    await page.getByLabel('模型').blur()
+    await page.getByRole('button', { name: '测试连接' }).click()
 
-    await expect(page.getByText('Model is required')).toBeVisible()
+    await expect(page.getByText('需要填写模型')).toBeVisible()
   })
 
   test('keeps AI settings usable in a narrow window', async ({ page }) => {
@@ -304,14 +335,14 @@ test.describe('AI settings', () => {
     await aiSection.scrollIntoViewIfNeeded()
 
     await expect(page.getByRole('heading', { name: 'AI' })).toBeVisible()
-    await expect(page.getByLabel('Provider')).toBeVisible()
-    await expect(page.getByLabel('Base URL')).toBeVisible()
-    await expect(page.getByLabel('Model')).toBeVisible()
-    await expect(page.getByLabel('API Key')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Save API key' })).toBeVisible()
+    await expect(page.getByLabel('服务商')).toBeVisible()
+    await expect(page.getByLabel('基础 URL')).toBeVisible()
+    await expect(page.getByLabel('模型')).toBeVisible()
+    await expect(page.getByLabel('API 密钥')).toBeVisible()
+    await expect(page.getByRole('button', { name: '保存 API 密钥' })).toBeVisible()
 
     const panelBox = await panel.boundingBox()
-    const buttonBox = await page.getByRole('button', { name: 'Save API key' }).boundingBox()
+    const buttonBox = await page.getByRole('button', { name: '保存 API 密钥' }).boundingBox()
     expect(panelBox).not.toBeNull()
     expect(buttonBox).not.toBeNull()
     expect(buttonBox!.x).toBeGreaterThanOrEqual(panelBox!.x)

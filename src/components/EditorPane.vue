@@ -317,7 +317,12 @@ function mountEditor() {
           const file = image.getAsFile()
           if (!file) return true
           file.arrayBuffer().then(async data => {
-            const imagePath = await window.vibenote.image.save({ mime: file.type, data })
+            const imagePath = await window.vibenote.image.save({
+              mime: file.type,
+              data,
+              documentPath: store.currentPath,
+              storageMode: store.settings.imageStorage,
+            })
             const markdown = `![image](<${imagePath}>)`
             const target = activeImageLineRange(view)
             view.dispatch({

@@ -35,6 +35,7 @@ type EditorCommand =
 type AiProviderKind = 'openai' | 'deepseek' | 'custom-openai-compatible'
 type AiKeyStorageKind = 'none' | 'secure' | 'local-fallback' | 'unknown'
 type AiCompletionMode = 'polish' | 'extract-todos'
+type ImageStorageMode = 'beside-file' | 'app-data'
 
 type AiSettings = {
   enabled: boolean
@@ -78,7 +79,12 @@ interface Window {
       search(query: string): Promise<SearchResult[]>
     }
     image: {
-      save(payload: { mime: string; data: ArrayBuffer }): Promise<string>
+      save(payload: {
+        mime: string
+        data: ArrayBuffer
+        documentPath?: string | null
+        storageMode?: ImageStorageMode
+      }): Promise<string>
       resolveLegacyUrl(url: string): Promise<string>
     }
     settings: {

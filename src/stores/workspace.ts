@@ -1,11 +1,14 @@
 import { defineStore } from 'pinia'
 import { reactive, ref } from 'vue'
 
+export type ImageStorageMode = 'beside-file' | 'app-data'
+
 export type Settings = {
   theme: 'light' | 'dark'
   fontSize: number
   tabSize: number
   defaultLanguage: string
+  imageStorage: ImageStorageMode
   ai: AiSettings
 }
 
@@ -28,6 +31,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     fontSize: 13,
     tabSize: 2,
     defaultLanguage: 'markdown',
+    imageStorage: 'beside-file',
     ai: { ...defaultAiSettings },
   })
 
@@ -40,6 +44,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (stored) {
       const parsed = JSON.parse(stored)
       Object.assign(settings, parsed)
+      settings.imageStorage = parsed.imageStorage === 'app-data' ? 'app-data' : 'beside-file'
       settings.ai = { ...defaultAiSettings, ...parsed.ai, hasApiKey: false }
     }
     settings.ai = { ...settings.ai, ...(await window.vibenote.ai.getSettings()) }

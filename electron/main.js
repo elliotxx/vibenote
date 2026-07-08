@@ -1,5 +1,6 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, protocol, shell } from 'electron'
 import { spawn } from 'node:child_process'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -87,15 +88,18 @@ async function readMetadata(filePath) {
 }
 
 class FileLibrary {
-  constructor(basePath) {
+  constructor(basePath, userDataPath) {
     this.basePath = basePath
-    this.imagesPath = path.join(basePath, '.images')
+    this.userDataPath = userDataPath
+    this.legacyImagesPath = path.join(basePath, '.images')
+    this.appImagesPath = path.join(userDataPath, 'images')
     this.loaded = new Map()
   }
 
   async init() {
     await fs.promises.mkdir(this.basePath, { recursive: true })
-    await fs.promises.mkdir(this.imagesPath, { recursive: true })
+    await fs.promises.mkdir(this.legacyImagesPath, { recursive: true })
+    await fs.promises.mkdir(this.appImagesPath, { recursive: true })
     const streamPath = path.join(this.basePath, STREAM_FILE)
     if (!fs.existsSync(streamPath)) {
       await writeAtomic(streamPath, initialContent('Stream'))
@@ -178,13 +182,48 @@ class FileLibrary {
     return archivePath
   }
 
-  async saveImage({ mime, data }) {
+  resolveDocumentPath(documentPath = STREAM_FILE) {
+    const requestedPath = String(documentPath || STREAM_FILE)
+    if (path.isAbsolute(requestedPath)) {
+      const resolved = path.resolve(requestedPath)
+      const base = path.resolve(this.basePath)
+      if (resolved !== base && !resolved.startsWith(base + path.sep)) {
+        throw new Error('External document image storage is not enabled yet')
+      }
+      return resolved
+    }
+    return safeJoin(this.basePath, requestedPath)
+  }
+
+  documentAssetKey(documentPath = STREAM_FILE) {
+    const resolved = this.resolveDocumentPath(documentPath)
+    const parsed = path.parse(resolved)
+    const label = slugifyName(parsed.name || 'document')
+    const hash = crypto.createHash('sha256').update(resolved).digest('hex').slice(0, 12)
+    return `${label}-${hash}`
+  }
+
+  imageDirectoryFor(documentPath, storageMode) {
+    const mode = storageMode === 'app-data' ? 'app-data' : 'beside-file'
+    if (mode === 'app-data') {
+      return path.join(this.appImagesPath, this.documentAssetKey(documentPath))
+    }
+
+    const documentFile = this.resolveDocumentPath(documentPath)
+    const parsed = path.parse(documentFile)
+    return path.join(parsed.dir, `${parsed.name}.assets`)
+  }
+
+  async saveImage({ mime, data, documentPath, storageMode }) {
     if (!mime || !mime.startsWith('image/')) {
       throw new Error('Only image data can be saved')
     }
     const ext = mime.includes('jpeg') ? 'jpg' : mime.split('/')[1].replace(/[^a-z0-9]/gi, '')
-    const fileName = `${new Date().toISOString().replace(/[:.]/g, '-')}.${ext}`
-    const filePath = path.join(this.imagesPath, fileName)
+    const suffix = crypto.randomBytes(4).toString('hex')
+    const fileName = `${new Date().toISOString().replace(/[:.]/g, '-')}-${suffix}.${ext}`
+    const imagesPath = this.imageDirectoryFor(documentPath, storageMode)
+    await fs.promises.mkdir(imagesPath, { recursive: true })
+    const filePath = path.join(imagesPath, fileName)
     await fs.promises.writeFile(filePath, Buffer.from(data))
     return filePath
   }
@@ -193,7 +232,7 @@ class FileLibrary {
     if (!url.startsWith('vibenote-image://')) return url
     const parsed = new URL(url)
     const fileName = decodeURIComponent(parsed.hostname || parsed.pathname.replace(/^\//, ''))
-    return safeJoin(this.imagesPath, fileName)
+    return safeJoin(this.legacyImagesPath, fileName)
   }
 }
 
@@ -745,13 +784,14 @@ function startSearch(query) {
 
 app.whenReady().then(async () => {
   applyRuntimeIcon()
-  const basePath = path.join(app.getPath('userData'), 'notes')
-  library = new FileLibrary(basePath)
-  aiSettings = new AiSettingsStore(app.getPath('userData'))
+  const userDataPath = app.getPath('userData')
+  const basePath = path.join(userDataPath, 'notes')
+  library = new FileLibrary(basePath, userDataPath)
+  aiSettings = new AiSettingsStore(userDataPath)
   await library.init()
   protocol.handle('vibenote-image', async request => {
     const fileName = decodeURIComponent(new URL(request.url).hostname || new URL(request.url).pathname.replace(/^\//, ''))
-    const filePath = safeJoin(library.imagesPath, fileName)
+    const filePath = safeJoin(library.legacyImagesPath, fileName)
     return new Response(await fs.promises.readFile(filePath))
   })
   setupApplicationMenu()

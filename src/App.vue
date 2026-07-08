@@ -41,17 +41,30 @@ function errorMessage(error: unknown) {
   return String(error || 'Unknown error')
 }
 
+function localizeMessage(message: string) {
+  const knownMessages: Record<string, string> = {
+    'AI is disabled': 'AI 未启用',
+    'API key is required': '需要 API 密钥',
+    'Connection OK': '连接成功',
+    'Connection failed (401)': '连接失败（401）',
+    'Model is required': '需要填写模型',
+    'Nothing to send to AI': '没有可发送给 AI 的内容',
+    'Secure storage is not available': '安全存储不可用',
+  }
+  return knownMessages[message] || message
+}
+
 function apiKeySavedMessage() {
-  if (!store.settings.ai.hasApiKey) return 'No API key saved'
-  if (store.settings.ai.keyStorage === 'secure') return 'API key saved securely and hidden'
-  if (store.settings.ai.keyStorage === 'local-fallback') return 'API key saved locally and hidden'
-  return 'API key saved and hidden'
+  if (!store.settings.ai.hasApiKey) return '未保存 API 密钥'
+  if (store.settings.ai.keyStorage === 'secure') return 'API 密钥已安全保存并隐藏'
+  if (store.settings.ai.keyStorage === 'local-fallback') return 'API 密钥已本地保存并隐藏'
+  return 'API 密钥已保存并隐藏'
 }
 
 function apiKeyPlaceholder() {
   return store.settings.ai.hasApiKey
-    ? 'API key saved - paste a new key to replace'
-    : 'Paste API key'
+    ? '已保存 API 密钥，粘贴新密钥可替换'
+    : '粘贴 API 密钥'
 }
 
 async function saveApiKey() {
@@ -61,7 +74,7 @@ async function saveApiKey() {
     apiKeyDraft.value = ''
     apiKeyStatus.value = apiKeySavedMessage()
   } catch (error) {
-    apiKeyStatus.value = `Could not save API key: ${errorMessage(error)}`
+    apiKeyStatus.value = `无法保存 API 密钥：${localizeMessage(errorMessage(error))}`
   }
 }
 
@@ -70,19 +83,19 @@ async function clearApiKey() {
   try {
     await store.clearAiApiKey()
     apiKeyDraft.value = ''
-    apiKeyStatus.value = 'API key cleared'
+    apiKeyStatus.value = 'API 密钥已清除'
   } catch (error) {
-    apiKeyStatus.value = `Could not clear API key: ${errorMessage(error)}`
+    apiKeyStatus.value = `无法清除 API 密钥：${localizeMessage(errorMessage(error))}`
   }
 }
 
 async function testConnection() {
-  connectionStatus.value = 'Testing...'
+  connectionStatus.value = '连接测试中...'
   try {
     const result = await store.testAiConnection()
-    connectionStatus.value = result.message
+    connectionStatus.value = localizeMessage(result.message)
   } catch (error) {
-    connectionStatus.value = `Connection failed: ${errorMessage(error)}`
+    connectionStatus.value = `连接失败：${localizeMessage(errorMessage(error))}`
   }
 }
 </script>
@@ -100,23 +113,23 @@ async function testConnection() {
     <div v-if="showSettings" class="modal-backdrop" @click.self="showSettings = false">
       <section class="settings-panel">
         <header>
-          <h2>Settings</h2>
-          <button class="icon-button" title="Close settings" @click="showSettings = false">
+          <h2>设置</h2>
+          <button class="icon-button" title="关闭设置" @click="showSettings = false">
             <X :size="16" />
           </button>
         </header>
         <div class="settings-sections">
           <section class="settings-section">
-            <h3>Appearance</h3>
+            <h3>外观</h3>
             <label>
-              Theme
+              主题
               <select v-model="store.settings.theme" @change="store.saveSettings">
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
+                <option value="light">浅色</option>
+                <option value="dark">深色</option>
               </select>
             </label>
             <label>
-              Font size
+              字号
               <input
                 v-model.number="store.settings.fontSize"
                 type="number"
@@ -128,9 +141,9 @@ async function testConnection() {
           </section>
 
           <section class="settings-section">
-            <h3>Editor</h3>
+            <h3>编辑器</h3>
             <label>
-              Tab size
+              Tab 宽度
               <input
                 v-model.number="store.settings.tabSize"
                 type="number"
@@ -140,9 +153,9 @@ async function testConnection() {
               />
             </label>
             <label>
-              Default language
+              默认格式
               <select v-model="store.settings.defaultLanguage" @change="store.saveSettings">
-                <option value="text">Text</option>
+                <option value="text">纯文本</option>
                 <option value="markdown">Markdown</option>
                 <option value="json">JSON</option>
                 <option value="javascript">JavaScript</option>
@@ -152,24 +165,31 @@ async function testConnection() {
                 <option value="math">Math</option>
               </select>
             </label>
+            <label>
+              图片存储
+              <select v-model="store.settings.imageStorage" @change="store.saveSettings">
+                <option value="beside-file">当前文件旁边</option>
+                <option value="app-data">应用数据目录</option>
+              </select>
+            </label>
           </section>
 
           <section class="settings-section">
             <h3>AI</h3>
             <label class="checkbox-label">
               <input v-model="store.settings.ai.enabled" type="checkbox" @change="store.saveSettings" />
-              Enable AI
+              启用 AI
             </label>
             <label>
-              Provider
+              服务商
               <select v-model="store.settings.ai.provider" @change="onAiProviderChange">
                 <option value="deepseek">DeepSeek</option>
                 <option value="openai">OpenAI</option>
-                <option value="custom-openai-compatible">Custom OpenAI-compatible</option>
+                <option value="custom-openai-compatible">自定义 OpenAI 兼容服务</option>
               </select>
             </label>
             <label>
-              Base URL
+              基础 URL
               <input
                 v-model.trim="store.settings.ai.baseUrl"
                 type="url"
@@ -178,16 +198,16 @@ async function testConnection() {
               />
             </label>
             <label>
-              Model
+              模型
               <input
                 v-model.trim="store.settings.ai.model"
                 type="text"
-                placeholder="model-name"
+                placeholder="模型名称"
                 @change="store.saveSettings"
               />
             </label>
             <label>
-              API Key
+              API 密钥
               <input
                 v-model="apiKeyDraft"
                 type="password"
@@ -196,15 +216,15 @@ async function testConnection() {
               />
             </label>
             <div class="settings-actions">
-              <button class="secondary-button" :disabled="!apiKeyDraft.trim()" @click="saveApiKey">Save API key</button>
-              <button class="ghost-button" :disabled="!store.settings.ai.hasApiKey" @click="clearApiKey">Clear</button>
+              <button class="secondary-button" :disabled="!apiKeyDraft.trim()" @click="saveApiKey">保存 API 密钥</button>
+              <button class="ghost-button" :disabled="!store.settings.ai.hasApiKey" @click="clearApiKey">清除</button>
               <span class="settings-status">{{ apiKeyStatus || apiKeySavedMessage() }}</span>
             </div>
             <div class="settings-actions">
               <button class="secondary-button" :disabled="!store.settings.ai.enabled || !store.settings.ai.hasApiKey" @click="testConnection">
-                Test connection
+                测试连接
               </button>
-              <span class="settings-status">{{ connectionStatus || 'Uses the current provider and model' }}</span>
+              <span class="settings-status">{{ connectionStatus || '使用当前服务商和模型' }}</span>
             </div>
           </section>
         </div>

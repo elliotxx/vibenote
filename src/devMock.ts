@@ -116,11 +116,20 @@ export function installDevMock() {
       },
     },
     image: {
-      async save({ mime, data }: { mime: string; data: ArrayBuffer }) {
+      async save({ mime, data, documentPath, storageMode }: {
+        mime: string
+        data: ArrayBuffer
+        documentPath?: string | null
+        storageMode?: ImageStorageMode
+      }) {
         const ext = mime.includes('jpeg') ? 'jpg' : mime.split('/')[1].replace(/[^a-z0-9]/gi, '')
         const name = `${new Date().toISOString().replace(/[:.]/g, '-')}.${ext}`
+        const documentName = (documentPath || 'stream.txt').replace(/\.txt$/, '').replace(/[^a-z0-9-]+/gi, '-')
+        const folder = storageMode === 'app-data'
+          ? `/tmp/vibenote-app-images/${documentName}`
+          : `/tmp/${documentName}.assets`
         void data
-        return `/tmp/vibenote-images/${name}`
+        return `${folder}/${name}`
       },
       async resolveLegacyUrl(url: string) {
         if (!url.startsWith('vibenote-image://')) return url
