@@ -234,7 +234,7 @@ test.describe('AI settings', () => {
     await expect.poll(() => hasNoVisibleEditorSelection(page)).toBe(true)
     await page.getByTitle('AI 优化选区或此块表述').click()
     await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
-    await expect(page.getByText('当前块表述优化')).toBeVisible()
+    await expect(page.getByText('表述优化 / 当前块')).toBeVisible()
     await expect(page.getByText('polished from block')).toBeVisible()
     await expect(page.locator('[data-testid="ai-diff-source"] .ai-diff-segment.removed').first()).toBeVisible()
     await expect(page.locator('[data-testid="ai-diff-target"] .ai-diff-segment.added').first()).toBeVisible()

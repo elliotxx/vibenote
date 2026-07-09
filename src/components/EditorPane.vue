@@ -1832,9 +1832,9 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
         <header class="ai-suggestion-header">
           <div>
             <strong>AI 建议</strong>
-            <span>{{ aiSuggestion.scope === 'selection' ? '选区表述优化' : '当前块表述优化' }}</span>
+            <span>{{ aiSuggestion.scope === 'selection' ? '表述优化 / 选区' : '表述优化 / 当前块' }}</span>
           </div>
-          <button type="button" class="ai-suggestion-close" title="丢弃建议" @click="dismissAiSuggestion">
+          <button type="button" class="ai-suggestion-close" title="关闭建议" @click="dismissAiSuggestion">
             <X :size="14" />
           </button>
         </header>
@@ -1880,9 +1880,14 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
           </div>
         </div>
         <footer class="ai-suggestion-actions">
-          <button type="button" class="primary-button" @click="replaceWithAiSuggestion">替换原文</button>
-          <button type="button" class="secondary-button" @click="insertAiSuggestionAsBlock">插入新块</button>
-          <button type="button" class="ghost-button compact" @click="copyAiSuggestion">
+          <span class="ai-suggestion-status">已生成建议</span>
+          <button type="button" class="primary-button" title="用优化后的内容替换原文" @click="replaceWithAiSuggestion">
+            替换原文
+          </button>
+          <button type="button" class="secondary-button" title="将优化后的内容插入为新块" @click="insertAiSuggestionAsBlock">
+            插入新块
+          </button>
+          <button type="button" class="ghost-button compact" title="复制优化后的内容" @click="copyAiSuggestion">
             <Copy :size="13" />
             复制
           </button>

@@ -491,13 +491,15 @@ select:focus {
 .ai-suggestion-popover {
   position: absolute;
   z-index: 12;
-  --ai-popover-margin: 12px;
+  --ai-popover-margin: 18px;
   --ai-popover-font: clamp(12px, calc(var(--editor-font-size, 13px) * 0.86), 24px);
-  width: min(calc(100% - var(--ai-popover-margin) * 2), max(560px, calc(var(--editor-font-size, 13px) * 36)));
-  border: 1px solid var(--line);
-  border-radius: clamp(8px, calc(var(--editor-font-size, 13px) * 0.6), 14px);
-  background: var(--surface-control);
-  box-shadow: 0 18px 48px oklch(24% 0.034 250 / 0.16);
+  width: min(calc(100% - var(--ai-popover-margin) * 2), max(620px, calc(var(--editor-font-size, 13px) * 34)));
+  border: 1px solid color-mix(in srgb, var(--line) 82%, var(--ink) 18%);
+  border-radius: clamp(8px, calc(var(--editor-font-size, 13px) * 0.5), 12px);
+  background: color-mix(in srgb, var(--surface-control) 84%, var(--surface-editor));
+  box-shadow:
+    0 1px 0 oklch(100% 0 0 / 0.72) inset,
+    0 16px 42px oklch(24% 0.034 250 / 0.12);
   color: var(--ink);
   overflow: hidden;
 }
@@ -511,19 +513,21 @@ select:focus {
 }
 
 .ai-suggestion-header {
-  padding: clamp(10px, calc(var(--editor-font-size, 13px) * 0.72), 18px) clamp(12px, calc(var(--editor-font-size, 13px) * 0.86), 22px);
+  min-height: clamp(46px, calc(var(--editor-font-size, 13px) * 3), 62px);
+  padding: clamp(8px, calc(var(--editor-font-size, 13px) * 0.62), 14px) clamp(14px, calc(var(--editor-font-size, 13px) * 0.95), 24px);
   border-bottom: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--surface-control) 88%, var(--surface-editor));
 }
 
 .ai-suggestion-header div {
   display: grid;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
 .ai-suggestion-header strong {
-  font-size: clamp(13px, calc(var(--editor-font-size, 13px) * 0.82), 20px);
-  line-height: 1.2;
+  font-size: clamp(13px, calc(var(--editor-font-size, 13px) * 0.78), 19px);
+  line-height: 1.15;
 }
 
 .ai-suggestion-header span,
@@ -538,8 +542,8 @@ select:focus {
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: clamp(24px, calc(var(--editor-font-size, 13px) * 1.6), 34px);
-  height: clamp(24px, calc(var(--editor-font-size, 13px) * 1.6), 34px);
+  width: clamp(24px, calc(var(--editor-font-size, 13px) * 1.45), 32px);
+  height: clamp(24px, calc(var(--editor-font-size, 13px) * 1.45), 32px);
   border-radius: 5px;
   color: var(--muted);
   background: transparent;
@@ -556,16 +560,16 @@ select:focus {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1px;
   background: var(--line-soft);
-  max-height: min(68vh, max(320px, calc(var(--editor-font-size, 13px) * 20)));
+  max-height: min(62vh, max(300px, calc(var(--editor-font-size, 13px) * 18)));
   overflow: auto;
 }
 
 .ai-suggestion-column {
   display: grid;
   align-content: start;
-  gap: 7px;
+  gap: clamp(7px, calc(var(--editor-font-size, 13px) * 0.52), 13px);
   min-width: 0;
-  padding: clamp(10px, calc(var(--editor-font-size, 13px) * 0.74), 20px) clamp(12px, calc(var(--editor-font-size, 13px) * 0.86), 24px);
+  padding: clamp(10px, calc(var(--editor-font-size, 13px) * 0.76), 19px) clamp(14px, calc(var(--editor-font-size, 13px) * 0.95), 26px);
   background: var(--surface-editor);
 }
 
@@ -575,10 +579,10 @@ select:focus {
 
 .ai-suggestion-empty-diff {
   margin: 0;
-  padding: 8px clamp(12px, calc(var(--editor-font-size, 13px) * 0.86), 22px);
+  padding: 7px clamp(14px, calc(var(--editor-font-size, 13px) * 0.95), 24px);
   border-bottom: 1px solid var(--line-soft);
   color: var(--muted);
-  background: var(--surface-editor);
+  background: color-mix(in srgb, var(--surface-block-alt) 58%, var(--surface-editor));
   font-size: clamp(11px, calc(var(--editor-font-size, 13px) * 0.7), 16px);
   line-height: 1.45;
 }
@@ -618,14 +622,28 @@ select:focus {
 }
 
 .ai-suggestion-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   justify-content: flex-end;
-  padding: clamp(9px, calc(var(--editor-font-size, 13px) * 0.68), 16px) clamp(12px, calc(var(--editor-font-size, 13px) * 0.86), 22px);
+  padding: clamp(8px, calc(var(--editor-font-size, 13px) * 0.6), 14px) clamp(14px, calc(var(--editor-font-size, 13px) * 0.95), 24px);
   border-top: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--surface-control) 82%, var(--surface-editor));
+}
+
+.ai-suggestion-status {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: clamp(11px, calc(var(--editor-font-size, 13px) * 0.72), 16px);
+  font-weight: 650;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .primary-button {
   flex: 0 0 auto;
-  height: clamp(30px, calc(var(--editor-font-size, 13px) * 2.05), 44px);
+  height: clamp(30px, calc(var(--editor-font-size, 13px) * 1.9), 42px);
   border: 1px solid var(--accent);
   border-radius: 6px;
   padding: 0 clamp(10px, calc(var(--editor-font-size, 13px) * 0.78), 18px);
@@ -648,7 +666,7 @@ select:focus {
 
 .ai-suggestion-actions .secondary-button,
 .ai-suggestion-actions .ghost-button {
-  height: clamp(30px, calc(var(--editor-font-size, 13px) * 2.05), 44px);
+  height: clamp(30px, calc(var(--editor-font-size, 13px) * 1.9), 42px);
   padding: 0 clamp(10px, calc(var(--editor-font-size, 13px) * 0.78), 18px);
   font-size: clamp(12px, calc(var(--editor-font-size, 13px) * 0.78), 18px);
 }
@@ -665,6 +683,15 @@ select:focus {
 
   .ai-suggestion-body {
     grid-template-columns: 1fr;
+  }
+
+  .ai-suggestion-actions {
+    grid-template-columns: 1fr;
+    justify-items: stretch;
+  }
+
+  .ai-suggestion-status {
+    display: none;
   }
 }
 
