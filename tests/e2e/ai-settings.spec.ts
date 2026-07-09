@@ -313,6 +313,59 @@ test.describe('AI settings', () => {
     await expect(page.getByText('keeps line breaks')).toBeVisible()
   })
 
+  test('allows moving and resizing the AI suggestion popover inside the editor', async ({ page }) => {
+    await loadFixture(page, ['rough sentence', 'second line'])
+    await openSettings(page)
+
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await expect(page.getByText('API 密钥已本地保存并隐藏')).toBeVisible()
+    await page.getByTitle('关闭设置').click()
+
+    await page.evaluate(() => {
+      window.vibenote.ai.complete = async () => ({
+        ok: true,
+        message: 'Polished note inserted',
+        content: 'polished sentence\nkeeps line breaks',
+      })
+    })
+
+    await page.getByText('rough sentence').click()
+    await page.getByTitle('AI 优化选区或此块表述').click()
+    await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
+
+    const beforeMove = await page.locator('.ai-suggestion-popover').boundingBox()
+    const headerBox = await page.locator('.ai-suggestion-header').boundingBox()
+    expect(beforeMove).not.toBeNull()
+    expect(headerBox).not.toBeNull()
+    await page.mouse.move(headerBox!.x + 80, headerBox!.y + headerBox!.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(headerBox!.x + 210, headerBox!.y + 90)
+    await page.mouse.up()
+
+    const afterMove = await page.locator('.ai-suggestion-popover').boundingBox()
+    expect(afterMove).not.toBeNull()
+    expect(afterMove!.x).toBeGreaterThan(beforeMove!.x + 40)
+    expect(afterMove!.y).toBeGreaterThan(beforeMove!.y + 30)
+
+    const handleBox = await page.locator('.ai-suggestion-resize-handle').boundingBox()
+    expect(handleBox).not.toBeNull()
+    await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(handleBox!.x + 160, handleBox!.y + 120)
+    await page.mouse.up()
+
+    const afterResize = await page.locator('.ai-suggestion-popover').boundingBox()
+    const hostBox = await page.locator('.editor-host').boundingBox()
+    expect(afterResize).not.toBeNull()
+    expect(hostBox).not.toBeNull()
+    expect(afterResize!.width).toBeGreaterThan(afterMove!.width + 40)
+    expect(afterResize!.height).toBeGreaterThan(afterMove!.height + 30)
+    expect(afterResize!.x + afterResize!.width).toBeLessThanOrEqual(hostBox!.x + hostBox!.width + 1)
+    expect(afterResize!.y + afterResize!.height).toBeLessThanOrEqual(hostBox!.y + hostBox!.height + 1)
+  })
+
   test('highlights only changed tokens in AI suggestion diffs', async ({ page }) => {
     await loadFixture(page, [
       '申请 code-host service-alpha service-beta service-gamma 大账号权限 P0 @member-a',
@@ -426,13 +479,13 @@ test.describe('AI settings', () => {
       return {
         width: popover?.getBoundingClientRect().width ?? 0,
         diffFontSize: diff ? Number.parseFloat(getComputedStyle(diff).fontSize) : 0,
-        bodyMaxHeight: body ? Number.parseFloat(getComputedStyle(body).maxHeight) : 0,
+        bodyHeight: body?.getBoundingClientRect().height ?? 0,
       }
     })
 
     expect(metrics.width).toBeGreaterThan(900)
     expect(metrics.diffFontSize).toBeGreaterThan(20)
-    expect(metrics.bodyMaxHeight).toBeGreaterThan(300)
+    expect(metrics.bodyHeight).toBeGreaterThan(300)
   })
 
   test('extracts todos from the current block as a Markdown checklist', async ({ page }) => {

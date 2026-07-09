@@ -42,6 +42,19 @@ const saving = ref(false)
 const aiBusy = ref(false)
 const aiStatus = ref('')
 const blockToolbar = ref({ visible: false, top: 0 })
+type AiSuggestionFrame = {
+  top: number
+  left: number
+  width: number
+  height: number
+}
+type AiPopoverInteraction = {
+  type: 'move' | 'resize'
+  pointerId: number
+  startX: number
+  startY: number
+  startFrame: AiSuggestionFrame
+}
 const aiSuggestion = ref<{
   sourceText: string
   content: string
@@ -50,7 +63,11 @@ const aiSuggestion = ref<{
   scope: 'selection' | 'block'
   top: number
   left: number
+  width: number
+  height: number
+  manualFrame: boolean
 } | null>(null)
+const aiPopoverInteraction = ref<AiPopoverInteraction | null>(null)
 type AiDiffSegment = { text: string; changed: boolean }
 type AiDiffLine = { key: string; segments: AiDiffSegment[]; changed: boolean }
 type AiSuggestionDiff = { sourceLines: AiDiffLine[]; targetLines: AiDiffLine[]; changed: boolean }
@@ -72,7 +89,10 @@ const EDITOR_FONT_MIN = 11
 const EDITOR_FONT_MAX = 48
 const EDITOR_FONT_DEFAULT = 13
 const AI_POPOVER_MIN_WIDTH = 560
-const AI_POPOVER_WIDTH_FACTOR = 36
+const AI_POPOVER_MIN_HEIGHT = 260
+const AI_POPOVER_WIDTH_FACTOR = 34
+const AI_POPOVER_HEIGHT_FACTOR = 22
+const AI_POPOVER_MIN_MARGIN = 12
 
 const activeLanguage = computed({
   get: () => currentBlock.value?.language || store.settings.defaultLanguage,
@@ -134,6 +154,7 @@ onBeforeUnmount(() => {
   flushSaveSync()
   if (aiStatusTimer) window.clearTimeout(aiStatusTimer)
   if (blockToolbarFrame) window.cancelAnimationFrame(blockToolbarFrame)
+  stopAiPopoverInteraction()
   editorScrollElement?.removeEventListener('scroll', onEditorScroll)
   editorScrollElement = null
   unsubscribeEditorCommand?.()
@@ -163,6 +184,7 @@ function setAiStatus(message: string, autoClear = false) {
 }
 
 function dismissAiSuggestion() {
+  stopAiPopoverInteraction()
   aiSuggestion.value = null
 }
 
@@ -631,20 +653,64 @@ function insertAiBlockAfterCurrent(editor: EditorView, content: string, options:
   return true
 }
 
-function aiSuggestionPosition(editor: EditorView, from: number) {
+function aiSuggestionFrameBounds() {
   const host = editorHost.value
-  if (!host) return { top: 12, left: 12 }
+  const hostWidth = Math.max(1, host?.clientWidth ?? window.innerWidth)
+  const hostHeight = Math.max(1, host?.clientHeight ?? window.innerHeight)
+  const margin = Math.max(AI_POPOVER_MIN_MARGIN, Math.round(store.settings.fontSize * 0.7))
+  const availableWidth = Math.max(1, hostWidth - margin * 2)
+  const availableHeight = Math.max(1, hostHeight - margin * 2)
+  const minWidth = Math.min(AI_POPOVER_MIN_WIDTH, Math.max(320, availableWidth))
+  const minHeight = Math.min(AI_POPOVER_MIN_HEIGHT, Math.max(220, availableHeight))
+  return {
+    hostWidth,
+    hostHeight,
+    margin,
+    minWidth,
+    minHeight,
+    maxWidth: Math.max(minWidth, availableWidth),
+    maxHeight: Math.max(minHeight, availableHeight),
+  }
+}
+
+function defaultAiSuggestionSize(): Pick<AiSuggestionFrame, 'width' | 'height'> {
+  const bounds = aiSuggestionFrameBounds()
+  return {
+    width: Math.min(
+      bounds.maxWidth,
+      Math.max(bounds.minWidth, Math.round(store.settings.fontSize * AI_POPOVER_WIDTH_FACTOR)),
+    ),
+    height: Math.min(
+      bounds.maxHeight,
+      Math.max(bounds.minHeight, Math.round(store.settings.fontSize * AI_POPOVER_HEIGHT_FACTOR)),
+    ),
+  }
+}
+
+function clampAiSuggestionFrame(frame: AiSuggestionFrame): AiSuggestionFrame {
+  const bounds = aiSuggestionFrameBounds()
+  const width = Math.min(Math.max(frame.width, bounds.minWidth), bounds.maxWidth)
+  const height = Math.min(Math.max(frame.height, bounds.minHeight), bounds.maxHeight)
+  const maxLeft = Math.max(bounds.margin, bounds.hostWidth - width - bounds.margin)
+  const maxTop = Math.max(bounds.margin, bounds.hostHeight - height - bounds.margin)
+  return {
+    top: Math.min(Math.max(frame.top, bounds.margin), maxTop),
+    left: Math.min(Math.max(frame.left, bounds.margin), maxLeft),
+    width,
+    height,
+  }
+}
+
+function aiSuggestionPosition(editor: EditorView, from: number, width: number) {
+  const host = editorHost.value
+  if (!host) return { top: AI_POPOVER_MIN_MARGIN, left: AI_POPOVER_MIN_MARGIN }
   const hostRect = host.getBoundingClientRect()
   const coords = editor.coordsAtPos(from)
-  const margin = Math.max(12, Math.round(store.settings.fontSize * 0.7))
-  const expectedWidth = Math.min(
-    Math.max(AI_POPOVER_MIN_WIDTH, store.settings.fontSize * AI_POPOVER_WIDTH_FACTOR),
-    Math.max(AI_POPOVER_MIN_WIDTH, host.clientWidth - margin * 2),
-  )
-  const maxLeft = Math.max(margin, host.clientWidth - expectedWidth - margin)
+  const bounds = aiSuggestionFrameBounds()
+  const maxLeft = Math.max(bounds.margin, host.clientWidth - width - bounds.margin)
   return {
-    top: Math.max(margin, (coords?.bottom ?? hostRect.top + margin) - hostRect.top + margin),
-    left: Math.min(Math.max(margin, (coords?.left ?? hostRect.left + margin) - hostRect.left), maxLeft),
+    top: Math.max(bounds.margin, (coords?.bottom ?? hostRect.top + bounds.margin) - hostRect.top + bounds.margin),
+    left: Math.min(Math.max(bounds.margin, (coords?.left ?? hostRect.left + bounds.margin) - hostRect.left), maxLeft),
   }
 }
 
@@ -769,14 +835,17 @@ function buildAiSuggestionDiff(sourceText: string, targetText: string): AiSugges
 function showAiSuggestion(editor: EditorView, source: ReturnType<typeof aiSourceForEditor>, content: string) {
   const cleanContent = sanitizeAiBlockContent(content)
   if (!cleanContent || !source.range) return false
-  const position = aiSuggestionPosition(editor, source.range.from)
+  const size = defaultAiSuggestionSize()
+  const position = aiSuggestionPosition(editor, source.range.from, size.width)
+  const frame = clampAiSuggestionFrame({ ...position, ...size })
   aiSuggestion.value = {
     sourceText: source.input,
     content: cleanContent,
     from: source.range.from,
     to: source.range.to,
     scope: source.scope,
-    ...position,
+    manualFrame: false,
+    ...frame,
   }
   return true
 }
@@ -1136,10 +1205,101 @@ function onWindowResize() {
 
 function updateAiSuggestionPosition() {
   if (!view || !aiSuggestion.value) return
+  const suggestion = aiSuggestion.value
+  const frame = suggestion.manualFrame
+    ? clampAiSuggestionFrame(suggestion)
+    : clampAiSuggestionFrame({
+      ...aiSuggestionPosition(view, suggestion.from, suggestion.width),
+      width: suggestion.width,
+      height: suggestion.height,
+    })
+  aiSuggestion.value = {
+    ...suggestion,
+    ...frame,
+  }
+}
+
+function aiSuggestionCurrentFrame(): AiSuggestionFrame | null {
+  if (!aiSuggestion.value) return null
+  return {
+    top: aiSuggestion.value.top,
+    left: aiSuggestion.value.left,
+    width: aiSuggestion.value.width,
+    height: aiSuggestion.value.height,
+  }
+}
+
+function startAiPopoverMove(event: PointerEvent) {
+  if (event.button !== 0 || !aiSuggestion.value) return
+  const frame = aiSuggestionCurrentFrame()
+  if (!frame) return
+  event.preventDefault()
+  stopAiPopoverInteraction()
+  aiPopoverInteraction.value = {
+    type: 'move',
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    startFrame: frame,
+  }
+  window.addEventListener('pointermove', onAiPopoverPointerMove)
+  window.addEventListener('pointerup', onAiPopoverPointerUp)
+  window.addEventListener('pointercancel', onAiPopoverPointerUp)
+}
+
+function startAiPopoverResize(event: PointerEvent) {
+  if (event.button !== 0 || !aiSuggestion.value) return
+  const frame = aiSuggestionCurrentFrame()
+  if (!frame) return
+  event.preventDefault()
+  stopAiPopoverInteraction()
+  aiPopoverInteraction.value = {
+    type: 'resize',
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    startFrame: frame,
+  }
+  window.addEventListener('pointermove', onAiPopoverPointerMove)
+  window.addEventListener('pointerup', onAiPopoverPointerUp)
+  window.addEventListener('pointercancel', onAiPopoverPointerUp)
+}
+
+function onAiPopoverPointerMove(event: PointerEvent) {
+  const interaction = aiPopoverInteraction.value
+  if (!interaction || interaction.pointerId !== event.pointerId || !aiSuggestion.value) return
+  event.preventDefault()
+  const deltaX = event.clientX - interaction.startX
+  const deltaY = event.clientY - interaction.startY
+  const nextFrame = interaction.type === 'move'
+    ? {
+      ...interaction.startFrame,
+      left: interaction.startFrame.left + deltaX,
+      top: interaction.startFrame.top + deltaY,
+    }
+    : {
+      ...interaction.startFrame,
+      width: interaction.startFrame.width + deltaX,
+      height: interaction.startFrame.height + deltaY,
+    }
   aiSuggestion.value = {
     ...aiSuggestion.value,
-    ...aiSuggestionPosition(view, aiSuggestion.value.from),
+    ...clampAiSuggestionFrame(nextFrame),
+    manualFrame: true,
   }
+}
+
+function onAiPopoverPointerUp(event: PointerEvent) {
+  const interaction = aiPopoverInteraction.value
+  if (interaction && interaction.pointerId !== event.pointerId) return
+  stopAiPopoverInteraction()
+}
+
+function stopAiPopoverInteraction() {
+  aiPopoverInteraction.value = null
+  window.removeEventListener('pointermove', onAiPopoverPointerMove)
+  window.removeEventListener('pointerup', onAiPopoverPointerUp)
+  window.removeEventListener('pointercancel', onAiPopoverPointerUp)
 }
 
 function scheduleSave() {
@@ -1825,16 +1985,28 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
       <aside
         v-if="aiSuggestion"
         class="ai-suggestion-popover"
-        :style="{ top: `${aiSuggestion.top}px`, left: `${aiSuggestion.left}px` }"
+        :class="{ moving: aiPopoverInteraction?.type === 'move', resizing: aiPopoverInteraction?.type === 'resize' }"
+        :style="{
+          top: `${aiSuggestion.top}px`,
+          left: `${aiSuggestion.left}px`,
+          width: `${aiSuggestion.width}px`,
+          height: `${aiSuggestion.height}px`,
+        }"
         aria-label="AI 表述优化建议"
         @mousedown.stop
       >
-        <header class="ai-suggestion-header">
+        <header class="ai-suggestion-header" title="拖动建议窗口" @pointerdown="startAiPopoverMove">
           <div>
             <strong>AI 建议</strong>
             <span>{{ aiSuggestion.scope === 'selection' ? '表述优化 / 选区' : '表述优化 / 当前块' }}</span>
           </div>
-          <button type="button" class="ai-suggestion-close" title="关闭建议" @click="dismissAiSuggestion">
+          <button
+            type="button"
+            class="ai-suggestion-close"
+            title="关闭建议"
+            @pointerdown.stop
+            @click="dismissAiSuggestion"
+          >
             <X :size="14" />
           </button>
         </header>
@@ -1892,6 +2064,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
             复制
           </button>
         </footer>
+        <span class="ai-suggestion-resize-handle" title="调整建议窗口大小" @pointerdown.stop="startAiPopoverResize" />
       </aside>
     </div>
 
