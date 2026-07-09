@@ -250,12 +250,16 @@ test.describe('AI settings', () => {
         targetColumnBackground: targetColumn ? getComputedStyle(targetColumn).backgroundColor : '',
         changedLineBackground: changedLine ? getComputedStyle(changedLine).backgroundColor : '',
         addedSegmentBackground: addedSegment ? getComputedStyle(addedSegment).backgroundColor : '',
+        addedSegmentRadius: addedSegment ? getComputedStyle(addedSegment).borderRadius : '',
+        addedSegmentShadow: addedSegment ? getComputedStyle(addedSegment).boxShadow : '',
       }
     })
 
     expect(diffStyles.targetColumnBackground).toBe(diffStyles.sourceColumnBackground)
     expect(diffStyles.changedLineBackground).toBe('rgba(0, 0, 0, 0)')
     expect(diffStyles.addedSegmentBackground).not.toBe('rgba(0, 0, 0, 0)')
+    expect(diffStyles.addedSegmentRadius).toBe('0px')
+    expect(diffStyles.addedSegmentShadow).toBe('none')
 
     await expect.poll(() => page.evaluate(() => (window as any).__aiPayloads)).toEqual([
       {

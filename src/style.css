@@ -594,7 +594,6 @@ select:focus {
 
 .ai-diff-line {
   min-height: 1.55em;
-  border-radius: 4px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -604,19 +603,18 @@ select:focus {
 }
 
 .ai-diff-segment {
-  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 .ai-diff-segment.removed {
-  color: color-mix(in srgb, #8f2d25 78%, var(--ink));
-  background: color-mix(in srgb, #f2b8b5 68%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, #c4463a 20%, transparent);
+  color: color-mix(in srgb, #8a3a34 70%, var(--ink));
+  background: color-mix(in srgb, #e9a7a2 34%, transparent);
 }
 
 .ai-diff-segment.added {
-  color: color-mix(in srgb, #176a43 82%, var(--ink));
-  background: color-mix(in srgb, #b8e4c7 70%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, #278454 20%, transparent);
+  color: color-mix(in srgb, #1b6a48 72%, var(--ink));
+  background: color-mix(in srgb, #9bd5b1 38%, transparent);
 }
 
 .ai-suggestion-actions {
