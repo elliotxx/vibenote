@@ -99,6 +99,10 @@ const AI_POPOVER_MIN_HEIGHT = 260
 const AI_POPOVER_WIDTH_FACTOR = 34
 const AI_POPOVER_HEIGHT_FACTOR = 22
 const AI_POPOVER_MIN_MARGIN = 12
+const AI_LOADING_POPOVER_MIN_WIDTH = 320
+const AI_LOADING_POPOVER_MAX_WIDTH = 400
+const AI_LOADING_POPOVER_MIN_HEIGHT = 80
+const AI_LOADING_POPOVER_MAX_HEIGHT = 104
 
 const activeLanguage = computed({
   get: () => currentBlock.value?.language || store.settings.defaultLanguage,
@@ -701,6 +705,41 @@ function defaultAiSuggestionSize(): Pick<AiSuggestionFrame, 'width' | 'height'> 
   }
 }
 
+function loadingAiSuggestionInset(bounds: ReturnType<typeof aiSuggestionFrameBounds>) {
+  return Math.min(
+    Math.max(bounds.margin * 2, 20),
+    Math.floor(Math.min(bounds.hostWidth, bounds.hostHeight) / 3),
+  )
+}
+
+function loadingAiSuggestionSize(): Pick<AiSuggestionFrame, 'width' | 'height'> {
+  const bounds = aiSuggestionFrameBounds()
+  const inset = loadingAiSuggestionInset(bounds)
+  const availableWidth = Math.max(1, bounds.hostWidth - inset * 2)
+  const headerHeight = Math.min(
+    44,
+    Math.max(36, store.settings.fontSize * 2.3),
+  )
+  const loadingRowHeight = Math.min(
+    56,
+    Math.max(44, store.settings.fontSize * 2.9),
+  )
+  // Reserve space for the popover border as well as both fixed-height rows.
+  const requiredHeight = Math.ceil(headerHeight + loadingRowHeight + 2)
+  return {
+    width: Math.min(
+      availableWidth,
+      AI_LOADING_POPOVER_MAX_WIDTH,
+      Math.max(AI_LOADING_POPOVER_MIN_WIDTH, Math.round(store.settings.fontSize * 22)),
+    ),
+    height: Math.min(
+      Math.max(1, bounds.hostHeight - inset * 2),
+      AI_LOADING_POPOVER_MAX_HEIGHT,
+      Math.max(AI_LOADING_POPOVER_MIN_HEIGHT, requiredHeight),
+    ),
+  }
+}
+
 function clampAiSuggestionFrame(frame: AiSuggestionFrame): AiSuggestionFrame {
   const bounds = aiSuggestionFrameBounds()
   const width = Math.min(Math.max(frame.width, bounds.minWidth), bounds.maxWidth)
@@ -729,16 +768,32 @@ function aiSuggestionAnchorPosition(editor: EditorView, from: number) {
   }
 }
 
-function aiSuggestionPosition(editor: EditorView, from: number, width: number) {
+function loadingAiSuggestionPosition(editor: EditorView, from: number, width: number) {
   const bounds = aiSuggestionFrameBounds()
   const anchor = aiSuggestionAnchorPosition(editor, from)
+  const inset = loadingAiSuggestionInset(bounds)
   const left = Math.min(
-    Math.max(bounds.margin, anchor?.left ?? bounds.margin),
-    Math.max(bounds.margin, bounds.hostWidth - width - bounds.margin),
+    Math.max(inset, (bounds.hostWidth - width) / 2),
+    Math.max(inset, bounds.hostWidth - width - inset),
   )
   return {
-    top: Math.max(bounds.margin, (anchor?.top ?? bounds.margin) + bounds.margin),
+    top: Math.max(inset, (anchor?.top ?? inset) + bounds.margin),
     left,
+  }
+}
+
+function clampLoadingAiSuggestionFrame(frame: AiSuggestionFrame): AiSuggestionFrame {
+  const bounds = aiSuggestionFrameBounds()
+  const inset = loadingAiSuggestionInset(bounds)
+  const maxWidth = Math.max(1, bounds.hostWidth - inset * 2)
+  const maxHeight = Math.max(1, bounds.hostHeight - inset * 2)
+  const width = Math.min(Math.max(1, frame.width), maxWidth)
+  const height = Math.min(Math.max(1, frame.height), maxHeight)
+  return {
+    top: Math.min(Math.max(frame.top, inset), Math.max(inset, bounds.hostHeight - height - inset)),
+    left: Math.min(Math.max(frame.left, inset), Math.max(inset, bounds.hostWidth - width - inset)),
+    width,
+    height,
   }
 }
 
@@ -759,7 +814,9 @@ function syncAiSuggestionPositions(editor = view) {
 function updateAiSuggestionFrame(id: string, frame: AiSuggestionFrame) {
   const suggestion = aiSuggestions.value.find(item => item.id === id)
   if (!suggestion) return
-  const nextFrame = clampAiSuggestionFrame(frame)
+  const nextFrame = suggestion.status === 'generating'
+    ? clampLoadingAiSuggestionFrame(frame)
+    : clampAiSuggestionFrame(frame)
   const anchor = view ? aiSuggestionAnchorPosition(view, suggestion.from) : null
   updateAiSuggestion(id, {
     ...nextFrame,
@@ -889,9 +946,9 @@ function buildAiSuggestionDiff(sourceText: string, targetText: string): AiSugges
 
 function createAiSuggestionCard(editor: EditorView, source: ReturnType<typeof aiSourceForEditor>, mode: AiCompletionMode) {
   if (!source.range) return null
-  const size = defaultAiSuggestionSize()
-  const position = aiSuggestionPosition(editor, source.range.from, size.width)
-  const frame = clampAiSuggestionFrame({ ...position, ...size })
+  const size = loadingAiSuggestionSize()
+  const position = loadingAiSuggestionPosition(editor, source.range.from, size.width)
+  const frame = clampLoadingAiSuggestionFrame({ ...position, ...size })
   const anchor = aiSuggestionAnchorPosition(editor, source.range.from)
   const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
@@ -916,10 +973,30 @@ function createAiSuggestionCard(editor: EditorView, source: ReturnType<typeof ai
   return suggestion
 }
 
+function expandedAiSuggestionFrame(suggestion: AiSuggestionCard) {
+  const size = defaultAiSuggestionSize()
+  // Expand around the compact loading card instead of jumping back to the text anchor.
+  const frame = clampAiSuggestionFrame({
+    top: suggestion.top + (suggestion.height - size.height) / 2,
+    left: suggestion.left + (suggestion.width - size.width) / 2,
+    ...size,
+  })
+  const anchor = view ? aiSuggestionAnchorPosition(view, suggestion.from) : null
+  return {
+    ...frame,
+    visible: anchor ? true : suggestion.visible,
+    anchorOffsetTop: anchor ? frame.top - anchor.top : suggestion.anchorOffsetTop,
+    anchorOffsetLeft: anchor ? frame.left - anchor.left : suggestion.anchorOffsetLeft,
+  }
+}
+
 function completeAiSuggestion(id: string, content: string) {
+  const suggestion = aiSuggestions.value.find(item => item.id === id)
+  if (!suggestion) return false
   const cleanContent = sanitizeAiBlockContent(content)
   if (!cleanContent) {
     updateAiSuggestion(id, {
+      ...expandedAiSuggestionFrame(suggestion),
       status: 'error',
       message: '没有可展示的建议',
       content: '',
@@ -927,6 +1004,7 @@ function completeAiSuggestion(id: string, content: string) {
     return false
   }
   updateAiSuggestion(id, {
+    ...expandedAiSuggestionFrame(suggestion),
     status: 'ready',
     message: '已生成建议',
     content: cleanContent,
@@ -935,7 +1013,10 @@ function completeAiSuggestion(id: string, content: string) {
 }
 
 function failAiSuggestion(id: string, message: string) {
+  const suggestion = aiSuggestions.value.find(item => item.id === id)
+  if (!suggestion) return
   updateAiSuggestion(id, {
+    ...expandedAiSuggestionFrame(suggestion),
     status: 'error',
     message,
   })
@@ -2147,6 +2228,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
         :class="{
           moving: aiPopoverInteraction?.suggestionId === suggestion.id && aiPopoverInteraction?.type === 'move',
           resizing: aiPopoverInteraction?.suggestionId === suggestion.id && aiPopoverInteraction?.type === 'resize',
+          loading: suggestion.status === 'generating',
           hidden: !suggestion.visible,
         }"
         :style="{
@@ -2174,97 +2256,99 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
             <X :size="14" />
           </button>
         </header>
-        <p v-if="suggestion.status === 'generating'" class="ai-suggestion-message">
-          AI 正在生成建议...
-        </p>
-        <p v-else-if="suggestion.status === 'error'" class="ai-suggestion-message error">
-          AI：{{ suggestion.message || '请求失败' }}
-        </p>
-        <p v-else-if="suggestion.status === 'stale'" class="ai-suggestion-message stale">
-          {{ suggestion.message || '原文已经变化，请回到原文确认后再替换。' }}
-        </p>
-        <p v-if="suggestion.status !== 'generating' && aiSuggestionDiff(suggestion) && !aiSuggestionDiff(suggestion)?.changed" class="ai-suggestion-empty-diff">
-          AI 返回内容与原文基本一致，未检测到文字差异。
-        </p>
-        <div class="ai-suggestion-body">
-          <div class="ai-suggestion-column">
-            <span>原文</span>
-            <div class="ai-diff-lines" data-testid="ai-diff-source">
-              <div
-                v-for="line in aiSuggestionDiff(suggestion)?.sourceLines || []"
-                :key="line.key"
-                class="ai-diff-line"
-                :class="{ changed: line.changed }"
-              >
-                <span
-                  v-for="(segment, index) in line.segments"
-                  :key="index"
-                  class="ai-diff-segment"
-                  :class="{ removed: segment.changed }"
-                >{{ segment.text }}</span>
-              </div>
-            </div>
-          </div>
-          <div class="ai-suggestion-column suggestion">
-            <span>优化后</span>
-            <div class="ai-diff-lines" data-testid="ai-diff-target">
-              <div
-                v-for="line in aiSuggestionDiff(suggestion)?.targetLines || []"
-                :key="line.key"
-                class="ai-diff-line"
-                :class="{ changed: line.changed }"
-              >
-                <span
-                  v-for="(segment, index) in line.segments"
-                  :key="index"
-                  class="ai-diff-segment"
-                  :class="{ added: segment.changed }"
-                >{{ segment.text }}</span>
-              </div>
-            </div>
-          </div>
+        <div v-if="suggestion.status === 'generating'" class="ai-suggestion-loading" role="status" aria-live="polite">
+          <span class="ai-suggestion-spinner" aria-hidden="true" />
+          <span>{{ suggestion.message || '正在生成建议' }}</span>
         </div>
-        <footer class="ai-suggestion-actions">
-          <span class="ai-suggestion-status">{{ suggestion.message || (suggestion.status === 'ready' ? '已生成建议' : '等待中') }}</span>
-          <button
-            type="button"
-            class="ghost-button compact"
-            title="回到这条建议对应的原文"
-            :disabled="suggestion.status === 'generating'"
-            @click="gotoAiSuggestionSource(suggestion.id)"
-          >
-            回到原文
-          </button>
-          <button
-            type="button"
-            class="primary-button"
-            title="用优化后的内容替换原文"
-            :disabled="suggestion.status !== 'ready'"
-            @click="replaceWithAiSuggestion(suggestion.id)"
-          >
-            替换原文
-          </button>
-          <button
-            type="button"
-            class="secondary-button"
-            title="将优化后的内容插入为新块"
-            :disabled="suggestion.status === 'generating' || !suggestion.content.trim()"
-            @click="insertAiSuggestionAsBlock(suggestion.id)"
-          >
-            插入新块
-          </button>
-          <button
-            type="button"
-            class="ghost-button compact"
-            title="复制优化后的内容"
-            :disabled="suggestion.status === 'generating' || !suggestion.content.trim()"
-            @click="copyAiSuggestion(suggestion.id)"
-          >
-            <Copy :size="13" />
-            复制
-          </button>
-        </footer>
-        <span class="ai-suggestion-resize-handle" title="调整建议窗口大小" @pointerdown.stop="startAiPopoverResize($event, suggestion.id)" />
+        <template v-else>
+          <p v-if="suggestion.status === 'error'" class="ai-suggestion-message error">
+            AI：{{ suggestion.message || '请求失败' }}
+          </p>
+          <p v-else-if="suggestion.status === 'stale'" class="ai-suggestion-message stale">
+            {{ suggestion.message || '原文已经变化，请回到原文确认后再替换。' }}
+          </p>
+          <p v-if="aiSuggestionDiff(suggestion) && !aiSuggestionDiff(suggestion)?.changed" class="ai-suggestion-empty-diff">
+            AI 返回内容与原文基本一致，未检测到文字差异。
+          </p>
+          <div class="ai-suggestion-body">
+            <div class="ai-suggestion-column">
+              <span>原文</span>
+              <div class="ai-diff-lines" data-testid="ai-diff-source">
+                <div
+                  v-for="line in aiSuggestionDiff(suggestion)?.sourceLines || []"
+                  :key="line.key"
+                  class="ai-diff-line"
+                  :class="{ changed: line.changed }"
+                >
+                  <span
+                    v-for="(segment, index) in line.segments"
+                    :key="index"
+                    class="ai-diff-segment"
+                    :class="{ removed: segment.changed }"
+                  >{{ segment.text }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="ai-suggestion-column suggestion">
+              <span>优化后</span>
+              <div class="ai-diff-lines" data-testid="ai-diff-target">
+                <div
+                  v-for="line in aiSuggestionDiff(suggestion)?.targetLines || []"
+                  :key="line.key"
+                  class="ai-diff-line"
+                  :class="{ changed: line.changed }"
+                >
+                  <span
+                    v-for="(segment, index) in line.segments"
+                    :key="index"
+                    class="ai-diff-segment"
+                    :class="{ added: segment.changed }"
+                  >{{ segment.text }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <footer class="ai-suggestion-actions">
+            <span class="ai-suggestion-status">{{ suggestion.message || (suggestion.status === 'ready' ? '已生成建议' : '等待中') }}</span>
+            <button
+              type="button"
+              class="ghost-button compact"
+              title="回到这条建议对应的原文"
+              @click="gotoAiSuggestionSource(suggestion.id)"
+            >
+              回到原文
+            </button>
+            <button
+              type="button"
+              class="primary-button"
+              title="用优化后的内容替换原文"
+              :disabled="suggestion.status !== 'ready'"
+              @click="replaceWithAiSuggestion(suggestion.id)"
+            >
+              替换原文
+            </button>
+            <button
+              type="button"
+              class="secondary-button"
+              title="将优化后的内容插入为新块"
+              :disabled="!suggestion.content.trim()"
+              @click="insertAiSuggestionAsBlock(suggestion.id)"
+            >
+              插入新块
+            </button>
+            <button
+              type="button"
+              class="ghost-button compact"
+              title="复制优化后的内容"
+              :disabled="!suggestion.content.trim()"
+              @click="copyAiSuggestion(suggestion.id)"
+            >
+              <Copy :size="13" />
+              复制
+            </button>
+          </footer>
+          <span class="ai-suggestion-resize-handle" title="调整建议窗口大小" @pointerdown.stop="startAiPopoverResize($event, suggestion.id)" />
+        </template>
       </aside>
     </div>
 

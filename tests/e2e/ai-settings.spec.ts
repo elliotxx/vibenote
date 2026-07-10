@@ -276,6 +276,93 @@ test.describe('AI settings', () => {
     await expect(page.getByText('- keep this list item')).toHaveCount(0)
   })
 
+  test('keeps an AI suggestion compact while generation is pending', async ({ page }) => {
+    await loadFixture(page, ['rough sentence'])
+    await openSettings(page)
+
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await page.getByTitle('关闭设置').click()
+
+    await page.evaluate(() => {
+      window.vibenote.ai.complete = async () => new Promise(() => {})
+    })
+
+    await page.getByText('rough sentence').click()
+    await page.getByTitle('AI 优化选区或此块表述').click()
+
+    const popover = page.getByLabel('AI 表述优化建议')
+    await expect(popover).toHaveClass(/loading/)
+    await expect(popover.getByRole('status')).toHaveText('优化表述中')
+    await expect(popover.locator('.ai-suggestion-body')).toHaveCount(0)
+    await expect(popover.locator('.ai-suggestion-actions')).toHaveCount(0)
+
+    const box = await popover.boundingBox()
+    const editorHostBox = await page.locator('.editor-host').boundingBox()
+    expect(box).not.toBeNull()
+    expect(editorHostBox).not.toBeNull()
+    expect(box!.height).toBeLessThan(120)
+    expect(box!.width).toBeLessThanOrEqual(360)
+    expect(Math.abs(
+      box!.x + box!.width / 2 - (editorHostBox!.x + editorHostBox!.width / 2),
+    )).toBeLessThanOrEqual(1)
+
+    const loadingLayout = await popover.evaluate((element) => {
+      const status = element.querySelector<HTMLElement>('.ai-suggestion-loading')
+      const popoverRect = element.getBoundingClientRect()
+      const statusRect = status?.getBoundingClientRect()
+      return {
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        popoverBottom: popoverRect.bottom,
+        statusBottom: statusRect?.bottom ?? 0,
+      }
+    })
+    expect(loadingLayout.scrollHeight).toBeLessThanOrEqual(loadingLayout.clientHeight)
+    expect(loadingLayout.statusBottom).toBeLessThanOrEqual(loadingLayout.popoverBottom + 1)
+  })
+
+  test('expands an AI suggestion from the loading card without a horizontal jump', async ({ page }) => {
+    await loadFixture(page, ['rough sentence'])
+    await openSettings(page)
+
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await page.getByTitle('关闭设置').click()
+
+    await page.evaluate(() => {
+      ;(window as any).__resolveAiSuggestion = null
+      window.vibenote.ai.complete = async () => new Promise((resolve) => {
+        ;(window as any).__resolveAiSuggestion = resolve
+      })
+    })
+
+    await page.getByText('rough sentence').click()
+    await page.getByTitle('AI 优化选区或此块表述').click()
+
+    const popover = page.getByLabel('AI 表述优化建议')
+    await expect(popover).toHaveClass(/loading/)
+    const loadingBox = await popover.boundingBox()
+    expect(loadingBox).not.toBeNull()
+
+    await page.evaluate(() => {
+      ;(window as any).__resolveAiSuggestion?.({
+        ok: true,
+        message: 'Polished note ready',
+        content: 'polished sentence',
+      })
+    })
+
+    await expect(popover).not.toHaveClass(/loading/)
+    const expandedBox = await popover.boundingBox()
+    expect(expandedBox).not.toBeNull()
+    expect(Math.abs(
+      loadingBox!.x + loadingBox!.width / 2 - (expandedBox!.x + expandedBox!.width / 2),
+    )).toBeLessThanOrEqual(1)
+  })
+
   test('can insert or copy an AI polish suggestion without replacing text', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
       origin: 'http://127.0.0.1:3344',
