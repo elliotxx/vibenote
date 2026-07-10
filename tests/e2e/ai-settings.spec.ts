@@ -366,6 +366,93 @@ test.describe('AI settings', () => {
     expect(afterResize!.y + afterResize!.height).toBeLessThanOrEqual(hostBox!.y + hostBox!.height + 1)
   })
 
+  test('anchors AI suggestion popovers to their source text and allows multiple cards', async ({ page }) => {
+    await loadFixture(page, Array.from({ length: 72 }, (_, index) => `scrollable line ${index + 1}`))
+    await openSettings(page)
+
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await expect(page.getByText('API 密钥已本地保存并隐藏')).toBeVisible()
+    await page.getByTitle('关闭设置').click()
+
+    await page.evaluate(() => {
+      ;(window as any).__aiCallCount = 0
+      window.vibenote.ai.complete = async () => {
+        const count = ++(window as any).__aiCallCount
+        return {
+          ok: true,
+          message: `Polished note ${count}`,
+          content: `polished suggestion ${count}`,
+        }
+      }
+    })
+
+    await page.getByText('scrollable line 5', { exact: true }).click()
+    await page.getByTitle('AI 优化选区或此块表述').click()
+    const popovers = page.getByLabel('AI 表述优化建议')
+    await expect(popovers).toHaveCount(1)
+    await expect(page.getByText('polished suggestion 1')).toBeVisible()
+
+    const firstBeforeScroll = await page.locator('.ai-suggestion-popover').first().boundingBox()
+    expect(firstBeforeScroll).not.toBeNull()
+    await expect(page.locator('.ai-suggestion-popover').first()).toHaveCSS('position', 'absolute')
+    expect(await page.locator('.ai-suggestion-popover').first().evaluate(element => element.parentElement?.classList.contains('editor-host'))).toBe(true)
+    await page.locator('.cm-scroller').evaluate(element => {
+      element.scrollTop = 900
+      element.dispatchEvent(new Event('scroll', { bubbles: true }))
+    })
+    await expect.poll(() => page.locator('.cm-scroller').evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+    await expect(page.locator('.ai-suggestion-popover').first()).toBeHidden()
+
+    await page.locator('.cm-scroller').evaluate(element => {
+      element.scrollTop = 0
+      element.dispatchEvent(new Event('scroll', { bubbles: true }))
+    })
+    await expect(page.locator('.ai-suggestion-popover').first()).toBeVisible()
+    const firstAfterReturn = await page.locator('.ai-suggestion-popover').first().boundingBox()
+    expect(firstAfterReturn).not.toBeNull()
+    expect(Math.abs(firstAfterReturn!.x - firstBeforeScroll!.x)).toBeLessThan(2)
+    expect(Math.abs(firstAfterReturn!.y - firstBeforeScroll!.y)).toBeLessThan(2)
+
+    await page.getByTitle('AI 优化选区或此块表述').click()
+    await expect(popovers).toHaveCount(2)
+    await expect(page.getByText('polished suggestion 2')).toBeVisible()
+  })
+
+  test('marks an AI suggestion stale instead of replacing changed source text', async ({ page }) => {
+    await loadFixture(page, ['rough sentence'])
+    await openSettings(page)
+
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await expect(page.getByText('API 密钥已本地保存并隐藏')).toBeVisible()
+    await page.getByTitle('关闭设置').click()
+
+    await page.evaluate(() => {
+      window.vibenote.ai.complete = async () => ({
+        ok: true,
+        message: 'Polished note inserted',
+        content: 'polished sentence',
+      })
+    })
+
+    await page.locator('.cm-content .cm-line', { hasText: 'rough sentence' }).first().click()
+    await page.getByTitle('AI 优化选区或此块表述').click()
+    await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
+    await expect(page.getByText('polished sentence')).toBeVisible()
+
+    await page.locator('.cm-content .cm-line', { hasText: 'rough sentence' }).first().click()
+    await page.keyboard.press('End')
+    await page.keyboard.insertText(' changed')
+
+    await page.getByRole('button', { name: '替换原文' }).click()
+    await expect(page.locator('.ai-suggestion-message.stale')).toHaveText('原文已变化，请复制、插入新块或回到原文后重新生成')
+    await expect(page.getByText('rough sentence changed')).toBeVisible()
+    await expect(page.getByText('polished sentence')).toBeVisible()
+  })
+
   test('highlights only changed tokens in AI suggestion diffs', async ({ page }) => {
     await loadFixture(page, [
       '申请 code-host service-alpha service-beta service-gamma 大账号权限 P0 @member-a',

@@ -10,7 +10,7 @@ Vibenote 的 AI 能力应延续“沉浸式、顺手、AI Native 的纯文本笔
 - 在设置页提供清晰、可测试、可关闭的 AI 配置。
 - 将 API Key 放在 Electron 主进程侧管理，避免进入 localStorage、笔记正文或日志。
 - AI 功能默认只作用于当前 block 或当前选区，结果先以可预览方式呈现，由用户确认插入或替换。
-- 首个交付只做 AI 设置页、密钥存储和连接测试；AI action 只保留 Explain 与 Rewrite 两条高 ROI 路线，作为后续阶段逐步实现。
+- AI action 只保留围绕当前 block 或选区的高 ROI 路线，确认类结果必须先预览，由用户决定替换、插入或复制。
 
 相关实施计划见 [AI Native Assistance Implementation Plan](../plans/2026-07-02-ai-native-assistance-plan.md)。
 
@@ -28,6 +28,7 @@ Vibenote 的 AI 能力应延续“沉浸式、顺手、AI Native 的纯文本笔
 - 用户需要知道 API Key 存在哪里、何时会请求模型、发送了哪些文本。
 - AI 不能在无确认情况下改写多个 block。
 - DeepSeek 与 OpenAI 都可通过 OpenAI-compatible 格式接入，但模型、base URL、测试方式需要可配置。
+- 表述优化、Todo 提取等需要确认的 AI 结果如果只用单个跟随选区的弹窗承载，滚动后会打断用户继续浏览，也无法在多个 block 上并发触发后逐个确认。
 
 ## 方案设计
 
@@ -116,7 +117,7 @@ renderer 不能直接发起带 API Key 的请求。建议新增主进程 IPC：
 | P0 | Explain selection | 当前选区 | 高 | 新建结果 block，不改原文 |
 | P1 | Rewrite selection | 当前选区 | 高 | 先预览 diff，用户确认替换 |
 
-推荐下一个阶段先做 `Explain selection`。它价值清晰、不会改原文、便于验证 provider 调用链。`Rewrite selection` 虽然 ROI 高，但必须先做预览确认与撤销边界，适合再下一阶段。
+推荐优先保证 `Explain selection` 和 `Rewrite selection` 的确认边界。`Explain selection` 价值清晰、不会改原文，适合验证 provider 调用链；`Rewrite selection` ROI 高，但必须依赖预览确认、来源校验与可回退路径。
 
 不建议首批做：
 
@@ -139,18 +140,46 @@ renderer 不能直接发起带 API Key 的请求。建议新增主进程 IPC：
 - 当前 block 无选区时，AI 默认作用于当前 block。
 - 快捷键建议保留给后续，不在首版塞太多。
 
-下一个阶段只开放：
-
-- Explain
-
-再下一阶段开放：
-
-- Rewrite
-
 结果呈现：
 
 - `Explain` 默认插入到当前 block 后的新 block。
-- `Rewrite` 后续使用预览 modal，用户确认后替换选区。
+- `Rewrite` 使用预览卡片，用户确认后替换选区或当前 block。
+
+### AI 建议卡片
+
+需要用户确认的 AI 结果不应继续作为“跟随选区滚动的单例弹窗”，而应升级为可停放的 AI 建议卡片。卡片创建时锚定来源文本；编辑器滚动时与来源 block 一起移动，来源离开可视区域后卡片随之隐藏，滚回时恢复到原位置。
+
+核心交互：
+
+- 每次触发 AI action 都创建一张独立卡片，不覆盖已有卡片。
+- 卡片支持生成中、已完成、失败、原文已变化四种状态。
+- 卡片可拖动、可调整大小、可关闭；拖动后保存相对来源文本的偏移，多个卡片互不影响。
+- 卡片保留来源锚点，提供“回到原文”能力，点击后滚动到来源 block 并短暂高亮。
+- 卡片操作保留当前确认动作：替换原文、插入新块、复制。
+
+数据模型从单个 `aiSuggestion` 调整为 `aiSuggestions[]`。每张卡片至少保存：
+
+```ts
+type AiSuggestionCard = {
+  id: string
+  action: 'polish' | 'extract-todo' | 'explain'
+  status: 'generating' | 'ready' | 'error' | 'stale'
+  sourceText: string
+  content: string
+  from: number
+  to: number
+  scope: 'selection' | 'block'
+  frame: { top: number; left: number; width: number; height: number }
+  createdAt: number
+}
+```
+
+安全边界：
+
+- 替换原文前必须重新读取 `from` 到 `to` 的当前内容，确认仍等于 `sourceText`。
+- 如果来源文本已经变化，卡片进入 `stale` 状态，禁止直接替换，只允许复制、插入新块或回到原文重新触发。
+- 卡片位置不写入笔记文件，不跨应用重启恢复；首版只保留在当前运行时，避免把临时 AI 状态混入用户数据。
+- 右下角状态栏只展示最近一次 AI 状态，不承担多卡片列表职责。
 
 ## 验收标准
 
@@ -173,6 +202,14 @@ renderer 不能直接发起带 API Key 的请求。建议新增主进程 IPC：
 - `Rewrite` 必须有确认步骤，取消后原文不变。
 - e2e 覆盖取消 rewrite 不改文、确认 rewrite 只替换选区。
 
+固定多卡片确认流必须满足：
+
+- 连续在不同 block 或选区触发 AI action，会出现多张独立建议卡片。
+- 滚动编辑器时，建议卡片跟随来源 block 移动；来源文本离开可视区域后卡片隐藏，滚回后恢复。
+- 拖动或缩放某张卡片不会影响其他卡片。
+- 点击“回到原文”能定位到对应来源，并且不改变笔记内容。
+- 来源文本变化后点击替换不会覆盖新内容，必须提示原文已变化。
+
 ## 风险与边界
 
 - 首版不承诺支持所有 OpenAI-compatible provider 的非标准字段。
@@ -180,6 +217,7 @@ renderer 不能直接发起带 API Key 的请求。建议新增主进程 IPC：
 - 首版不做 token 估算和历史上下文裁剪，只发送当前选区或当前 block。
 - 首版不上传图片内容，只处理文本。
 - AI 输出必须走用户确认，不做后台自动整理。
+- 多张 AI 建议卡片可能遮挡编辑区；首版先依赖拖动、缩放和关闭解决，不引入侧边栏或卡片管理中心。
 
 ## 待确认点
 

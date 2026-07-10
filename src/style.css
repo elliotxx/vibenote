@@ -141,9 +141,14 @@ select:focus {
 }
 
 .editor-host {
+  position: relative;
   min-height: 0;
   overflow: hidden;
   cursor: text;
+}
+
+.editor-mount {
+  height: 100%;
 }
 
 .cm-editor {
@@ -509,6 +514,11 @@ select:focus {
   max-height: calc(100% - var(--ai-popover-margin) * 2);
 }
 
+.ai-suggestion-popover.hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .ai-suggestion-header,
 .ai-suggestion-actions {
   display: flex;
@@ -599,6 +609,27 @@ select:focus {
   line-height: 1.45;
 }
 
+.ai-suggestion-message {
+  margin: 0;
+  padding: 9px clamp(14px, calc(var(--editor-font-size, 13px) * 0.95), 24px);
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface-control) 72%, var(--surface-editor));
+  font-size: clamp(11px, calc(var(--editor-font-size, 13px) * 0.72), 16px);
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.ai-suggestion-message.error {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, var(--surface-editor));
+}
+
+.ai-suggestion-message.stale {
+  color: color-mix(in srgb, var(--accent) 72%, var(--ink));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-editor));
+}
+
 .ai-diff-lines {
   display: grid;
   gap: 2px;
@@ -635,7 +666,7 @@ select:focus {
 
 .ai-suggestion-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
   justify-content: flex-end;
   padding: clamp(8px, calc(var(--editor-font-size, 13px) * 0.6), 14px) clamp(14px, calc(var(--editor-font-size, 13px) * 0.95), 24px);
   border-top: 1px solid var(--line-soft);
@@ -668,6 +699,14 @@ select:focus {
 
 .primary-button:hover {
   filter: brightness(0.96);
+}
+
+.primary-button:disabled {
+  border-color: var(--line);
+  color: var(--muted);
+  background: var(--surface-control);
+  cursor: default;
+  filter: none;
 }
 
 .ghost-button.compact {

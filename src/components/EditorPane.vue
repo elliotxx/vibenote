@@ -35,11 +35,12 @@ const emit = defineEmits<{
   (event: 'open-settings'): void
 }>()
 const editorHost = ref<HTMLElement | null>(null)
+const editorMount = ref<HTMLElement | null>(null)
 const languageSelect = ref<HTMLSelectElement | null>(null)
 const currentBlock = ref<ScratchBlock | null>(null)
 const cursorLabel = ref('1:1')
 const saving = ref(false)
-const aiBusy = ref(false)
+const aiPendingCount = ref(0)
 const aiStatus = ref('')
 const blockToolbar = ref({ visible: false, top: 0 })
 type AiSuggestionFrame = {
@@ -49,34 +50,39 @@ type AiSuggestionFrame = {
   height: number
 }
 type AiPopoverInteraction = {
+  suggestionId: string
   type: 'move' | 'resize'
   pointerId: number
   startX: number
   startY: number
   startFrame: AiSuggestionFrame
 }
-const aiSuggestion = ref<{
+type AiSuggestionStatus = 'generating' | 'ready' | 'error' | 'stale'
+type AiSuggestionCard = {
+  id: string
+  mode: AiCompletionMode
+  status: AiSuggestionStatus
   sourceText: string
+  sourceDirty: boolean
   content: string
+  message: string
   from: number
   to: number
   scope: 'selection' | 'block'
   top: number
   left: number
+  anchorOffsetTop: number
+  anchorOffsetLeft: number
+  visible: boolean
   width: number
   height: number
-  manualFrame: boolean
-} | null>(null)
+}
+const aiSuggestions = ref<AiSuggestionCard[]>([])
 const aiPopoverInteraction = ref<AiPopoverInteraction | null>(null)
 type AiDiffSegment = { text: string; changed: boolean }
 type AiDiffLine = { key: string; segments: AiDiffSegment[]; changed: boolean }
 type AiSuggestionDiff = { sourceLines: AiDiffLine[]; targetLines: AiDiffLine[]; changed: boolean }
 type AiDiffToken = { text: string; changed: boolean }
-
-const aiSuggestionDiff = computed<AiSuggestionDiff | null>(() => {
-  if (!aiSuggestion.value) return null
-  return buildAiSuggestionDiff(aiSuggestion.value.sourceText, aiSuggestion.value.content)
-})
 let view: EditorView | null = null
 let note: LoadedNote | null = null
 let saveTimer: number | null = null
@@ -183,9 +189,15 @@ function setAiStatus(message: string, autoClear = false) {
   }
 }
 
-function dismissAiSuggestion() {
-  stopAiPopoverInteraction()
-  aiSuggestion.value = null
+function dismissAiSuggestion(id: string) {
+  if (aiPopoverInteraction.value?.suggestionId === id) stopAiPopoverInteraction()
+  aiSuggestions.value = aiSuggestions.value.filter(suggestion => suggestion.id !== id)
+}
+
+function updateAiSuggestion(id: string, patch: Partial<AiSuggestionCard>) {
+  aiSuggestions.value = aiSuggestions.value.map(suggestion => (
+    suggestion.id === id ? { ...suggestion, ...patch } : suggestion
+  ))
 }
 
 function toggleAutoMode() {
@@ -196,6 +208,7 @@ watch(
   () => [store.settings.fontSize, store.settings.tabSize, store.settings.theme],
   () => {
     applyEditorViewSettings(view)
+    clampAiSuggestionFrames()
   },
 )
 
@@ -290,7 +303,7 @@ const selectionRightFill = ViewPlugin.fromClass(class {
 })
 
 function mountEditor() {
-  if (!editorHost.value) return
+  if (!editorHost.value || !editorMount.value) return
   editorBufferPath = store.currentPath
   note = loadNote(store.currentContent)
   if (!note.content.includes('---block:')) {
@@ -476,7 +489,7 @@ function mountEditor() {
       }),
       EditorView.updateListener.of(update => {
         if (update.docChanged) {
-          dismissAiSuggestion()
+          mapAiSuggestionRanges(update)
           scheduleSave()
         }
         if (update.docChanged || update.selectionSet || update.focusChanged || update.viewportChanged) {
@@ -490,7 +503,7 @@ function mountEditor() {
     ],
   })
 
-  view = new EditorView({ state, parent: editorHost.value })
+  view = new EditorView({ state, parent: editorMount.value })
   editorScrollElement = view.scrollDOM
   editorScrollElement.addEventListener('scroll', onEditorScroll, { passive: true })
   applyEditorViewSettings(view)
@@ -655,8 +668,9 @@ function insertAiBlockAfterCurrent(editor: EditorView, content: string, options:
 
 function aiSuggestionFrameBounds() {
   const host = editorHost.value
-  const hostWidth = Math.max(1, host?.clientWidth ?? window.innerWidth)
-  const hostHeight = Math.max(1, host?.clientHeight ?? window.innerHeight)
+  const hostRect = host?.getBoundingClientRect()
+  const hostWidth = Math.max(1, hostRect?.width ?? window.innerWidth)
+  const hostHeight = Math.max(1, hostRect?.height ?? window.innerHeight)
   const margin = Math.max(AI_POPOVER_MIN_MARGIN, Math.round(store.settings.fontSize * 0.7))
   const availableWidth = Math.max(1, hostWidth - margin * 2)
   const availableHeight = Math.max(1, hostHeight - margin * 2)
@@ -691,27 +705,68 @@ function clampAiSuggestionFrame(frame: AiSuggestionFrame): AiSuggestionFrame {
   const bounds = aiSuggestionFrameBounds()
   const width = Math.min(Math.max(frame.width, bounds.minWidth), bounds.maxWidth)
   const height = Math.min(Math.max(frame.height, bounds.minHeight), bounds.maxHeight)
-  const maxLeft = Math.max(bounds.margin, bounds.hostWidth - width - bounds.margin)
-  const maxTop = Math.max(bounds.margin, bounds.hostHeight - height - bounds.margin)
+  const minLeft = bounds.margin
+  const minTop = bounds.margin
+  const maxLeft = Math.max(minLeft, bounds.hostWidth - width - bounds.margin)
+  const maxTop = Math.max(minTop, bounds.hostHeight - height - bounds.margin)
   return {
-    top: Math.min(Math.max(frame.top, bounds.margin), maxTop),
-    left: Math.min(Math.max(frame.left, bounds.margin), maxLeft),
+    top: Math.min(Math.max(frame.top, minTop), maxTop),
+    left: Math.min(Math.max(frame.left, minLeft), maxLeft),
     width,
     height,
   }
 }
 
-function aiSuggestionPosition(editor: EditorView, from: number, width: number) {
+function aiSuggestionAnchorPosition(editor: EditorView, from: number) {
   const host = editorHost.value
-  if (!host) return { top: AI_POPOVER_MIN_MARGIN, left: AI_POPOVER_MIN_MARGIN }
-  const hostRect = host.getBoundingClientRect()
+  if (!host || !editor.visibleRanges.some(range => range.from <= from && from <= range.to)) return null
   const coords = editor.coordsAtPos(from)
-  const bounds = aiSuggestionFrameBounds()
-  const maxLeft = Math.max(bounds.margin, host.clientWidth - width - bounds.margin)
+  if (!coords) return null
+  const hostRect = host.getBoundingClientRect()
   return {
-    top: Math.max(bounds.margin, (coords?.bottom ?? hostRect.top + bounds.margin) - hostRect.top + bounds.margin),
-    left: Math.min(Math.max(bounds.margin, (coords?.left ?? hostRect.left + bounds.margin) - hostRect.left), maxLeft),
+    top: coords.bottom - hostRect.top,
+    left: coords.left - hostRect.left,
   }
+}
+
+function aiSuggestionPosition(editor: EditorView, from: number, width: number) {
+  const bounds = aiSuggestionFrameBounds()
+  const anchor = aiSuggestionAnchorPosition(editor, from)
+  const left = Math.min(
+    Math.max(bounds.margin, anchor?.left ?? bounds.margin),
+    Math.max(bounds.margin, bounds.hostWidth - width - bounds.margin),
+  )
+  return {
+    top: Math.max(bounds.margin, (anchor?.top ?? bounds.margin) + bounds.margin),
+    left,
+  }
+}
+
+function syncAiSuggestionPositions(editor = view) {
+  if (!editor || aiSuggestions.value.length === 0) return
+  aiSuggestions.value = aiSuggestions.value.map(suggestion => {
+    const anchor = aiSuggestionAnchorPosition(editor, suggestion.from)
+    if (!anchor) return { ...suggestion, visible: false }
+    return {
+      ...suggestion,
+      visible: true,
+      top: anchor.top + suggestion.anchorOffsetTop,
+      left: anchor.left + suggestion.anchorOffsetLeft,
+    }
+  })
+}
+
+function updateAiSuggestionFrame(id: string, frame: AiSuggestionFrame) {
+  const suggestion = aiSuggestions.value.find(item => item.id === id)
+  if (!suggestion) return
+  const nextFrame = clampAiSuggestionFrame(frame)
+  const anchor = view ? aiSuggestionAnchorPosition(view, suggestion.from) : null
+  updateAiSuggestion(id, {
+    ...nextFrame,
+    visible: Boolean(anchor),
+    anchorOffsetTop: anchor ? nextFrame.top - anchor.top : suggestion.anchorOffsetTop,
+    anchorOffsetLeft: anchor ? nextFrame.left - anchor.left : suggestion.anchorOffsetLeft,
+  })
 }
 
 function tokenizeDiffText(value: string) {
@@ -832,27 +887,88 @@ function buildAiSuggestionDiff(sourceText: string, targetText: string): AiSugges
   }
 }
 
-function showAiSuggestion(editor: EditorView, source: ReturnType<typeof aiSourceForEditor>, content: string) {
-  const cleanContent = sanitizeAiBlockContent(content)
-  if (!cleanContent || !source.range) return false
+function createAiSuggestionCard(editor: EditorView, source: ReturnType<typeof aiSourceForEditor>, mode: AiCompletionMode) {
+  if (!source.range) return null
   const size = defaultAiSuggestionSize()
   const position = aiSuggestionPosition(editor, source.range.from, size.width)
   const frame = clampAiSuggestionFrame({ ...position, ...size })
-  aiSuggestion.value = {
+  const anchor = aiSuggestionAnchorPosition(editor, source.range.from)
+  const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `ai-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const suggestion: AiSuggestionCard = {
+    id,
+    mode,
+    status: 'generating',
     sourceText: source.input,
-    content: cleanContent,
+    sourceDirty: false,
+    content: '',
+    message: mode === 'extract-todos' ? '提取 Todo 中' : '优化表述中',
     from: source.range.from,
     to: source.range.to,
     scope: source.scope,
-    manualFrame: false,
+    anchorOffsetTop: frame.top - (anchor?.top ?? 0),
+    anchorOffsetLeft: frame.left - (anchor?.left ?? 0),
+    visible: Boolean(anchor),
     ...frame,
   }
+  aiSuggestions.value = [...aiSuggestions.value, suggestion]
+  return suggestion
+}
+
+function completeAiSuggestion(id: string, content: string) {
+  const cleanContent = sanitizeAiBlockContent(content)
+  if (!cleanContent) {
+    updateAiSuggestion(id, {
+      status: 'error',
+      message: '没有可展示的建议',
+      content: '',
+    })
+    return false
+  }
+  updateAiSuggestion(id, {
+    status: 'ready',
+    message: '已生成建议',
+    content: cleanContent,
+  })
   return true
 }
 
-function replaceWithAiSuggestion() {
-  if (!view || !aiSuggestion.value) return
-  const suggestion = aiSuggestion.value
+function failAiSuggestion(id: string, message: string) {
+  updateAiSuggestion(id, {
+    status: 'error',
+    message,
+  })
+}
+
+function markAiSuggestionStale(id: string) {
+  updateAiSuggestion(id, {
+    status: 'stale',
+    message: '原文已变化，请复制、插入新块或回到原文后重新生成',
+  })
+}
+
+function aiSuggestionDiff(suggestion: AiSuggestionCard) {
+  if (!suggestion.content) return null
+  return buildAiSuggestionDiff(suggestion.sourceText, suggestion.content)
+}
+
+function sourceStillMatchesSuggestion(suggestion: AiSuggestionCard) {
+  if (!view) return false
+  if (suggestion.sourceDirty) return false
+  if (suggestion.from < 0 || suggestion.to > view.state.doc.length || suggestion.from > suggestion.to) return false
+  return view.state.doc.sliceString(suggestion.from, suggestion.to) === suggestion.sourceText
+}
+
+function replaceWithAiSuggestion(id: string) {
+  if (!view) return
+  const suggestion = aiSuggestions.value.find(item => item.id === id)
+  if (!suggestion || suggestion.status !== 'ready') return
+  if (!sourceStillMatchesSuggestion(suggestion)) {
+    markAiSuggestionStale(id)
+    setAiStatus('AI：原文已变化，未替换', true)
+    return
+  }
   if (!snapshotCurrentSync('ai-polish-replace')) return
   view.dispatch({
     changes: { from: suggestion.from, to: suggestion.to, insert: suggestion.content },
@@ -860,33 +976,73 @@ function replaceWithAiSuggestion() {
     annotations: internalBlockEdit.of(true),
     scrollIntoView: true,
   })
-  dismissAiSuggestion()
+  dismissAiSuggestion(id)
   view.focus()
   updateStatus(view)
   scheduleSave()
   setAiStatus('AI：已替换原文', true)
 }
 
-function insertAiSuggestionAsBlock() {
-  if (!view || !aiSuggestion.value) return
-  const content = aiSuggestion.value.content
+function insertAiSuggestionAsBlock(id: string) {
+  if (!view) return
+  const suggestion = aiSuggestions.value.find(item => item.id === id)
+  if (!suggestion || !suggestion.content || suggestion.status === 'generating') return
+  const content = suggestion.content
   if (!snapshotCurrentSync('ai-polish-insert-block')) return
   if (insertAiBlockAfterCurrent(view, content)) {
-    dismissAiSuggestion()
+    dismissAiSuggestion(id)
     setAiStatus('AI：已插入新块', true)
   } else {
     setAiStatus('AI：没有可插入内容')
   }
 }
 
-async function copyAiSuggestion() {
-  if (!aiSuggestion.value) return
+async function copyAiSuggestion(id: string) {
+  const suggestion = aiSuggestions.value.find(item => item.id === id)
+  if (!suggestion?.content) return
   try {
-    await navigator.clipboard.writeText(aiSuggestion.value.content)
+    await navigator.clipboard.writeText(suggestion.content)
     setAiStatus('AI：已复制建议', true)
   } catch {
     setAiStatus('AI：复制失败')
   }
+}
+
+function gotoAiSuggestionSource(id: string) {
+  if (!view) return
+  const suggestion = aiSuggestions.value.find(item => item.id === id)
+  if (!suggestion) return
+  const from = Math.max(0, Math.min(suggestion.from, view.state.doc.length))
+  const to = Math.max(from, Math.min(suggestion.to, view.state.doc.length))
+  view.dispatch({
+    selection: suggestion.scope === 'selection'
+      ? EditorSelection.range(from, to)
+      : EditorSelection.cursor(from),
+    effects: EditorView.scrollIntoView(from, { y: 'center' }),
+  })
+  view.focus()
+}
+
+function mapAiSuggestionRanges(update: ViewUpdate) {
+  if (aiSuggestions.value.length === 0) return
+  aiSuggestions.value = aiSuggestions.value.map(suggestion => {
+    let sourceChanged = false
+    update.changes.iterChangedRanges((fromA, toA) => {
+      if (sourceChanged) return
+      if (fromA === toA) {
+        sourceChanged = fromA >= suggestion.from && fromA <= suggestion.to
+        return
+      }
+      sourceChanged = fromA < suggestion.to && toA > suggestion.from
+    })
+    return {
+      ...suggestion,
+      sourceDirty: suggestion.sourceDirty || sourceChanged,
+      from: update.changes.mapPos(suggestion.from, 1),
+      to: update.changes.mapPos(suggestion.to, -1),
+    }
+  })
+  syncAiSuggestionPositions(update.view)
 }
 
 function activeImageLineRange(editor: EditorView) {
@@ -1194,48 +1350,41 @@ function updateBlockToolbar(editor: EditorView | null) {
 }
 
 function onEditorScroll() {
-  updateAiSuggestionPosition()
+  syncAiSuggestionPositions()
   scheduleBlockToolbarUpdate()
 }
 
 function onWindowResize() {
-  updateAiSuggestionPosition()
+  clampAiSuggestionFrames()
   scheduleBlockToolbarUpdate()
 }
 
-function updateAiSuggestionPosition() {
-  if (!view || !aiSuggestion.value) return
-  const suggestion = aiSuggestion.value
-  const frame = suggestion.manualFrame
-    ? clampAiSuggestionFrame(suggestion)
-    : clampAiSuggestionFrame({
-      ...aiSuggestionPosition(view, suggestion.from, suggestion.width),
-      width: suggestion.width,
-      height: suggestion.height,
-    })
-  aiSuggestion.value = {
-    ...suggestion,
-    ...frame,
-  }
+function clampAiSuggestionFrames() {
+  if (aiSuggestions.value.length === 0) return
+  aiSuggestions.value.forEach(suggestion => {
+    updateAiSuggestionFrame(suggestion.id, clampAiSuggestionFrame(suggestion))
+  })
 }
 
-function aiSuggestionCurrentFrame(): AiSuggestionFrame | null {
-  if (!aiSuggestion.value) return null
+function aiSuggestionCurrentFrame(id: string): AiSuggestionFrame | null {
+  const suggestion = aiSuggestions.value.find(item => item.id === id)
+  if (!suggestion) return null
   return {
-    top: aiSuggestion.value.top,
-    left: aiSuggestion.value.left,
-    width: aiSuggestion.value.width,
-    height: aiSuggestion.value.height,
+    top: suggestion.top,
+    left: suggestion.left,
+    width: suggestion.width,
+    height: suggestion.height,
   }
 }
 
-function startAiPopoverMove(event: PointerEvent) {
-  if (event.button !== 0 || !aiSuggestion.value) return
-  const frame = aiSuggestionCurrentFrame()
+function startAiPopoverMove(event: PointerEvent, id: string) {
+  if (event.button !== 0) return
+  const frame = aiSuggestionCurrentFrame(id)
   if (!frame) return
   event.preventDefault()
   stopAiPopoverInteraction()
   aiPopoverInteraction.value = {
+    suggestionId: id,
     type: 'move',
     pointerId: event.pointerId,
     startX: event.clientX,
@@ -1247,13 +1396,14 @@ function startAiPopoverMove(event: PointerEvent) {
   window.addEventListener('pointercancel', onAiPopoverPointerUp)
 }
 
-function startAiPopoverResize(event: PointerEvent) {
-  if (event.button !== 0 || !aiSuggestion.value) return
-  const frame = aiSuggestionCurrentFrame()
+function startAiPopoverResize(event: PointerEvent, id: string) {
+  if (event.button !== 0) return
+  const frame = aiSuggestionCurrentFrame(id)
   if (!frame) return
   event.preventDefault()
   stopAiPopoverInteraction()
   aiPopoverInteraction.value = {
+    suggestionId: id,
     type: 'resize',
     pointerId: event.pointerId,
     startX: event.clientX,
@@ -1267,7 +1417,7 @@ function startAiPopoverResize(event: PointerEvent) {
 
 function onAiPopoverPointerMove(event: PointerEvent) {
   const interaction = aiPopoverInteraction.value
-  if (!interaction || interaction.pointerId !== event.pointerId || !aiSuggestion.value) return
+  if (!interaction || interaction.pointerId !== event.pointerId) return
   event.preventDefault()
   const deltaX = event.clientX - interaction.startX
   const deltaY = event.clientY - interaction.startY
@@ -1282,11 +1432,7 @@ function onAiPopoverPointerMove(event: PointerEvent) {
       width: interaction.startFrame.width + deltaX,
       height: interaction.startFrame.height + deltaY,
     }
-  aiSuggestion.value = {
-    ...aiSuggestion.value,
-    ...clampAiSuggestionFrame(nextFrame),
-    manualFrame: true,
-  }
+  updateAiSuggestionFrame(interaction.suggestionId, nextFrame)
 }
 
 function onAiPopoverPointerUp(event: PointerEvent) {
@@ -1914,7 +2060,7 @@ async function formatBlock() {
 }
 
 async function runAiAction(mode: AiCompletionMode) {
-  if (!view || aiBusy.value) return
+  if (!view) return
 
   setAiStatus('')
   const source = aiSourceForEditor(view)
@@ -1923,7 +2069,15 @@ async function runAiAction(mode: AiCompletionMode) {
     return
   }
 
-  aiBusy.value = true
+  const suggestion = mode === 'polish'
+    ? createAiSuggestionCard(view, source, mode)
+    : null
+  if (mode === 'polish' && !suggestion) {
+    setAiStatus('AI：没有可发送内容')
+    return
+  }
+
+  aiPendingCount.value += 1
   setAiStatus(mode === 'extract-todos' ? 'AI：提取 Todo 中' : 'AI：优化表述中')
   try {
     const result = await store.completeWithAi({
@@ -1934,10 +2088,11 @@ async function runAiAction(mode: AiCompletionMode) {
     })
     if (!result.ok) {
       setAiStatus(`AI：${result.message}`)
+      if (suggestion) failAiSuggestion(suggestion.id, result.message)
       return
     }
     if (mode === 'polish') {
-      if (!showAiSuggestion(view, source, result.content)) {
+      if (!suggestion || !completeAiSuggestion(suggestion.id, result.content)) {
         setAiStatus('AI：没有可展示的建议')
         return
       }
@@ -1951,9 +2106,11 @@ async function runAiAction(mode: AiCompletionMode) {
     }
     setAiStatus(mode === 'extract-todos' ? 'AI：已插入 Todo' : 'AI：已插入优化版本', true)
   } catch (error) {
-    setAiStatus(`AI：${error instanceof Error ? error.message : '请求失败'}`)
+    const message = error instanceof Error ? error.message : '请求失败'
+    if (suggestion) failAiSuggestion(suggestion.id, message)
+    setAiStatus(`AI：${message}`)
   } finally {
-    aiBusy.value = false
+    aiPendingCount.value = Math.max(0, aiPendingCount.value - 1)
   }
 }
 
@@ -1982,35 +2139,51 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
 <template>
   <section class="editor-pane">
     <div ref="editorHost" class="editor-host" @mousedown.self="focusEditorContent">
+      <div ref="editorMount" class="editor-mount" />
       <aside
-        v-if="aiSuggestion"
+        v-for="suggestion in aiSuggestions"
+        :key="suggestion.id"
         class="ai-suggestion-popover"
-        :class="{ moving: aiPopoverInteraction?.type === 'move', resizing: aiPopoverInteraction?.type === 'resize' }"
+        :class="{
+          moving: aiPopoverInteraction?.suggestionId === suggestion.id && aiPopoverInteraction?.type === 'move',
+          resizing: aiPopoverInteraction?.suggestionId === suggestion.id && aiPopoverInteraction?.type === 'resize',
+          hidden: !suggestion.visible,
+        }"
         :style="{
-          top: `${aiSuggestion.top}px`,
-          left: `${aiSuggestion.left}px`,
-          width: `${aiSuggestion.width}px`,
-          height: `${aiSuggestion.height}px`,
+          '--editor-font-size': `${store.settings.fontSize}px`,
+          top: `${suggestion.top}px`,
+          left: `${suggestion.left}px`,
+          width: `${suggestion.width}px`,
+          height: `${suggestion.height}px`,
         }"
         aria-label="AI 表述优化建议"
         @mousedown.stop
       >
-        <header class="ai-suggestion-header" title="拖动建议窗口" @pointerdown="startAiPopoverMove">
+        <header class="ai-suggestion-header" title="拖动建议窗口" @pointerdown="startAiPopoverMove($event, suggestion.id)">
           <div>
             <strong>AI 建议</strong>
-            <span>{{ aiSuggestion.scope === 'selection' ? '表述优化 / 选区' : '表述优化 / 当前块' }}</span>
+            <span>{{ suggestion.scope === 'selection' ? '表述优化 / 选区' : '表述优化 / 当前块' }}</span>
           </div>
           <button
             type="button"
             class="ai-suggestion-close"
             title="关闭建议"
             @pointerdown.stop
-            @click="dismissAiSuggestion"
+            @click="dismissAiSuggestion(suggestion.id)"
           >
             <X :size="14" />
           </button>
         </header>
-        <p v-if="aiSuggestionDiff && !aiSuggestionDiff.changed" class="ai-suggestion-empty-diff">
+        <p v-if="suggestion.status === 'generating'" class="ai-suggestion-message">
+          AI 正在生成建议...
+        </p>
+        <p v-else-if="suggestion.status === 'error'" class="ai-suggestion-message error">
+          AI：{{ suggestion.message || '请求失败' }}
+        </p>
+        <p v-else-if="suggestion.status === 'stale'" class="ai-suggestion-message stale">
+          {{ suggestion.message || '原文已经变化，请回到原文确认后再替换。' }}
+        </p>
+        <p v-if="suggestion.status !== 'generating' && aiSuggestionDiff(suggestion) && !aiSuggestionDiff(suggestion)?.changed" class="ai-suggestion-empty-diff">
           AI 返回内容与原文基本一致，未检测到文字差异。
         </p>
         <div class="ai-suggestion-body">
@@ -2018,7 +2191,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
             <span>原文</span>
             <div class="ai-diff-lines" data-testid="ai-diff-source">
               <div
-                v-for="line in aiSuggestionDiff?.sourceLines || []"
+                v-for="line in aiSuggestionDiff(suggestion)?.sourceLines || []"
                 :key="line.key"
                 class="ai-diff-line"
                 :class="{ changed: line.changed }"
@@ -2036,7 +2209,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
             <span>优化后</span>
             <div class="ai-diff-lines" data-testid="ai-diff-target">
               <div
-                v-for="line in aiSuggestionDiff?.targetLines || []"
+                v-for="line in aiSuggestionDiff(suggestion)?.targetLines || []"
                 :key="line.key"
                 class="ai-diff-line"
                 :class="{ changed: line.changed }"
@@ -2052,19 +2225,46 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
           </div>
         </div>
         <footer class="ai-suggestion-actions">
-          <span class="ai-suggestion-status">已生成建议</span>
-          <button type="button" class="primary-button" title="用优化后的内容替换原文" @click="replaceWithAiSuggestion">
+          <span class="ai-suggestion-status">{{ suggestion.message || (suggestion.status === 'ready' ? '已生成建议' : '等待中') }}</span>
+          <button
+            type="button"
+            class="ghost-button compact"
+            title="回到这条建议对应的原文"
+            :disabled="suggestion.status === 'generating'"
+            @click="gotoAiSuggestionSource(suggestion.id)"
+          >
+            回到原文
+          </button>
+          <button
+            type="button"
+            class="primary-button"
+            title="用优化后的内容替换原文"
+            :disabled="suggestion.status !== 'ready'"
+            @click="replaceWithAiSuggestion(suggestion.id)"
+          >
             替换原文
           </button>
-          <button type="button" class="secondary-button" title="将优化后的内容插入为新块" @click="insertAiSuggestionAsBlock">
+          <button
+            type="button"
+            class="secondary-button"
+            title="将优化后的内容插入为新块"
+            :disabled="suggestion.status === 'generating' || !suggestion.content.trim()"
+            @click="insertAiSuggestionAsBlock(suggestion.id)"
+          >
             插入新块
           </button>
-          <button type="button" class="ghost-button compact" title="复制优化后的内容" @click="copyAiSuggestion">
+          <button
+            type="button"
+            class="ghost-button compact"
+            title="复制优化后的内容"
+            :disabled="suggestion.status === 'generating' || !suggestion.content.trim()"
+            @click="copyAiSuggestion(suggestion.id)"
+          >
             <Copy :size="13" />
             复制
           </button>
         </footer>
-        <span class="ai-suggestion-resize-handle" title="调整建议窗口大小" @pointerdown.stop="startAiPopoverResize" />
+        <span class="ai-suggestion-resize-handle" title="调整建议窗口大小" @pointerdown.stop="startAiPopoverResize($event, suggestion.id)" />
       </aside>
     </div>
 
@@ -2122,7 +2322,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
         </button>
         <button
           class="block-action-button"
-          :disabled="aiBusy || !store.settings.ai.enabled || !store.settings.ai.hasApiKey"
+          :disabled="!store.settings.ai.enabled || !store.settings.ai.hasApiKey"
           title="AI 优化选区或此块表述"
           aria-label="AI 优化选区或此块表述"
           data-tooltip="AI 优化表述"
@@ -2133,7 +2333,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
         </button>
         <button
           class="block-action-button"
-          :disabled="aiBusy || !store.settings.ai.enabled || !store.settings.ai.hasApiKey"
+          :disabled="!store.settings.ai.enabled || !store.settings.ai.hasApiKey"
           title="AI 提取选区或此块 Todo"
           aria-label="AI 提取选区或此块 Todo"
           data-tooltip="AI 提取 Todo"
