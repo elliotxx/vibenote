@@ -363,6 +363,101 @@ test.describe('AI settings', () => {
     )).toBeLessThanOrEqual(1)
   })
 
+  test('retries a failed AI suggestion with the captured source text', async ({ page }) => {
+    await loadFixture(page, ['rough sentence'])
+    await openSettings(page)
+
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await page.getByTitle('关闭设置').click()
+
+    await page.evaluate(() => {
+      ;(window as any).__aiInputs = []
+      window.vibenote.ai.complete = async (request) => {
+        ;(window as any).__aiInputs.push(request.input)
+        if ((window as any).__aiInputs.length === 1) {
+          return { ok: false, message: 'fetch failed', content: '' }
+        }
+        return new Promise((resolve) => {
+          ;(window as any).__resolveRetryAiSuggestion = resolve
+        })
+      }
+    })
+
+    await page.getByText('rough sentence').click()
+    await page.getByTitle('AI 优化选区或此块表述').click()
+
+    const popover = page.getByLabel('AI 表述优化建议')
+    await expect(popover.locator('.ai-suggestion-error-state')).toContainText('fetch failed')
+    await expect(popover.getByRole('button', { name: '重试' })).toBeVisible()
+    await expect(popover.locator('.ai-suggestion-body')).toHaveCount(0)
+
+    await popover.getByRole('button', { name: '重试' }).click()
+    await expect(popover).toHaveClass(/loading/)
+    await page.evaluate(() => {
+      ;(window as any).__resolveRetryAiSuggestion?.({
+        ok: true,
+        message: 'Polished note ready',
+        content: 'polished sentence',
+      })
+    })
+    await expect(popover).not.toHaveClass(/loading/)
+    await expect(popover.getByText('polished sentence')).toBeVisible()
+    await expect(page.getByLabel('AI 表述优化建议')).toHaveCount(1)
+    await expect.poll(() => page.evaluate(() => (window as any).__aiInputs)).toEqual([
+      'rough sentence',
+      'rough sentence',
+    ])
+  })
+
+  test('keeps a completed AI suggestion at its original source after scrolling during loading', async ({ page }) => {
+    await loadFixture(page, Array.from({ length: 72 }, (_, index) => `scrollable line ${index + 1}`))
+    await openSettings(page)
+
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await page.getByTitle('关闭设置').click()
+
+    await page.evaluate(() => {
+      ;(window as any).__resolveScrolledAiSuggestion = null
+      window.vibenote.ai.complete = async () => new Promise((resolve) => {
+        ;(window as any).__resolveScrolledAiSuggestion = resolve
+      })
+    })
+
+    await page.getByText('scrollable line 5', { exact: true }).click()
+    await page.getByTitle('AI 优化选区或此块表述').click()
+
+    const popover = page.getByLabel('AI 表述优化建议')
+    await expect(popover).toHaveClass(/loading/)
+    await page.locator('.cm-scroller').evaluate(element => {
+      element.scrollTop = 900
+      element.dispatchEvent(new Event('scroll', { bubbles: true }))
+    })
+    await expect.poll(() => page.locator('.cm-scroller').evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+    await expect(popover).toBeHidden()
+
+    await page.evaluate(() => {
+      ;(window as any).__resolveScrolledAiSuggestion?.({
+        ok: true,
+        message: 'Polished note ready',
+        content: 'polished suggestion after scroll',
+      })
+    })
+
+    await expect(popover).toBeHidden()
+    await expect(popover).not.toHaveClass(/loading/)
+
+    await page.locator('.cm-scroller').evaluate(element => {
+      element.scrollTop = 0
+      element.dispatchEvent(new Event('scroll', { bubbles: true }))
+    })
+    await expect(popover).toBeVisible()
+    await expect(popover.getByText('polished suggestion after scroll')).toBeVisible()
+  })
+
   test('can insert or copy an AI polish suggestion without replacing text', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
       origin: 'http://127.0.0.1:3344',
@@ -525,12 +620,12 @@ test.describe('AI settings', () => {
       })
     })
 
-    await page.locator('.cm-content .cm-line', { hasText: 'rough sentence' }).first().click()
+    await page.locator('.cm-content .cm-line', { hasText: 'rough sentence' }).first().click({ force: true })
     await page.getByTitle('AI 优化选区或此块表述').click()
     await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
     await expect(page.getByText('polished sentence')).toBeVisible()
 
-    await page.locator('.cm-content .cm-line', { hasText: 'rough sentence' }).first().click()
+    await page.locator('.cm-content .cm-line', { hasText: 'rough sentence' }).first().click({ force: true })
     await page.keyboard.press('End')
     await page.keyboard.insertText(' changed')
 

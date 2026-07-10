@@ -680,6 +680,24 @@ select:focus {
   background: color-mix(in srgb, var(--danger) 9%, var(--surface-editor));
 }
 
+.ai-suggestion-error-state {
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: clamp(16px, calc(var(--editor-font-size, 13px) * 1.25), 30px);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--danger) 5%, var(--surface-editor));
+  font-size: clamp(11px, calc(var(--editor-font-size, 13px) * 0.72), 16px);
+  line-height: 1.5;
+}
+
+.ai-suggestion-error-state strong {
+  color: var(--danger);
+  font-size: clamp(12px, calc(var(--editor-font-size, 13px) * 0.8), 18px);
+}
+
 .ai-suggestion-message.stale {
   color: color-mix(in srgb, var(--accent) 72%, var(--ink));
   background: color-mix(in srgb, var(--accent) 10%, var(--surface-editor));

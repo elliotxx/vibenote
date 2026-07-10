@@ -63,6 +63,7 @@ type AiSuggestionCard = {
   mode: AiCompletionMode
   status: AiSuggestionStatus
   sourceText: string
+  language: string
   sourceDirty: boolean
   content: string
   message: string
@@ -761,6 +762,11 @@ function aiSuggestionAnchorPosition(editor: EditorView, from: number) {
   if (!host || !editor.visibleRanges.some(range => range.from <= from && from <= range.to)) return null
   const coords = editor.coordsAtPos(from)
   if (!coords) return null
+  const scrollerRect = editor.scrollDOM.getBoundingClientRect()
+  // coordsAtPos can resolve positions just outside CodeMirror's rendered
+  // viewport. Treat those anchors as offscreen so a completed card never
+  // reappears at a clamped viewport edge after the user has scrolled away.
+  if (coords.bottom <= scrollerRect.top || coords.top >= scrollerRect.bottom) return null
   const hostRect = host.getBoundingClientRect()
   return {
     top: coords.bottom - hostRect.top,
@@ -802,11 +808,16 @@ function syncAiSuggestionPositions(editor = view) {
   aiSuggestions.value = aiSuggestions.value.map(suggestion => {
     const anchor = aiSuggestionAnchorPosition(editor, suggestion.from)
     if (!anchor) return { ...suggestion, visible: false }
-    return {
-      ...suggestion,
-      visible: true,
+    const frame = {
       top: anchor.top + suggestion.anchorOffsetTop,
       left: anchor.left + suggestion.anchorOffsetLeft,
+      width: suggestion.width,
+      height: suggestion.height,
+    }
+    return {
+      ...suggestion,
+      ...frame,
+      visible: true,
     }
   })
 }
@@ -958,6 +969,7 @@ function createAiSuggestionCard(editor: EditorView, source: ReturnType<typeof ai
     mode,
     status: 'generating',
     sourceText: source.input,
+    language: source.language,
     sourceDirty: false,
     content: '',
     message: mode === 'extract-todos' ? '提取 Todo 中' : '优化表述中',
@@ -976,17 +988,22 @@ function createAiSuggestionCard(editor: EditorView, source: ReturnType<typeof ai
 function expandedAiSuggestionFrame(suggestion: AiSuggestionCard) {
   const size = defaultAiSuggestionSize()
   // Expand around the compact loading card instead of jumping back to the text anchor.
-  const frame = clampAiSuggestionFrame({
-    top: suggestion.top + (suggestion.height - size.height) / 2,
-    left: suggestion.left + (suggestion.width - size.width) / 2,
+  const topDelta = (suggestion.height - size.height) / 2
+  const leftDelta = (suggestion.width - size.width) / 2
+  const unboundedFrame = {
+    top: suggestion.top + topDelta,
+    left: suggestion.left + leftDelta,
     ...size,
-  })
+  }
   const anchor = view ? aiSuggestionAnchorPosition(view, suggestion.from) : null
+  const frame = anchor ? clampAiSuggestionFrame(unboundedFrame) : unboundedFrame
   return {
     ...frame,
-    visible: anchor ? true : suggestion.visible,
-    anchorOffsetTop: anchor ? frame.top - anchor.top : suggestion.anchorOffsetTop,
-    anchorOffsetLeft: anchor ? frame.left - anchor.left : suggestion.anchorOffsetLeft,
+    // Completion must remain attached to the original source range. When the
+    // source is outside the viewport, keep the card hidden until it returns.
+    visible: Boolean(anchor),
+    anchorOffsetTop: anchor ? frame.top - anchor.top : suggestion.anchorOffsetTop + topDelta,
+    anchorOffsetLeft: anchor ? frame.left - anchor.left : suggestion.anchorOffsetLeft + leftDelta,
   }
 }
 
@@ -1027,6 +1044,31 @@ function markAiSuggestionStale(id: string) {
     status: 'stale',
     message: '原文已变化，请复制、插入新块或回到原文后重新生成',
   })
+}
+
+function resetAiSuggestionForRetry(suggestion: AiSuggestionCard) {
+  if (!view) return null
+  if (!sourceStillMatchesSuggestion(suggestion)) {
+    markAiSuggestionStale(suggestion.id)
+    setAiStatus('AI：原文已变化，请回到原文后重新生成')
+    return null
+  }
+
+  const size = loadingAiSuggestionSize()
+  const position = loadingAiSuggestionPosition(view, suggestion.from, size.width)
+  const frame = clampLoadingAiSuggestionFrame({ ...position, ...size })
+  const anchor = aiSuggestionAnchorPosition(view, suggestion.from)
+  updateAiSuggestion(suggestion.id, {
+    ...frame,
+    status: 'generating',
+    sourceDirty: false,
+    content: '',
+    message: suggestion.mode === 'extract-todos' ? '提取 Todo 中' : '优化表述中',
+    visible: Boolean(anchor),
+    anchorOffsetTop: anchor ? frame.top - anchor.top : suggestion.anchorOffsetTop,
+    anchorOffsetLeft: anchor ? frame.left - anchor.left : suggestion.anchorOffsetLeft,
+  })
+  return aiSuggestions.value.find(item => item.id === suggestion.id) ?? null
 }
 
 function aiSuggestionDiff(suggestion: AiSuggestionCard) {
@@ -2140,6 +2182,43 @@ async function formatBlock() {
   }
 }
 
+async function requestAiSuggestion(suggestion: AiSuggestionCard) {
+  aiPendingCount.value += 1
+  setAiStatus('AI：优化表述中')
+  try {
+    const result = await store.completeWithAi({
+      input: suggestion.sourceText,
+      language: suggestion.language,
+      scope: suggestion.scope,
+      mode: suggestion.mode,
+    })
+    if (!result.ok) {
+      setAiStatus(`AI：${result.message}`)
+      failAiSuggestion(suggestion.id, result.message)
+      return
+    }
+    if (!completeAiSuggestion(suggestion.id, result.content)) {
+      setAiStatus('AI：没有可展示的建议')
+      return
+    }
+    setAiStatus('AI：已生成建议', true)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '请求失败'
+    failAiSuggestion(suggestion.id, message)
+    setAiStatus(`AI：${message}`)
+  } finally {
+    aiPendingCount.value = Math.max(0, aiPendingCount.value - 1)
+  }
+}
+
+async function retryAiSuggestion(id: string) {
+  const suggestion = aiSuggestions.value.find(item => item.id === id)
+  if (!suggestion || suggestion.status !== 'error') return
+  const retryingSuggestion = resetAiSuggestionForRetry(suggestion)
+  if (!retryingSuggestion) return
+  await requestAiSuggestion(retryingSuggestion)
+}
+
 async function runAiAction(mode: AiCompletionMode) {
   if (!view) return
 
@@ -2158,6 +2237,11 @@ async function runAiAction(mode: AiCompletionMode) {
     return
   }
 
+  if (suggestion) {
+    await requestAiSuggestion(suggestion)
+    return
+  }
+
   aiPendingCount.value += 1
   setAiStatus(mode === 'extract-todos' ? 'AI：提取 Todo 中' : 'AI：优化表述中')
   try {
@@ -2169,15 +2253,6 @@ async function runAiAction(mode: AiCompletionMode) {
     })
     if (!result.ok) {
       setAiStatus(`AI：${result.message}`)
-      if (suggestion) failAiSuggestion(suggestion.id, result.message)
-      return
-    }
-    if (mode === 'polish') {
-      if (!suggestion || !completeAiSuggestion(suggestion.id, result.content)) {
-        setAiStatus('AI：没有可展示的建议')
-        return
-      }
-      setAiStatus('AI：已生成建议', true)
       return
     }
     if (!snapshotCurrentSync(mode === 'extract-todos' ? 'ai-extract-todos' : 'ai-polish')) return
@@ -2188,7 +2263,6 @@ async function runAiAction(mode: AiCompletionMode) {
     setAiStatus(mode === 'extract-todos' ? 'AI：已插入 Todo' : 'AI：已插入优化版本', true)
   } catch (error) {
     const message = error instanceof Error ? error.message : '请求失败'
-    if (suggestion) failAiSuggestion(suggestion.id, message)
     setAiStatus(`AI：${message}`)
   } finally {
     aiPendingCount.value = Math.max(0, aiPendingCount.value - 1)
@@ -2261,16 +2335,18 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
           <span>{{ suggestion.message || '正在生成建议' }}</span>
         </div>
         <template v-else>
-          <p v-if="suggestion.status === 'error'" class="ai-suggestion-message error">
-            AI：{{ suggestion.message || '请求失败' }}
-          </p>
-          <p v-else-if="suggestion.status === 'stale'" class="ai-suggestion-message stale">
-            {{ suggestion.message || '原文已经变化，请回到原文确认后再替换。' }}
-          </p>
-          <p v-if="aiSuggestionDiff(suggestion) && !aiSuggestionDiff(suggestion)?.changed" class="ai-suggestion-empty-diff">
-            AI 返回内容与原文基本一致，未检测到文字差异。
-          </p>
-          <div class="ai-suggestion-body">
+          <div v-if="suggestion.status === 'error'" class="ai-suggestion-error-state">
+            <strong>AI：{{ suggestion.message || '请求失败' }}</strong>
+            <span>请检查网络和 API 设置后重试，原文不会被修改。</span>
+          </div>
+          <template v-else>
+            <p v-if="suggestion.status === 'stale'" class="ai-suggestion-message stale">
+              {{ suggestion.message || '原文已经变化，请回到原文确认后再替换。' }}
+            </p>
+            <p v-if="aiSuggestionDiff(suggestion) && !aiSuggestionDiff(suggestion)?.changed" class="ai-suggestion-empty-diff">
+              AI 返回内容与原文基本一致，未检测到文字差异。
+            </p>
+            <div class="ai-suggestion-body">
             <div class="ai-suggestion-column">
               <span>原文</span>
               <div class="ai-diff-lines" data-testid="ai-diff-source">
@@ -2307,7 +2383,8 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
                 </div>
               </div>
             </div>
-          </div>
+            </div>
+          </template>
           <footer class="ai-suggestion-actions">
             <span class="ai-suggestion-status">{{ suggestion.message || (suggestion.status === 'ready' ? '已生成建议' : '等待中') }}</span>
             <button
@@ -2319,6 +2396,16 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
               回到原文
             </button>
             <button
+              v-if="suggestion.status === 'error'"
+              type="button"
+              class="primary-button"
+              title="重新生成这条建议"
+              @click="retryAiSuggestion(suggestion.id)"
+            >
+              重试
+            </button>
+            <button
+              v-else
               type="button"
               class="primary-button"
               title="用优化后的内容替换原文"
