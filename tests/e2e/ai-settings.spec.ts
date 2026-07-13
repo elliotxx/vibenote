@@ -495,6 +495,67 @@ test.describe('AI settings', () => {
     await expect(page.getByText('keeps line breaks')).toBeVisible()
   })
 
+  test('shows lightweight AI actions for a selection and opens a diff for rewrite', async ({ page }) => {
+    await loadFixture(page, ['quick action draft'])
+    await openSettings(page)
+
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await page.getByTitle('关闭设置').click()
+
+    await page.evaluate(() => {
+      window.vibenote.ai.complete = async payload => ({
+        ok: true,
+        message: 'Polished selection',
+        content: payload.instruction ? `custom: ${payload.instruction}` : 'polished selection',
+      })
+    })
+
+    await page.getByText('quick action draft', { exact: true }).dblclick()
+    const actions = page.getByRole('toolbar', { name: 'AI 快捷操作' })
+    await expect(actions).toBeVisible()
+    const [actionsBox, editorBox] = await Promise.all([
+      actions.boundingBox(),
+      page.locator('.editor-host').boundingBox(),
+    ])
+    expect(actionsBox).not.toBeNull()
+    expect(editorBox).not.toBeNull()
+    expect(Math.abs(
+      (actionsBox!.x + actionsBox!.width / 2) - (editorBox!.x + editorBox!.width / 2),
+    )).toBeLessThan(3)
+    await expect(actions.getByRole('button', { name: '编辑' })).toBeVisible()
+    await expect(actions.getByRole('button', { name: '改写' })).toBeVisible()
+    await expect(actions.getByRole('button', { name: '提取 Todo' })).toBeVisible()
+
+    await actions.getByRole('button', { name: '编辑', exact: true }).click()
+    await expect(actions.getByRole('textbox', { name: '自定义修改或提问' })).toBeVisible()
+    await actions.getByRole('textbox', { name: '自定义修改或提问' }).fill('改得更简洁')
+    await actions.getByRole('textbox', { name: '自定义修改或提问' }).press('Enter')
+    await expect(actions).toBeHidden()
+    await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
+    await expect(page.getByText('custom: 改得更简洁')).toBeVisible()
+
+    await page.getByTitle('关闭建议').click()
+    await page.getByText('quick action draft', { exact: true }).dblclick()
+    await actions.getByRole('button', { name: '编辑', exact: true }).click()
+    await actions.getByRole('textbox', { name: '自定义修改或提问' }).fill('你觉得这一段写得怎么样？')
+    await actions.getByRole('textbox', { name: '自定义修改或提问' }).press('Enter')
+    const answerPopover = page.getByLabel('AI 表述优化建议')
+    await expect(answerPopover.getByText('AI 回复')).toBeVisible()
+    await expect(answerPopover.getByText('custom: 你觉得这一段写得怎么样？')).toBeVisible()
+    await expect(answerPopover.getByRole('button', { name: '替换原文' })).toHaveCount(0)
+
+    await page.getByTitle('关闭建议').click()
+    await expect(page.getByLabel('AI 表述优化建议')).toHaveCount(0)
+    await page.getByText('quick action draft', { exact: true }).dblclick()
+    await expect(actions).toBeVisible()
+    await actions.getByRole('button', { name: '改写' }).click()
+    await expect(actions).toBeHidden()
+    await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
+    await expect(page.getByText('polished selection')).toBeVisible()
+  })
+
   test('allows moving and resizing the AI suggestion popover inside the editor', async ({ page }) => {
     await loadFixture(page, ['rough sentence', 'second line'])
     await openSettings(page)

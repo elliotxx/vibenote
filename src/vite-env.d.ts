@@ -39,6 +39,7 @@ type EditorCommand =
 type AiProviderKind = 'openai' | 'deepseek' | 'custom-openai-compatible'
 type AiKeyStorageKind = 'none' | 'secure' | 'local-fallback' | 'unknown'
 type AiCompletionMode = 'polish' | 'extract-todos'
+type AiCompletionIntent = 'rewrite' | 'answer'
 type ImageStorageMode = 'beside-file' | 'app-data'
 
 type AiSettings = {
@@ -60,6 +61,8 @@ type AiCompletionRequest = {
   language: string
   scope: 'selection' | 'block'
   mode?: AiCompletionMode
+  instruction?: string
+  intent?: AiCompletionIntent
 }
 
 type AiCompletionResult = {

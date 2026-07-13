@@ -903,8 +903,8 @@ class AiSettingsStore {
       .trim()
   }
 
-  aiCompletionPrompt({ scope, language, input, isSelection }) {
-    const instruction = isSelection
+  aiCompletionPrompt({ scope, language, input, isSelection, instruction: customInstruction }) {
+    const guidance = isSelection
       ? [
           'Polish the selected note text below.',
           'Improve clarity, wording, and readability without changing the meaning.',
@@ -925,12 +925,38 @@ class AiSettingsStore {
     return [
       `Source scope: ${scope}.`,
       `Source language: ${language}.`,
-      ...instruction,
+      ...(customInstruction
+        ? [
+            'Apply this user-requested editing direction while preserving the note facts and structure:',
+            customInstruction,
+          ]
+        : []),
+      ...guidance,
       'Keep the original language.',
       'Do not omit low-level details just because they look repetitive.',
       'Do not summarize, shorten, truncate, or replace a list with a high-level overview.',
       'Return only the polished note content.',
       '',
+      input,
+    ].join('\n')
+  }
+
+  aiAnswerPrompt({ scope, language, input, isSelection, instruction }) {
+    return [
+      `Source scope: ${scope}.`,
+      `Source language: ${language}.`,
+      isSelection
+        ? 'Answer the user question about the selected note text below.'
+        : 'Answer the user question about the entire current block below.',
+      'Use only information supported by the note unless the user explicitly asks for a broader opinion.',
+      'Keep the answer concise, direct, and in the original language.',
+      'Do not rewrite the note, propose replacement text, or imply that the source will be modified.',
+      'Do not include Markdown fences or Vibenote block delimiter metadata.',
+      '',
+      'User question:',
+      instruction,
+      '',
+      'Note content:',
       input,
     ].join('\n')
   }
@@ -1002,6 +1028,8 @@ class AiSettingsStore {
     const input = String(payload?.input || '').trim()
     const language = String(payload?.language || 'markdown').trim() || 'markdown'
     const mode = payload?.mode === 'extract-todos' ? 'extract-todos' : 'polish'
+    const intent = payload?.intent === 'answer' ? 'answer' : 'rewrite'
+    const instruction = String(payload?.instruction || '').trim().slice(0, 800)
     const isSelection = payload?.scope === 'selection'
     const scope = isSelection ? 'selection' : 'current block'
 
@@ -1044,7 +1072,16 @@ class AiSettingsStore {
                     'If there is still no actionable todo, return an empty response.',
                     'Do not output Vibenote block delimiter metadata.',
                   ].join(' ')
-                : [
+                : intent === 'answer'
+                  ? [
+                      'You are Vibenote, an AI-native plain text note assistant.',
+                      'Answer the user question about the supplied note content.',
+                      'Do not rewrite, replace, or mutate the note.',
+                      'Give a concise, useful answer grounded in the source text.',
+                      'Do not invent facts that are not in the note.',
+                      'Do not output Vibenote block delimiter metadata.',
+                    ].join(' ')
+                  : [
                     'You are Vibenote, an AI-native plain text note assistant.',
                     'Polish note content for clearer expression.',
                     'Make concrete wording improvements where possible instead of echoing the source unchanged.',
@@ -1066,7 +1103,9 @@ class AiSettingsStore {
               role: 'user',
               content: mode === 'extract-todos'
                 ? this.aiTodoPrompt({ scope, language, input, isSelection })
-                : this.aiCompletionPrompt({ scope, language, input, isSelection }),
+                : intent === 'answer'
+                  ? this.aiAnswerPrompt({ scope, language, input, isSelection, instruction })
+                  : this.aiCompletionPrompt({ scope, language, input, isSelection, instruction }),
             },
           ],
           max_tokens: this.maxTokensForCompletion(input, mode),
@@ -1081,7 +1120,7 @@ class AiSettingsStore {
       const data = await response.json()
       const rawContent = this.contentFromChatResponse(data)
       const content = mode === 'extract-todos' ? this.normalizeTodoContent(rawContent) : rawContent
-      if (!content && mode === 'polish') {
+      if (!content && mode === 'polish' && intent !== 'answer') {
         return { ok: true, message: 'AI kept the current block', content: input }
       }
       if (!content) {
@@ -1089,7 +1128,11 @@ class AiSettingsStore {
       }
       return {
         ok: true,
-        message: mode === 'extract-todos' ? 'Todo list inserted' : 'Polished note inserted',
+        message: mode === 'extract-todos'
+          ? 'Todo list inserted'
+          : intent === 'answer'
+            ? 'AI answer generated'
+            : 'Polished note inserted',
         content,
       }
     } catch (error) {

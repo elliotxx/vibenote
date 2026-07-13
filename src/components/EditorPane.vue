@@ -3,8 +3,8 @@ import { EditorSelection, EditorState } from '@codemirror/state'
 import { addCursorAbove, addCursorBelow, defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { lineNumbers, keymap, drawSelection, highlightActiveLine, EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view'
 import { searchKeymap } from '@codemirror/search'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AlignLeft, Copy, FilePlus2, ListTodo, Settings, Sparkles, Trash2, X } from 'lucide-vue-next'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { AlignLeft, ArrowUp, Copy, FilePlus2, ListTodo, Pencil, Settings, Sparkles, Trash2, X } from 'lucide-vue-next'
 import * as prettier from 'prettier/standalone'
 import { blockDelimiter, loadNote, serializeNote, type LoadedNote } from '../common/noteFormat'
 import { getLanguage, languages } from '../common/languages'
@@ -43,6 +43,16 @@ const saving = ref(false)
 const aiPendingCount = ref(0)
 const aiStatus = ref('')
 const blockToolbar = ref({ visible: false, top: 0 })
+const aiQuickActions = ref({
+  visible: false,
+  top: 0,
+  left: 0,
+  placement: 'above' as 'above' | 'below',
+  range: '',
+  editing: false,
+  instruction: '',
+})
+const aiQuickEditorInput = ref<HTMLInputElement | null>(null)
 type AiSuggestionFrame = {
   top: number
   left: number
@@ -58,11 +68,14 @@ type AiPopoverInteraction = {
   startFrame: AiSuggestionFrame
 }
 type AiSuggestionStatus = 'generating' | 'ready' | 'error' | 'stale'
+type AiSuggestionPresentation = 'diff' | 'answer'
 type AiSuggestionCard = {
   id: string
   mode: AiCompletionMode
+  presentation: AiSuggestionPresentation
   status: AiSuggestionStatus
   sourceText: string
+  instruction: string
   language: string
   sourceDirty: boolean
   content: string
@@ -104,6 +117,10 @@ const AI_LOADING_POPOVER_MIN_WIDTH = 320
 const AI_LOADING_POPOVER_MAX_WIDTH = 400
 const AI_LOADING_POPOVER_MIN_HEIGHT = 80
 const AI_LOADING_POPOVER_MAX_HEIGHT = 104
+const AI_QUICK_ACTIONS_HEIGHT = 36
+const AI_QUICK_ACTIONS_MARGIN = 10
+const AI_QUICK_EDITOR_HEIGHT = 42
+const AI_QUICK_EDITOR_GAP = 8
 
 const activeLanguage = computed({
   get: () => currentBlock.value?.language || store.settings.defaultLanguage,
@@ -955,7 +972,13 @@ function buildAiSuggestionDiff(sourceText: string, targetText: string): AiSugges
   }
 }
 
-function createAiSuggestionCard(editor: EditorView, source: ReturnType<typeof aiSourceForEditor>, mode: AiCompletionMode) {
+function createAiSuggestionCard(
+  editor: EditorView,
+  source: ReturnType<typeof aiSourceForEditor>,
+  mode: AiCompletionMode,
+  instruction = '',
+  presentation: AiSuggestionPresentation = 'diff',
+) {
   if (!source.range) return null
   const size = loadingAiSuggestionSize()
   const position = loadingAiSuggestionPosition(editor, source.range.from, size.width)
@@ -967,12 +990,14 @@ function createAiSuggestionCard(editor: EditorView, source: ReturnType<typeof ai
   const suggestion: AiSuggestionCard = {
     id,
     mode,
+    presentation,
     status: 'generating',
     sourceText: source.input,
+    instruction,
     language: source.language,
     sourceDirty: false,
     content: '',
-    message: mode === 'extract-todos' ? '提取 Todo 中' : '优化表述中',
+    message: mode === 'extract-todos' ? '提取 Todo 中' : presentation === 'answer' ? '正在回答' : '优化表述中',
     from: source.range.from,
     to: source.range.to,
     scope: source.scope,
@@ -1015,7 +1040,7 @@ function completeAiSuggestion(id: string, content: string) {
     updateAiSuggestion(id, {
       ...expandedAiSuggestionFrame(suggestion),
       status: 'error',
-      message: '没有可展示的建议',
+      message: suggestion.presentation === 'answer' ? '没有可展示的回答' : '没有可展示的建议',
       content: '',
     })
     return false
@@ -1023,7 +1048,7 @@ function completeAiSuggestion(id: string, content: string) {
   updateAiSuggestion(id, {
     ...expandedAiSuggestionFrame(suggestion),
     status: 'ready',
-    message: '已生成建议',
+    message: suggestion.presentation === 'answer' ? '已生成回答' : '已生成建议',
     content: cleanContent,
   })
   return true
@@ -1063,7 +1088,11 @@ function resetAiSuggestionForRetry(suggestion: AiSuggestionCard) {
     status: 'generating',
     sourceDirty: false,
     content: '',
-    message: suggestion.mode === 'extract-todos' ? '提取 Todo 中' : '优化表述中',
+    message: suggestion.mode === 'extract-todos'
+      ? '提取 Todo 中'
+      : suggestion.presentation === 'answer'
+        ? '正在回答'
+        : '优化表述中',
     visible: Boolean(anchor),
     anchorOffsetTop: anchor ? frame.top - anchor.top : suggestion.anchorOffsetTop,
     anchorOffsetLeft: anchor ? frame.left - anchor.left : suggestion.anchorOffsetLeft,
@@ -1072,7 +1101,7 @@ function resetAiSuggestionForRetry(suggestion: AiSuggestionCard) {
 }
 
 function aiSuggestionDiff(suggestion: AiSuggestionCard) {
-  if (!suggestion.content) return null
+  if (suggestion.presentation !== 'diff' || !suggestion.content) return null
   return buildAiSuggestionDiff(suggestion.sourceText, suggestion.content)
 }
 
@@ -1438,7 +1467,73 @@ function scheduleBlockToolbarUpdate(editor = view) {
   blockToolbarFrame = window.requestAnimationFrame(() => {
     blockToolbarFrame = null
     updateBlockToolbar(editor)
+    updateAiQuickActions(editor)
   })
+}
+
+function hideAiQuickActions() {
+  if (!aiQuickActions.value.visible) return
+  aiQuickActions.value = { ...aiQuickActions.value, visible: false }
+}
+
+function preserveAiQuickActionSelection(event: MouseEvent) {
+  if (event.target instanceof HTMLInputElement) return
+  event.preventDefault()
+}
+
+function updateAiQuickActions(editor: EditorView | null) {
+  const quickEditorHasFocus = aiQuickActions.value.editing
+    && document.activeElement === aiQuickEditorInput.value
+  if (
+    !editor ||
+    !editorHost.value ||
+    (!editor.hasFocus && !quickEditorHasFocus) ||
+    !store.settings.ai.enabled ||
+    !store.settings.ai.hasApiKey
+  ) {
+    hideAiQuickActions()
+    return
+  }
+
+  const range = visibleSelectionRange(editor)
+  if (!range) {
+    hideAiQuickActions()
+    return
+  }
+
+  const selectionIsVisible = editor.visibleRanges.some(visible =>
+    visible.to >= range.from && visible.from <= range.to,
+  )
+  const startCoords = editor.coordsAtPos(range.from, -1)
+  const endCoords = editor.coordsAtPos(range.to, -1)
+  if (!selectionIsVisible || !startCoords || !endCoords) {
+    hideAiQuickActions()
+    return
+  }
+
+  const hostRect = editorHost.value.getBoundingClientRect()
+  const left = hostRect.width / 2
+  const requiredAboveSpace = AI_QUICK_ACTIONS_HEIGHT + AI_QUICK_ACTIONS_MARGIN + AI_QUICK_EDITOR_GAP + AI_QUICK_EDITOR_HEIGHT
+  const placement = startCoords.top - hostRect.top >= requiredAboveSpace ? 'above' : 'below'
+  const top = placement === 'above'
+    ? startCoords.top - hostRect.top - AI_QUICK_ACTIONS_HEIGHT - AI_QUICK_ACTIONS_MARGIN
+    : Math.min(
+        hostRect.height - AI_QUICK_ACTIONS_HEIGHT - AI_QUICK_ACTIONS_MARGIN,
+        endCoords.bottom - hostRect.top + AI_QUICK_ACTIONS_MARGIN,
+      )
+  const rangeKey = `${range.from}:${range.to}`
+  const keepsEditorState = aiQuickActions.value.range === rangeKey
+
+  aiQuickActions.value = {
+    ...aiQuickActions.value,
+    visible: true,
+    top: Math.max(AI_QUICK_ACTIONS_MARGIN, top),
+    left,
+    placement,
+    range: rangeKey,
+    editing: keepsEditorState ? aiQuickActions.value.editing : false,
+    instruction: keepsEditorState ? aiQuickActions.value.instruction : '',
+  }
 }
 
 function updateBlockToolbar(editor: EditorView | null) {
@@ -2184,13 +2279,15 @@ async function formatBlock() {
 
 async function requestAiSuggestion(suggestion: AiSuggestionCard) {
   aiPendingCount.value += 1
-  setAiStatus('AI：优化表述中')
+  setAiStatus(suggestion.presentation === 'answer' ? 'AI：正在回答' : 'AI：优化表述中')
   try {
     const result = await store.completeWithAi({
       input: suggestion.sourceText,
       language: suggestion.language,
       scope: suggestion.scope,
       mode: suggestion.mode,
+      ...(suggestion.instruction ? { instruction: suggestion.instruction } : {}),
+      ...(suggestion.presentation === 'answer' ? { intent: 'answer' as const } : {}),
     })
     if (!result.ok) {
       setAiStatus(`AI：${result.message}`)
@@ -2198,10 +2295,10 @@ async function requestAiSuggestion(suggestion: AiSuggestionCard) {
       return
     }
     if (!completeAiSuggestion(suggestion.id, result.content)) {
-      setAiStatus('AI：没有可展示的建议')
+      setAiStatus(suggestion.presentation === 'answer' ? 'AI：没有可展示的回答' : 'AI：没有可展示的建议')
       return
     }
-    setAiStatus('AI：已生成建议', true)
+    setAiStatus(suggestion.presentation === 'answer' ? 'AI：已生成回答' : 'AI：已生成建议', true)
   } catch (error) {
     const message = error instanceof Error ? error.message : '请求失败'
     failAiSuggestion(suggestion.id, message)
@@ -2219,7 +2316,11 @@ async function retryAiSuggestion(id: string) {
   await requestAiSuggestion(retryingSuggestion)
 }
 
-async function runAiAction(mode: AiCompletionMode) {
+async function runAiAction(
+  mode: AiCompletionMode,
+  instruction = '',
+  presentation: AiSuggestionPresentation = 'diff',
+) {
   if (!view) return
 
   setAiStatus('')
@@ -2230,7 +2331,7 @@ async function runAiAction(mode: AiCompletionMode) {
   }
 
   const suggestion = mode === 'polish'
-    ? createAiSuggestionCard(view, source, mode)
+    ? createAiSuggestionCard(view, source, mode, instruction, presentation)
     : null
   if (mode === 'polish' && !suggestion) {
     setAiStatus('AI：没有可发送内容')
@@ -2250,6 +2351,7 @@ async function runAiAction(mode: AiCompletionMode) {
       language: source.language,
       scope: source.scope,
       mode,
+      ...(instruction ? { instruction } : {}),
     })
     if (!result.ok) {
       setAiStatus(`AI：${result.message}`)
@@ -2267,6 +2369,39 @@ async function runAiAction(mode: AiCompletionMode) {
   } finally {
     aiPendingCount.value = Math.max(0, aiPendingCount.value - 1)
   }
+}
+
+function runAiQuickAction(
+  mode: AiCompletionMode,
+  instruction = '',
+  presentation: AiSuggestionPresentation = 'diff',
+) {
+  hideAiQuickActions()
+  return runAiAction(mode, instruction, presentation)
+}
+
+async function openAiQuickEditor() {
+  aiQuickActions.value = { ...aiQuickActions.value, editing: true }
+  await nextTick()
+  aiQuickEditorInput.value?.focus()
+}
+
+function closeAiQuickEditor() {
+  aiQuickActions.value = { ...aiQuickActions.value, editing: false, instruction: '' }
+}
+
+function customAiPresentation(instruction: string): AiSuggestionPresentation {
+  const questionPattern = /[?？]|你觉得|你认为|怎么看|写得怎么样|为什么|怎么(?:样|办)|如何|是否|能不能|可以吗|请问|分析(?:一下)?|评价(?:一下)?|评估(?:一下)?|解释(?:一下)?|有什么问题/u
+  return questionPattern.test(instruction) ? 'answer' : 'diff'
+}
+
+function submitAiQuickEditor() {
+  const instruction = aiQuickActions.value.instruction.trim()
+  if (!instruction) {
+    aiQuickEditorInput.value?.focus()
+    return
+  }
+  return runAiQuickAction('polish', instruction, customAiPresentation(instruction))
 }
 
 function runAiSuggestion() {
@@ -2295,6 +2430,64 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
   <section class="editor-pane">
     <div ref="editorHost" class="editor-host" @mousedown.self="focusEditorContent">
       <div ref="editorMount" class="editor-mount" />
+      <div
+        v-if="aiQuickActions.visible"
+        class="ai-quick-actions"
+        :class="{ 'is-below': aiQuickActions.placement === 'below' }"
+        :style="{
+          top: `${aiQuickActions.top}px`,
+          left: `${aiQuickActions.left}px`,
+          transform: 'translateX(-50%)',
+        }"
+        role="toolbar"
+        aria-label="AI 快捷操作"
+        @mousedown="preserveAiQuickActionSelection"
+      >
+        <form
+          v-if="aiQuickActions.editing"
+          class="ai-quick-editor"
+          aria-label="自定义编辑要求"
+          @submit.prevent="submitAiQuickEditor"
+        >
+          <input
+            ref="aiQuickEditorInput"
+            v-model="aiQuickActions.instruction"
+            type="text"
+            placeholder="描述如何修改，或直接提问"
+            aria-label="自定义修改或提问"
+            @keydown.esc.prevent="closeAiQuickEditor"
+          />
+          <button type="submit" title="提交编辑要求" aria-label="提交编辑要求">
+            <ArrowUp :size="15" />
+          </button>
+        </form>
+        <button
+          type="button"
+          title="自定义修改或提问"
+          @click="openAiQuickEditor"
+        >
+          <Pencil :size="14" />
+          编辑
+        </button>
+        <span aria-hidden="true" />
+        <button
+          type="button"
+          title="改写选区并查看差异"
+          @click="runAiQuickAction('polish')"
+        >
+          <Sparkles :size="14" />
+          改写
+        </button>
+        <span aria-hidden="true" />
+        <button
+          type="button"
+          title="从选区提取可执行 Todo"
+          @click="runAiQuickAction('extract-todos')"
+        >
+          <ListTodo :size="14" />
+          提取 Todo
+        </button>
+      </div>
       <aside
         v-for="suggestion in aiSuggestions"
         :key="suggestion.id"
@@ -2303,6 +2496,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
           moving: aiPopoverInteraction?.suggestionId === suggestion.id && aiPopoverInteraction?.type === 'move',
           resizing: aiPopoverInteraction?.suggestionId === suggestion.id && aiPopoverInteraction?.type === 'resize',
           loading: suggestion.status === 'generating',
+          answer: suggestion.presentation === 'answer',
           hidden: !suggestion.visible,
         }"
         :style="{
@@ -2317,8 +2511,12 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
       >
         <header class="ai-suggestion-header" title="拖动建议窗口" @pointerdown="startAiPopoverMove($event, suggestion.id)">
           <div>
-            <strong>AI 建议</strong>
-            <span>{{ suggestion.scope === 'selection' ? '表述优化 / 选区' : '表述优化 / 当前块' }}</span>
+            <strong>{{ suggestion.presentation === 'answer' ? 'AI 回复' : 'AI 建议' }}</strong>
+            <span>
+              {{ suggestion.presentation === 'answer'
+                ? suggestion.scope === 'selection' ? '针对选区' : '针对当前块'
+                : suggestion.scope === 'selection' ? '表述优化 / 选区' : '表述优化 / 当前块' }}
+            </span>
           </div>
           <button
             type="button"
@@ -2339,6 +2537,11 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
             <strong>AI：{{ suggestion.message || '请求失败' }}</strong>
             <span>请检查网络和 API 设置后重试，原文不会被修改。</span>
           </div>
+          <template v-else-if="suggestion.presentation === 'answer'">
+            <div class="ai-answer-body">
+              <p>{{ suggestion.content }}</p>
+            </div>
+          </template>
           <template v-else>
             <p v-if="suggestion.status === 'stale'" class="ai-suggestion-message stale">
               {{ suggestion.message || '原文已经变化，请回到原文确认后再替换。' }}
@@ -2405,7 +2608,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
               重试
             </button>
             <button
-              v-else
+              v-else-if="suggestion.presentation === 'diff'"
               type="button"
               class="primary-button"
               title="用优化后的内容替换原文"
