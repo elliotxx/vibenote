@@ -4,7 +4,20 @@ import { addCursorAbove, addCursorBelow, defaultKeymap, history, historyKeymap, 
 import { lineNumbers, keymap, drawSelection, highlightActiveLine, EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view'
 import { searchKeymap } from '@codemirror/search'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AlignLeft, ArrowUp, Copy, FilePlus2, ListTodo, Pencil, Settings, Sparkles, Trash2, X } from 'lucide-vue-next'
+import {
+  AlignLeft,
+  ArrowDownToLine,
+  ArrowUp,
+  ArrowUpToLine,
+  Copy,
+  FilePlus2,
+  ListTodo,
+  Pencil,
+  Settings,
+  Sparkles,
+  Trash2,
+  X,
+} from 'lucide-vue-next'
 import * as prettier from 'prettier/standalone'
 import { blockDelimiter, loadNote, serializeNote, type LoadedNote } from '../common/noteFormat'
 import { getLanguage, languages } from '../common/languages'
@@ -43,6 +56,8 @@ const saving = ref(false)
 const aiPendingCount = ref(0)
 const aiStatus = ref('')
 const blockToolbar = ref({ visible: false, top: 0 })
+type ScrollJumpTarget = 'top' | 'bottom'
+const scrollJump = ref({ visible: false, target: 'bottom' as ScrollJumpTarget })
 const aiQuickActions = ref({
   visible: false,
   top: 0,
@@ -103,6 +118,9 @@ let saveTimer: number | null = null
 let aiStatusTimer: number | null = null
 let blockToolbarFrame: number | null = null
 let editorScrollElement: HTMLElement | null = null
+let scrollJumpHideTimer: number | null = null
+let lastEditorScrollTop = 0
+let lastEditorScrollTime = 0
 let unsubscribeEditorCommand: (() => void) | null = null
 let editorBufferPath: string | null = null
 const EDITOR_FONT_MIN = 11
@@ -121,6 +139,11 @@ const AI_QUICK_ACTIONS_HEIGHT = 36
 const AI_QUICK_ACTIONS_MARGIN = 10
 const AI_QUICK_EDITOR_HEIGHT = 42
 const AI_QUICK_EDITOR_GAP = 8
+const SCROLL_JUMP_EDGE_TOLERANCE = 2
+const SCROLL_JUMP_MIN_DELTA = 8
+const SCROLL_JUMP_LARGE_DELTA = 96
+const SCROLL_JUMP_MIN_VELOCITY = 0.5
+const SCROLL_JUMP_HIDE_DELAY = 1500
 
 const activeLanguage = computed({
   get: () => currentBlock.value?.language || store.settings.defaultLanguage,
@@ -182,6 +205,7 @@ onBeforeUnmount(() => {
   flushSaveSync()
   if (aiStatusTimer) window.clearTimeout(aiStatusTimer)
   if (blockToolbarFrame) window.cancelAnimationFrame(blockToolbarFrame)
+  if (scrollJumpHideTimer) window.clearTimeout(scrollJumpHideTimer)
   stopAiPopoverInteraction()
   editorScrollElement?.removeEventListener('scroll', onEditorScroll)
   editorScrollElement = null
@@ -527,6 +551,8 @@ function mountEditor() {
 
   view = new EditorView({ state, parent: editorMount.value })
   editorScrollElement = view.scrollDOM
+  lastEditorScrollTop = editorScrollElement.scrollTop
+  lastEditorScrollTime = performance.now()
   editorScrollElement.addEventListener('scroll', onEditorScroll, { passive: true })
   applyEditorViewSettings(view)
   moveCursorToEditableContent(view)
@@ -1568,8 +1594,71 @@ function updateBlockToolbar(editor: EditorView | null) {
 }
 
 function onEditorScroll() {
+  updateScrollJump()
   syncAiSuggestionPositions()
   scheduleBlockToolbarUpdate()
+}
+
+function updateScrollJump() {
+  const scroller = editorScrollElement
+  if (!scroller) return
+
+  const now = performance.now()
+  const scrollTop = scroller.scrollTop
+  const delta = scrollTop - lastEditorScrollTop
+  const elapsed = Math.max(1, now - lastEditorScrollTime)
+  const distance = Math.abs(delta)
+  const velocity = distance / elapsed
+  const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+
+  lastEditorScrollTop = scrollTop
+  lastEditorScrollTime = now
+
+  if (distance < SCROLL_JUMP_MIN_DELTA) return
+
+  const target: ScrollJumpTarget = delta < 0 ? 'top' : 'bottom'
+  const atTarget = target === 'top'
+    ? scrollTop <= SCROLL_JUMP_EDGE_TOLERANCE
+    : maxScrollTop - scrollTop <= SCROLL_JUMP_EDGE_TOLERANCE
+
+  if (atTarget) {
+    hideScrollJump()
+    return
+  }
+
+  if (distance < SCROLL_JUMP_LARGE_DELTA && velocity < SCROLL_JUMP_MIN_VELOCITY) return
+
+  scrollJump.value = { visible: true, target }
+  scheduleScrollJumpHide()
+}
+
+function scheduleScrollJumpHide() {
+  if (scrollJumpHideTimer) window.clearTimeout(scrollJumpHideTimer)
+  scrollJumpHideTimer = window.setTimeout(() => {
+    scrollJump.value = { ...scrollJump.value, visible: false }
+    scrollJumpHideTimer = null
+  }, SCROLL_JUMP_HIDE_DELAY)
+}
+
+function hideScrollJump() {
+  if (scrollJumpHideTimer) {
+    window.clearTimeout(scrollJumpHideTimer)
+    scrollJumpHideTimer = null
+  }
+  scrollJump.value = { ...scrollJump.value, visible: false }
+}
+
+function jumpEditorScroll() {
+  const scroller = editorScrollElement
+  if (!scroller) return
+
+  const top = scrollJump.value.target === 'top'
+    ? 0
+    : Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  hideScrollJump()
+  scroller.scrollTo({ top, behavior: reducedMotion ? 'auto' : 'smooth' })
 }
 
 function onWindowResize() {
@@ -2430,6 +2519,21 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
   <section class="editor-pane">
     <div ref="editorHost" class="editor-host" @mousedown.self="focusEditorContent">
       <div ref="editorMount" class="editor-mount" />
+      <Transition name="scroll-jump">
+        <button
+          v-if="scrollJump.visible"
+          type="button"
+          class="scroll-jump-button"
+          :title="scrollJump.target === 'top' ? '回到顶部' : '直达底部'"
+          :aria-label="scrollJump.target === 'top' ? '回到顶部' : '直达底部'"
+          :data-tooltip="scrollJump.target === 'top' ? '回到顶部' : '直达底部'"
+          @mousedown.prevent
+          @click="jumpEditorScroll"
+        >
+          <ArrowUpToLine v-if="scrollJump.target === 'top'" :size="16" />
+          <ArrowDownToLine v-else :size="16" />
+        </button>
+      </Transition>
       <div
         v-if="aiQuickActions.visible"
         class="ai-quick-actions"

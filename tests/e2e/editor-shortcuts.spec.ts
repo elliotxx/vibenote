@@ -590,6 +590,56 @@ test.describe('editor text selection shortcuts', () => {
     })).toBeLessThanOrEqual(12)
   })
 
+  test('offers contextual top and bottom jumps after fast scrolling', async ({ page }) => {
+    const created = '2026-07-01T10:38:41.565Z'
+    const lines = Array.from({ length: 180 }, (_, index) => `scroll target ${String(index + 1).padStart(3, '0')}`)
+    const content = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
+      `---block:markdown;auto=1;created=${created}`,
+      ...lines,
+    ].join('\n')}`
+
+    await loadFixture(page, content)
+
+    await page.evaluate(() => {
+      const scroller = document.querySelector<HTMLElement>('.cm-scroller')
+      if (!scroller) throw new Error('Missing editor scroller')
+      scroller.scrollTop = 900
+      scroller.dispatchEvent(new Event('scroll'))
+    })
+
+    const bottomJump = page.getByRole('button', { name: '直达底部' })
+    await expect(bottomJump).toBeVisible()
+    await bottomJump.click()
+    await expect.poll(() => page.evaluate(() => {
+      const scroller = document.querySelector<HTMLElement>('.cm-scroller')!
+      return Math.round(scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop)
+    })).toBeLessThanOrEqual(2)
+
+    await page.evaluate(() => {
+      const scroller = document.querySelector<HTMLElement>('.cm-scroller')
+      if (!scroller) throw new Error('Missing editor scroller')
+      scroller.scrollTop = Math.max(0, scroller.scrollTop - 900)
+      scroller.dispatchEvent(new Event('scroll'))
+    })
+
+    const topJump = page.getByRole('button', { name: '回到顶部' })
+    await expect(topJump).toBeVisible()
+    await topJump.click()
+    await expect.poll(() => page.evaluate(() => {
+      const scroller = document.querySelector<HTMLElement>('.cm-scroller')!
+      return Math.round(scroller.scrollTop)
+    })).toBeLessThanOrEqual(2)
+
+    await page.evaluate(() => {
+      const scroller = document.querySelector<HTMLElement>('.cm-scroller')
+      if (!scroller) throw new Error('Missing editor scroller')
+      scroller.scrollTop = 900
+      scroller.dispatchEvent(new Event('scroll'))
+    })
+    await expect(bottomJump).toBeVisible()
+    await expect(bottomJump).toBeHidden({ timeout: 2200 })
+  })
+
   test('supports editor font size shortcuts without page zoom', async ({ page }) => {
     await loadFixture(page)
 
