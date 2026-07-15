@@ -78,6 +78,9 @@ async function activateApp() {
       await sleep(150)
       if (frontmostProcessName() === productName) {
         normalizeWindow()
+        // Frontmost is reported before the renderer is consistently ready to
+        // accept pointer and keyboard events on slower packaged-app launches.
+        await sleep(900)
         return
       }
     } catch {
@@ -147,7 +150,7 @@ async function verifyDeleteEdges() {
   check(content.includes(`${marker}-keep`), 'delete refuses to remove the final block')
   check(blockCount(content) === 1, 'final-block delete leaves block structure intact')
   quitApp()
-  await sleep(500)
+  await waitForAppToExit()
 }
 
 async function verifyInvalidFormatEdge() {

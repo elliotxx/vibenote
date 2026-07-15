@@ -90,6 +90,9 @@ async function activateApp() {
       await sleep(150)
       if (frontmostProcessName() === productName) {
         normalizeWindow()
+        // Frontmost is reported before the renderer is consistently ready to
+        // accept pointer and keyboard events on slower packaged-app launches.
+        await sleep(900)
         return
       }
     } catch {
@@ -125,9 +128,14 @@ async function focusEditor() {
 }
 
 async function paste(text) {
+  runShell(`cat <<'PAYLOAD' | pbcopy\n${text}\nPAYLOAD`)
+  const clipboard = run('pbpaste', [])
+  check(
+    clipboard.includes(`${marker}-start`) && clipboard.includes(`${marker}-end`),
+    'stability payload is available on the clipboard',
+  )
   run('osascript', ['-e', `tell application ${JSON.stringify(productName)} to activate`])
   await focusEditor()
-  runShell(`cat <<'PAYLOAD' | pbcopy\n${text}\nPAYLOAD`)
   run('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down'])
   await sleep(500)
 }
