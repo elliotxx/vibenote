@@ -52,7 +52,6 @@ const editorMount = ref<HTMLElement | null>(null)
 const languageSelect = ref<HTMLSelectElement | null>(null)
 const currentBlock = ref<ScratchBlock | null>(null)
 const cursorLabel = ref('1:1')
-const saving = ref(false)
 const aiPendingCount = ref(0)
 const aiStatus = ref('')
 const blockToolbar = ref({ visible: false, top: 0 })
@@ -183,7 +182,7 @@ const recoveryStatus = computed(() => {
   return count === 1 ? '发现可恢复草稿' : `发现 ${count} 个可恢复草稿`
 })
 const currentRecovery = computed(() => store.recoveries.find(item => item.identifier === store.currentPath) || null)
-const statusMessage = computed(() => saving.value ? '正在保存...' : aiStatus.value || recoveryStatus.value)
+const statusMessage = computed(() => aiStatus.value || recoveryStatus.value)
 const statusTone = computed(() => {
   const message = statusMessage.value
   if (!message) return ''
@@ -1768,16 +1767,12 @@ function flushSave() {
     window.clearTimeout(saveTimer)
     saveTimer = null
   }
-  saving.value = true
   note.content = view.state.doc.toString()
   const raw = serializeNote(note)
   store.saveBuffer(editorBufferPath, raw)
     .catch(error => {
       setAiStatus(`保存失败：${error instanceof Error ? error.message : '无法写入文件'}`)
       void store.refreshRecoveries()
-    })
-    .finally(() => {
-      saving.value = false
     })
 }
 
@@ -1789,7 +1784,6 @@ function flushSaveSync() {
   }
   note.content = view.state.doc.toString()
   store.saveBufferSync(editorBufferPath, serializeNote(note))
-  saving.value = false
 }
 
 function snapshotCurrentSync(reason: string) {

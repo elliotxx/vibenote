@@ -508,6 +508,20 @@ test.describe('editor text selection shortcuts', () => {
     expect(Math.max(...layout.actionRights)).toBeLessThanOrEqual(layout.viewportWidth)
   })
 
+  test('keeps routine autosave feedback hidden while typing', async ({ page }) => {
+    await loadFixture(page)
+    await clickLine(page, 'Drop plain text notes here.')
+    await page.keyboard.press('End')
+
+    const statusFeedback = page.locator('.statusbar-center .status-feedback')
+    await page.keyboard.type(' continuously typing', { delay: 80 })
+    await expect(statusFeedback).toHaveCount(0)
+
+    await page.waitForTimeout(500)
+    await expect(statusFeedback).toHaveCount(0)
+    await expect(page.locator('.cm-content')).toContainText('Drop plain text notes here. continuously typing')
+  })
+
   test('shows block actions only for the focused editor block', async ({ page }) => {
     await loadFixture(page)
 
