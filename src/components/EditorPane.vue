@@ -41,6 +41,7 @@ import {
   type ScratchBlock,
 } from '../editor/blocks'
 import { activeImageLineField, richDecorations, setActiveImageLine } from '../editor/richDecorations'
+import { flowMapField } from '../editor/flowMaps'
 import { useWorkspaceStore } from '../stores/workspace'
 
 const store = useWorkspaceStore()
@@ -462,6 +463,7 @@ function mountEditor() {
       }),
       selectionRightFill,
       blockField,
+      flowMapField,
       blockDecorations,
       blockGutterDecorations,
       EditorView.editorAttributes.compute([blockField], state => {
