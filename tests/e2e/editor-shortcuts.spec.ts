@@ -826,6 +826,8 @@ test.describe('editor search and replace', () => {
     const query = panel.getByLabel('搜索内容')
     await expect(panel).toBeVisible()
     await expect(panel.getByRole('button', { name: '当前块' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(panel.getByLabel('替换内容')).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: '展开替换' })).toHaveAttribute('aria-expanded', 'false')
 
     await query.fill('alpha')
     await expect(panel.locator('.editor-search-count')).toHaveText('1 / 2')
@@ -859,6 +861,14 @@ test.describe('editor search and replace', () => {
     await query.press('Escape')
     await expect(panel).toHaveCount(0)
     await expect(page.locator('.vibenote-search-match')).toHaveCount(0)
+
+    await page.keyboard.press(`${modifier}+Alt+F`)
+    await expect(panel).toBeVisible()
+    await expect(panel.getByLabel('替换内容')).toBeVisible()
+    await expect(panel.getByRole('button', { name: '折叠替换' })).toHaveAttribute('aria-expanded', 'true')
+
+    await page.keyboard.press(`${modifier}+F`)
+    await expect(panel.getByLabel('替换内容')).toHaveCount(0)
   })
 
   test('keeps the search controls inside a narrow editor viewport', async ({ page }) => {

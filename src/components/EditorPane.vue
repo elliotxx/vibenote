@@ -10,12 +10,14 @@ import {
   ArrowUpToLine,
   CaseSensitive,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Copy,
   FilePlus2,
   ListTodo,
   Pencil,
   Replace,
+  ReplaceAll,
   Search,
   Settings,
   Sparkles,
@@ -415,7 +417,7 @@ function openEditorSearch(editor: EditorView, withReplace = false) {
     searchQuery.value = selectedText
   }
   searchVisible.value = true
-  searchReplaceVisible.value = searchReplaceVisible.value || withReplace
+  searchReplaceVisible.value = withReplace
   refreshSearchResults()
   nextTick(() => {
     searchInput.value?.focus()
@@ -505,6 +507,7 @@ function replaceAllSearchMatches() {
 }
 
 function onSearchInputKeydown(event: KeyboardEvent) {
+  if (applySearchModeShortcut(event)) return
   if (event.key === 'Escape') {
     event.preventDefault()
     closeEditorSearch()
@@ -514,6 +517,33 @@ function onSearchInputKeydown(event: KeyboardEvent) {
     event.preventDefault()
     navigateSearch(event.shiftKey ? -1 : 1)
   }
+}
+
+function onReplaceInputKeydown(event: KeyboardEvent) {
+  if (applySearchModeShortcut(event)) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeEditorSearch()
+    return
+  }
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    replaceCurrentSearchMatch()
+  }
+}
+
+function applySearchModeShortcut(event: KeyboardEvent) {
+  const key = event.key.toLowerCase()
+  const primary = event.metaKey || event.ctrlKey
+  const isMac = navigator.platform.toLowerCase().includes('mac')
+  const openFind = primary && key === 'f' && !event.altKey
+  const openReplace = (primary && event.altKey && key === 'f')
+    || (!isMac && event.ctrlKey && key === 'h')
+  if (!openFind && !openReplace) return false
+  event.preventDefault()
+  searchReplaceVisible.value = openReplace
+  nextTick(() => searchInput.value?.focus())
+  return true
 }
 
 let searchRefreshQueued = false
@@ -570,6 +600,7 @@ function mountEditor() {
         { key: 'Mod-i', run: editor => wrapMarkdownSelection(editor, '*', '*', 'italic') },
         { key: 'Mod-k', run: insertMarkdownLink },
         { key: 'Mod-f', preventDefault: true, run: editor => openEditorSearch(editor) },
+        { key: 'Ctrl-h', mac: 'Mod-Alt-f', preventDefault: true, run: editor => openEditorSearch(editor, true) },
         { key: 'Mod-g', preventDefault: true, run: () => navigateSearch(1) },
         { key: 'Mod-Shift-g', preventDefault: true, run: () => navigateSearch(-1) },
         { key: 'Mod-Shift-8', run: editor => toggleMarkdownList(editor, 'unordered') },
@@ -2709,6 +2740,17 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
           @mousedown.stop
         >
           <div class="editor-search-row">
+            <button
+              type="button"
+              class="editor-search-toggle"
+              :title="searchReplaceVisible ? '折叠替换' : '展开替换'"
+              :aria-label="searchReplaceVisible ? '折叠替换' : '展开替换'"
+              :aria-expanded="searchReplaceVisible"
+              @click="toggleEditorSearchReplace"
+            >
+              <ChevronDown v-if="searchReplaceVisible" :size="16" />
+              <ChevronRight v-else :size="16" />
+            </button>
             <div class="editor-search-scope" aria-label="搜索范围">
               <button
                 type="button"
@@ -2763,17 +2805,6 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
             </div>
             <button
               type="button"
-              class="editor-search-icon-button"
-              :class="{ active: searchReplaceVisible }"
-              :aria-pressed="searchReplaceVisible"
-              title="展开替换"
-              aria-label="展开替换"
-              @click="toggleEditorSearchReplace"
-            >
-              <Replace :size="16" />
-            </button>
-            <button
-              type="button"
               class="editor-search-icon-button editor-search-close"
               title="关闭（Esc）"
               aria-label="关闭搜索"
@@ -2784,6 +2815,8 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
           </div>
           <Transition name="editor-search-replace">
             <div v-if="searchReplaceVisible" class="editor-search-replace-row">
+              <span class="editor-search-row-spacer" aria-hidden="true" />
+              <span class="editor-search-scope-spacer" aria-hidden="true" />
               <label class="editor-search-field editor-search-replace-field">
                 <Replace :size="15" aria-hidden="true" />
                 <input
@@ -2794,25 +2827,28 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
                   autocomplete="off"
                   spellcheck="false"
                   aria-label="替换内容"
-                  @keydown.esc.prevent="closeEditorSearch"
-                  @keydown.enter.prevent="replaceCurrentSearchMatch"
+                  @keydown="onReplaceInputKeydown"
                 >
               </label>
               <button
                 type="button"
-                class="editor-search-action"
+                class="editor-search-replace-button"
                 :disabled="searchMatches.length === 0"
+                title="替换当前结果（Enter）"
+                aria-label="替换当前结果"
                 @click="replaceCurrentSearchMatch"
               >
-                替换
+                <Replace :size="16" />
               </button>
               <button
                 type="button"
-                class="editor-search-action primary"
+                class="editor-search-replace-button"
                 :disabled="searchMatches.length === 0"
+                :title="searchScope === 'block' ? '替换当前块全部结果' : '替换全文全部结果'"
+                :aria-label="searchScope === 'block' ? '替换当前块' : '替换全文'"
                 @click="replaceAllSearchMatches"
               >
-                {{ searchScope === 'block' ? '替换当前块' : '替换全文' }}
+                <ReplaceAll :size="16" />
               </button>
             </div>
           </Transition>
