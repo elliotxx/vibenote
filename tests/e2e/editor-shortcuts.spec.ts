@@ -808,6 +808,74 @@ test.describe('editor text selection shortcuts', () => {
   })
 })
 
+test.describe('editor search and replace', () => {
+  const created = '2026-07-01T10:38:41.565Z'
+  const searchFixture = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
+    `---block:markdown;auto=1;created=${created}`,
+    'alpha one',
+    'alpha two',
+    `---block:markdown;auto=1;created=${created}`,
+    'alpha three',
+  ].join('\n')}`
+
+  test('switches between current-block and document search while preserving the query', async ({ page }) => {
+    await loadFixture(page, searchFixture)
+    await page.keyboard.press(`${modifier}+F`)
+
+    const panel = page.locator('.editor-search-panel')
+    const query = panel.getByLabel('搜索内容')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByRole('button', { name: '当前块' })).toHaveAttribute('aria-pressed', 'true')
+
+    await query.fill('alpha')
+    await expect(panel.locator('.editor-search-count')).toHaveText('1 / 2')
+    await expect(page.locator('.vibenote-search-match')).toHaveCount(2)
+
+    await panel.getByRole('button', { name: '全文' }).click()
+    await expect(query).toHaveValue('alpha')
+    await expect(panel.locator('.editor-search-count')).toHaveText('1 / 3')
+    await expect(page.locator('.vibenote-search-match')).toHaveCount(3)
+
+    await panel.getByRole('button', { name: '展开替换' }).click()
+    await panel.getByLabel('替换内容').fill('beta')
+    await panel.getByRole('button', { name: '当前块' }).click()
+    await panel.getByRole('button', { name: '替换当前块' }).click()
+    await expect(panel.locator('.editor-search-count')).toHaveText('无结果')
+
+    await panel.getByRole('button', { name: '全文' }).click()
+    await expect(panel.locator('.editor-search-count')).toHaveText('1 / 1')
+    await panel.getByRole('button', { name: '替换全文' }).click()
+    await expect(panel.locator('.editor-search-count')).toHaveText('无结果')
+
+    const readSaved = () => page.evaluate(() => {
+      const buffers = JSON.parse(localStorage.getItem('vibenote:mock-buffers') || '[]')
+      return buffers[0]?.content || ''
+    })
+    await expect.poll(readSaved).toContain('beta')
+    const saved = await readSaved()
+    expect(saved.match(/beta/g)).toHaveLength(3)
+    expect(saved.match(/---block:/g)).toHaveLength(2)
+
+    await query.press('Escape')
+    await expect(panel).toHaveCount(0)
+    await expect(page.locator('.vibenote-search-match')).toHaveCount(0)
+  })
+
+  test('keeps the search controls inside a narrow editor viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 720 })
+    await loadFixture(page, searchFixture)
+    await page.keyboard.press(`${modifier}+F`)
+    const panel = page.locator('.editor-search-panel')
+    await panel.getByLabel('搜索内容').fill('alpha')
+    await panel.getByRole('button', { name: '展开替换' }).click()
+    const rect = await panel.boundingBox()
+    expect(rect).not.toBeNull()
+    expect(rect!.x).toBeGreaterThanOrEqual(0)
+    expect(rect!.x + rect!.width).toBeLessThanOrEqual(360)
+    await expect(panel.getByRole('button', { name: '替换当前块' })).toBeVisible()
+  })
+})
+
 test.describe('external Vibenote files', () => {
   test.beforeEach(async ({ page }) => {
     await loadFixture(page)

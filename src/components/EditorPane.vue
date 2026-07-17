@@ -2,17 +2,21 @@
 import { EditorSelection, EditorState } from '@codemirror/state'
 import { addCursorAbove, addCursorBelow, defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { lineNumbers, keymap, drawSelection, highlightActiveLine, EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view'
-import { searchKeymap } from '@codemirror/search'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   AlignLeft,
   ArrowDownToLine,
   ArrowUp,
   ArrowUpToLine,
+  CaseSensitive,
+  ChevronDown,
+  ChevronUp,
   Copy,
   FilePlus2,
   ListTodo,
   Pencil,
+  Replace,
+  Search,
   Settings,
   Sparkles,
   Trash2,
@@ -42,6 +46,13 @@ import {
 } from '../editor/blocks'
 import { activeImageLineField, richDecorations, setActiveImageLine } from '../editor/richDecorations'
 import { flowMapField } from '../editor/flowMaps'
+import {
+  findEditorSearchMatches,
+  searchDecorationField,
+  setSearchDecorations,
+  type EditorSearchMatch,
+  type EditorSearchScope,
+} from '../editor/search'
 import { useWorkspaceStore } from '../stores/workspace'
 
 const store = useWorkspaceStore()
@@ -53,6 +64,16 @@ const editorMount = ref<HTMLElement | null>(null)
 const languageSelect = ref<HTMLSelectElement | null>(null)
 const currentBlock = ref<ScratchBlock | null>(null)
 const cursorLabel = ref('1:1')
+const searchInput = ref<HTMLInputElement | null>(null)
+const replaceInput = ref<HTMLInputElement | null>(null)
+const searchVisible = ref(false)
+const searchReplaceVisible = ref(false)
+const searchQuery = ref('')
+const searchReplacement = ref('')
+const searchScope = ref<EditorSearchScope>('block')
+const searchCaseSensitive = ref(false)
+const searchMatches = ref<EditorSearchMatch[]>([])
+const searchActiveIndex = ref(-1)
 const aiPendingCount = ref(0)
 const aiStatus = ref('')
 const blockToolbar = ref({ visible: false, top: 0 })
@@ -144,6 +165,12 @@ const SCROLL_JUMP_MIN_DELTA = 8
 const SCROLL_JUMP_LARGE_DELTA = 96
 const SCROLL_JUMP_MIN_VELOCITY = 0.5
 const SCROLL_JUMP_HIDE_DELAY = 1500
+
+const searchResultLabel = computed(() => {
+  if (!searchQuery.value) return '输入关键词'
+  if (searchMatches.value.length === 0) return '无结果'
+  return `${searchActiveIndex.value + 1} / ${searchMatches.value.length}`
+})
 
 const activeLanguage = computed({
   get: () => currentBlock.value?.language || store.settings.defaultLanguage,
@@ -348,6 +375,157 @@ const selectionRightFill = ViewPlugin.fromClass(class {
   }
 })
 
+function syncSearchDecorations() {
+  if (!view) return
+  view.dispatch({
+    effects: setSearchDecorations.of({
+      matches: searchVisible.value ? searchMatches.value : [],
+      activeIndex: searchVisible.value ? searchActiveIndex.value : -1,
+    }),
+  })
+}
+
+function refreshSearchResults() {
+  if (!view || !searchVisible.value) return
+  const previous = searchMatches.value[searchActiveIndex.value]
+  const matches = findEditorSearchMatches(
+    view.state,
+    searchQuery.value,
+    searchScope.value,
+    searchCaseSensitive.value,
+  )
+  searchMatches.value = matches
+  if (matches.length === 0) {
+    searchActiveIndex.value = -1
+  } else {
+    const previousIndex = previous
+      ? matches.findIndex(match => match.from === previous.from && match.to === previous.to)
+      : -1
+    const selectionHead = view.state.selection.main.head
+    const nextIndex = matches.findIndex(match => match.from >= selectionHead)
+    searchActiveIndex.value = previousIndex >= 0 ? previousIndex : (nextIndex >= 0 ? nextIndex : 0)
+  }
+  syncSearchDecorations()
+}
+
+function openEditorSearch(editor: EditorView, withReplace = false) {
+  const selection = editor.state.selection.main
+  const selectedText = selection.empty ? '' : editor.state.sliceDoc(selection.from, selection.to)
+  if (selectedText && !selectedText.includes('\n')) {
+    searchQuery.value = selectedText
+  }
+  searchVisible.value = true
+  searchReplaceVisible.value = searchReplaceVisible.value || withReplace
+  refreshSearchResults()
+  nextTick(() => {
+    searchInput.value?.focus()
+    searchInput.value?.select()
+  })
+  return true
+}
+
+function closeEditorSearch() {
+  searchVisible.value = false
+  searchMatches.value = []
+  searchActiveIndex.value = -1
+  syncSearchDecorations()
+  nextTick(() => view?.focus())
+}
+
+function activateSearchMatch(index: number) {
+  if (!view || searchMatches.value.length === 0) return
+  const normalized = (index + searchMatches.value.length) % searchMatches.value.length
+  const match = searchMatches.value[normalized]
+  searchActiveIndex.value = normalized
+  view.dispatch({
+    selection: EditorSelection.range(match.from, match.to),
+    effects: EditorView.scrollIntoView(match.from, { y: 'center' }),
+  })
+  updateStatus(view)
+  syncSearchDecorations()
+}
+
+function navigateSearch(direction: 1 | -1) {
+  if (!searchVisible.value) {
+    if (view) openEditorSearch(view)
+    return true
+  }
+  if (searchMatches.value.length === 0) return true
+  const start = searchActiveIndex.value < 0 ? (direction > 0 ? -1 : 0) : searchActiveIndex.value
+  activateSearchMatch(start + direction)
+  return true
+}
+
+function setEditorSearchScope(scope: EditorSearchScope) {
+  if (searchScope.value === scope) return
+  searchScope.value = scope
+  refreshSearchResults()
+}
+
+function toggleEditorSearchCase() {
+  searchCaseSensitive.value = !searchCaseSensitive.value
+  refreshSearchResults()
+}
+
+function toggleEditorSearchReplace() {
+  searchReplaceVisible.value = !searchReplaceVisible.value
+  if (searchReplaceVisible.value) nextTick(() => replaceInput.value?.focus())
+}
+
+function replaceCurrentSearchMatch() {
+  if (!view || searchMatches.value.length === 0) return
+  const match = searchMatches.value[Math.max(searchActiveIndex.value, 0)]
+  if (!snapshotCurrentSync('search-replace')) return
+  view.dispatch({
+    changes: { from: match.from, to: match.to, insert: searchReplacement.value },
+    selection: EditorSelection.cursor(match.from + searchReplacement.value.length),
+    annotations: internalBlockEdit.of(true),
+    userEvent: 'input.replace',
+  })
+  refreshSearchResults()
+  if (searchMatches.value.length > 0) activateSearchMatch(Math.min(searchActiveIndex.value, searchMatches.value.length - 1))
+}
+
+function replaceAllSearchMatches() {
+  if (!view || searchMatches.value.length === 0) return
+  if (!snapshotCurrentSync(searchScope.value === 'block' ? 'search-replace-block' : 'search-replace-document')) return
+  const matches = searchMatches.value
+  const firstFrom = matches[0].from
+  view.dispatch({
+    changes: matches.map(match => ({
+      from: match.from,
+      to: match.to,
+      insert: searchReplacement.value,
+    })),
+    selection: EditorSelection.cursor(firstFrom + searchReplacement.value.length),
+    annotations: internalBlockEdit.of(true),
+    userEvent: 'input.replace.all',
+  })
+  refreshSearchResults()
+}
+
+function onSearchInputKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeEditorSearch()
+    return
+  }
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    navigateSearch(event.shiftKey ? -1 : 1)
+  }
+}
+
+let searchRefreshQueued = false
+function scheduleSearchRefresh() {
+  if (searchRefreshQueued || !searchVisible.value) return
+  searchRefreshQueued = true
+  queueMicrotask(() => {
+    searchRefreshQueued = false
+    refreshSearchResults()
+  })
+}
+
 function mountEditor() {
   if (!editorHost.value || !editorMount.value) return
   editorBufferPath = store.currentPath
@@ -391,6 +569,9 @@ function mountEditor() {
         { key: 'Mod-b', run: editor => wrapMarkdownSelection(editor, '**', '**', 'bold') },
         { key: 'Mod-i', run: editor => wrapMarkdownSelection(editor, '*', '*', 'italic') },
         { key: 'Mod-k', run: insertMarkdownLink },
+        { key: 'Mod-f', preventDefault: true, run: editor => openEditorSearch(editor) },
+        { key: 'Mod-g', preventDefault: true, run: () => navigateSearch(1) },
+        { key: 'Mod-Shift-g', preventDefault: true, run: () => navigateSearch(-1) },
         { key: 'Mod-Shift-8', run: editor => toggleMarkdownList(editor, 'unordered') },
         { key: 'Mod-Shift-7', run: editor => toggleMarkdownList(editor, 'ordered') },
         { key: 'Enter', run: continueMarkdownListFromKeymap },
@@ -401,7 +582,6 @@ function mountEditor() {
         indentWithTab,
         ...defaultKeymap,
         ...historyKeymap,
-        ...searchKeymap,
       ]),
       EditorView.lineWrapping,
       EditorView.theme({
@@ -463,6 +643,7 @@ function mountEditor() {
       }),
       selectionRightFill,
       blockField,
+      searchDecorationField,
       flowMapField,
       blockDecorations,
       blockGutterDecorations,
@@ -538,6 +719,7 @@ function mountEditor() {
         if (update.docChanged) {
           mapAiSuggestionRanges(update)
           scheduleSave()
+          scheduleSearchRefresh()
         }
         if (update.docChanged || update.selectionSet || update.focusChanged || update.viewportChanged) {
           clearImageEditWhenSelectionLeaves(update.view)
@@ -545,6 +727,9 @@ function mountEditor() {
           if (normalizeSelectionToBlockContent(update.view)) return
           updateStatus(update.view)
           scheduleBlockToolbarUpdate(update.view)
+        }
+        if (update.selectionSet && searchVisible.value && searchScope.value === 'block') {
+          scheduleSearchRefresh()
         }
       }),
     ],
@@ -2515,6 +2700,124 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
   <section class="editor-pane">
     <div ref="editorHost" class="editor-host" @mousedown.self="focusEditorContent">
       <div ref="editorMount" class="editor-mount" />
+      <Transition name="editor-search">
+        <aside
+          v-if="searchVisible"
+          class="editor-search-panel"
+          role="search"
+          aria-label="文档搜索与替换"
+          @mousedown.stop
+        >
+          <div class="editor-search-row">
+            <div class="editor-search-scope" aria-label="搜索范围">
+              <button
+                type="button"
+                :class="{ active: searchScope === 'block' }"
+                :aria-pressed="searchScope === 'block'"
+                @click="setEditorSearchScope('block')"
+              >
+                当前块
+              </button>
+              <button
+                type="button"
+                :class="{ active: searchScope === 'document' }"
+                :aria-pressed="searchScope === 'document'"
+                @click="setEditorSearchScope('document')"
+              >
+                全文
+              </button>
+            </div>
+            <label class="editor-search-field">
+              <Search :size="15" aria-hidden="true" />
+              <input
+                ref="searchInput"
+                v-model="searchQuery"
+                type="text"
+                placeholder="搜索"
+                autocomplete="off"
+                spellcheck="false"
+                aria-label="搜索内容"
+                @input="refreshSearchResults"
+                @keydown="onSearchInputKeydown"
+              >
+              <span class="editor-search-count" aria-live="polite">{{ searchResultLabel }}</span>
+            </label>
+            <button
+              type="button"
+              class="editor-search-icon-button"
+              :class="{ active: searchCaseSensitive }"
+              :aria-pressed="searchCaseSensitive"
+              title="区分大小写"
+              aria-label="区分大小写"
+              @click="toggleEditorSearchCase"
+            >
+              <CaseSensitive :size="17" />
+            </button>
+            <div class="editor-search-navigation" aria-label="搜索结果导航">
+              <button type="button" title="上一个（Shift + Enter）" aria-label="上一个结果" @click="navigateSearch(-1)">
+                <ChevronUp :size="16" />
+              </button>
+              <button type="button" title="下一个（Enter）" aria-label="下一个结果" @click="navigateSearch(1)">
+                <ChevronDown :size="16" />
+              </button>
+            </div>
+            <button
+              type="button"
+              class="editor-search-icon-button"
+              :class="{ active: searchReplaceVisible }"
+              :aria-pressed="searchReplaceVisible"
+              title="展开替换"
+              aria-label="展开替换"
+              @click="toggleEditorSearchReplace"
+            >
+              <Replace :size="16" />
+            </button>
+            <button
+              type="button"
+              class="editor-search-icon-button editor-search-close"
+              title="关闭（Esc）"
+              aria-label="关闭搜索"
+              @click="closeEditorSearch"
+            >
+              <X :size="16" />
+            </button>
+          </div>
+          <Transition name="editor-search-replace">
+            <div v-if="searchReplaceVisible" class="editor-search-replace-row">
+              <label class="editor-search-field editor-search-replace-field">
+                <Replace :size="15" aria-hidden="true" />
+                <input
+                  ref="replaceInput"
+                  v-model="searchReplacement"
+                  type="text"
+                  placeholder="替换为"
+                  autocomplete="off"
+                  spellcheck="false"
+                  aria-label="替换内容"
+                  @keydown.esc.prevent="closeEditorSearch"
+                  @keydown.enter.prevent="replaceCurrentSearchMatch"
+                >
+              </label>
+              <button
+                type="button"
+                class="editor-search-action"
+                :disabled="searchMatches.length === 0"
+                @click="replaceCurrentSearchMatch"
+              >
+                替换
+              </button>
+              <button
+                type="button"
+                class="editor-search-action primary"
+                :disabled="searchMatches.length === 0"
+                @click="replaceAllSearchMatches"
+              >
+                {{ searchScope === 'block' ? '替换当前块' : '替换全文' }}
+              </button>
+            </div>
+          </Transition>
+        </aside>
+      </Transition>
       <Transition name="scroll-jump">
         <button
           v-if="scrollJump.visible"
