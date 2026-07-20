@@ -909,7 +909,7 @@ test.describe('editor search and replace', () => {
     await page.addInitScript(() => {
       localStorage.setItem('vibenote:settings', JSON.stringify({
         theme: 'light',
-        fontSize: 32,
+        fontSize: 18,
         tabSize: 2,
         defaultLanguage: 'markdown',
       }))
@@ -932,13 +932,46 @@ test.describe('editor search and replace', () => {
       }
     })
 
-    await expect.poll(typography).toEqual({ editor: 32, panel: 32, input: 32, scope: 32, count: 32 })
+    await expect.poll(typography).toEqual({ editor: 18, panel: 18, input: 18, scope: 18, count: 18 })
 
     await page.keyboard.press('Escape')
     await expect(page.locator('.editor-search-panel')).toHaveCount(0)
     await page.keyboard.press(`${modifier}+=`)
     await page.keyboard.press(`${modifier}+F`)
-    await expect.poll(typography).toEqual({ editor: 33, panel: 33, input: 33, scope: 33, count: 33 })
+    await expect.poll(typography).toEqual({ editor: 19, panel: 19, input: 19, scope: 19, count: 19 })
+  })
+
+  test('caps the search toolbar scale and keeps it anchored at the top right', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('vibenote:settings', JSON.stringify({
+        theme: 'light',
+        fontSize: 48,
+        tabSize: 2,
+        defaultLanguage: 'markdown',
+      }))
+    })
+    await loadFixture(page, searchFixture)
+    await page.keyboard.press(`${modifier}+F`)
+
+    const layout = await page.locator('.editor-search-panel').evaluate((panel) => {
+      const node = panel as HTMLElement
+      const input = node.querySelector<HTMLElement>('.editor-search-field input')!
+      const rect = node.getBoundingClientRect()
+      const style = getComputedStyle(node)
+      return {
+        fontSize: Number.parseFloat(style.fontSize),
+        inputFontSize: Number.parseFloat(getComputedStyle(input).fontSize),
+        width: rect.width,
+        right: style.right,
+        top: style.top,
+      }
+    })
+
+    expect(layout.fontSize).toBe(24)
+    expect(layout.inputFontSize).toBe(24)
+    expect(layout.width).toBeLessThanOrEqual(880)
+    expect(layout.right).toBe('12px')
+    expect(layout.top).toBe('12px')
   })
 
   test('wraps long unbroken text without a horizontal editor scrollbar', async ({ page }) => {

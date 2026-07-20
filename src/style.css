@@ -152,21 +152,22 @@ select:focus {
 }
 
 .editor-search-panel {
-  --editor-search-control-size: clamp(28px, calc(var(--editor-font-size, 13px) * 2.15), 72px);
-  --editor-search-field-height: clamp(30px, calc(var(--editor-font-size, 13px) * 2.3), 80px);
-  --editor-search-scope-width: max(106px, calc(var(--editor-font-size, 13px) * 8.2));
+  --editor-search-font-size: clamp(11px, var(--editor-font-size, 13px), 24px);
+  --editor-search-control-size: clamp(28px, calc(var(--editor-search-font-size) * 2.15), 52px);
+  --editor-search-field-height: clamp(30px, calc(var(--editor-search-font-size) * 2.3), 56px);
+  --editor-search-scope-width: max(106px, calc(var(--editor-search-font-size) * 8.2));
   position: absolute;
   top: 12px;
   right: 12px;
   z-index: 260;
-  width: min(calc(var(--editor-font-size, 13px) * 43), calc(100% - 24px));
+  width: min(calc(var(--editor-search-font-size) * 43), 880px, calc(100% - 24px));
   padding: clamp(6px, 0.46em, 16px);
   border: 1px solid var(--line-soft);
   border-radius: 0;
   background: var(--surface-control);
   box-shadow: 0 12px 28px oklch(24% 0.034 250 / 0.12);
   cursor: default;
-  font-size: var(--editor-font-size, 13px);
+  font-size: var(--editor-search-font-size);
 }
 
 .editor-search-row {
