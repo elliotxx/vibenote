@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { EditorSelection, EditorState } from '@codemirror/state'
+import { Compartment, EditorSelection, EditorState } from '@codemirror/state'
 import { addCursorAbove, addCursorBelow, defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { indentUnit } from '@codemirror/language'
 import { lineNumbers, keymap, drawSelection, highlightActiveLine, EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
@@ -136,6 +137,7 @@ type AiDiffLine = { key: string; segments: AiDiffSegment[]; changed: boolean }
 type AiSuggestionDiff = { sourceLines: AiDiffLine[]; targetLines: AiDiffLine[]; changed: boolean }
 type AiDiffToken = { text: string; changed: boolean }
 let view: EditorView | null = null
+const indentationCompartment = new Compartment()
 let note: LoadedNote | null = null
 let saveTimer: number | null = null
 let aiStatusTimer: number | null = null
@@ -289,6 +291,13 @@ watch(
 
 function applyEditorViewSettings(editor: EditorView | null) {
   if (!editor) return
+  const tabSize = Math.min(8, Math.max(2, Math.trunc(store.settings.tabSize || 4)))
+  editor.dispatch({
+    effects: indentationCompartment.reconfigure([
+      EditorState.tabSize.of(tabSize),
+      indentUnit.of(' '.repeat(tabSize)),
+    ]),
+  })
   editor.dom.style.setProperty('--editor-font-size', `${store.settings.fontSize}px`)
   editorHost.value?.style.setProperty('--editor-font-size', `${store.settings.fontSize}px`)
   editor.dom.classList.toggle('dark-editor', store.settings.theme === 'dark')
@@ -598,6 +607,10 @@ function mountEditor() {
         },
       }),
       history(),
+      indentationCompartment.of([
+        EditorState.tabSize.of(store.settings.tabSize),
+        indentUnit.of(' '.repeat(store.settings.tabSize)),
+      ]),
       drawSelection(),
       highlightActiveLine(),
       keymap.of([

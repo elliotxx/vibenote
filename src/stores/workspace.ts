@@ -32,7 +32,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const settings = reactive<Settings>({
     theme: 'light',
     fontSize: 13,
-    tabSize: 2,
+    tabSize: 4,
     defaultLanguage: 'markdown',
     imageStorage: 'beside-file',
     ai: { ...defaultAiSettings },

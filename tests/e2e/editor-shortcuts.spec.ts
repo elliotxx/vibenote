@@ -202,6 +202,17 @@ test.describe('editor text selection shortcuts', () => {
     await expect.poll(() => hasNoVisibleSelectionHighlight(page)).toBe(true)
   })
 
+  test('inserts four spaces when pressing Tab with default settings', async ({ page }) => {
+    await clickLine(page, 'Drop plain text notes here.')
+    await page.keyboard.press('Home')
+    await page.keyboard.press('Tab')
+
+    const lineText = await page.locator('.cm-line')
+      .filter({ hasText: 'Drop plain text notes here.' })
+      .textContent()
+    expect(lineText).toBe('    Drop plain text notes here.')
+  })
+
   test('does not reserve visible space for hidden block delimiters', async ({ page }) => {
     const layout = await page.evaluate(() => {
       const content = document.querySelector<HTMLElement>('.cm-content')
