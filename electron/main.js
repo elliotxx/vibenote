@@ -1285,7 +1285,7 @@ function setupApplicationMenu() {
     {
       label: 'View',
       submenu: [
-        { role: 'reload' },
+        { role: 'reload', accelerator: 'CommandOrControl+Alt+Shift+R' },
         { role: 'toggleDevTools' },
         { type: 'separator' },
         {
@@ -1325,6 +1325,8 @@ function editorCommandForInput(input) {
   const key = input.key.toLowerCase()
   if (primary && key === 'n') return 'file:new'
   if (primary && key === 'o') return 'file:open'
+  if (primary && key === 'f') return input.shift ? 'search:document' : 'search:block'
+  if (primary && key === 'r') return input.shift ? 'replace:document' : 'replace:block'
   if (primary && (key === '=' || key === '+')) return 'view:font-increase'
   if (primary && key === '-') return 'view:font-decrease'
   if (primary && key === '0') return 'view:font-reset'

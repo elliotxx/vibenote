@@ -410,19 +410,29 @@ function refreshSearchResults() {
   syncSearchDecorations()
 }
 
-function openEditorSearch(editor: EditorView, withReplace = false) {
+function focusEditorSearch(withReplace: boolean) {
+  nextTick(() => {
+    const input = withReplace && searchQuery.value ? replaceInput.value : searchInput.value
+    input?.focus()
+    input?.select()
+  })
+}
+
+function openEditorSearch(
+  editor: EditorView,
+  withReplace = false,
+  scope: EditorSearchScope = searchScope.value,
+) {
   const selection = editor.state.selection.main
   const selectedText = selection.empty ? '' : editor.state.sliceDoc(selection.from, selection.to)
   if (selectedText && !selectedText.includes('\n')) {
     searchQuery.value = selectedText
   }
+  searchScope.value = scope
   searchVisible.value = true
   searchReplaceVisible.value = withReplace
   refreshSearchResults()
-  nextTick(() => {
-    searchInput.value?.focus()
-    searchInput.value?.select()
-  })
+  focusEditorSearch(withReplace)
   return true
 }
 
@@ -535,14 +545,23 @@ function onReplaceInputKeydown(event: KeyboardEvent) {
 function applySearchModeShortcut(event: KeyboardEvent) {
   const key = event.key.toLowerCase()
   const primary = event.metaKey || event.ctrlKey
-  const isMac = navigator.platform.toLowerCase().includes('mac')
-  const openFind = primary && key === 'f' && !event.altKey
-  const openReplace = (primary && event.altKey && key === 'f')
-    || (!isMac && event.ctrlKey && key === 'h')
-  if (!openFind && !openReplace) return false
+  const openCurrentFind = primary && key === 'f' && !event.shiftKey && !event.altKey
+  const openDocumentFind = primary && key === 'f' && event.shiftKey && !event.altKey
+  const openCurrentReplace = primary && key === 'r' && !event.shiftKey && !event.altKey
+  const openDocumentReplace = primary && key === 'r' && event.shiftKey && !event.altKey
+  if (!openCurrentFind && !openDocumentFind && !openCurrentReplace && !openDocumentReplace) return false
+  const withReplace = openCurrentReplace || openDocumentReplace
+  const scope: EditorSearchScope = openDocumentFind || openDocumentReplace ? 'document' : 'block'
   event.preventDefault()
-  searchReplaceVisible.value = openReplace
-  nextTick(() => searchInput.value?.focus())
+  event.stopPropagation()
+  if (!searchVisible.value) {
+    if (view) openEditorSearch(view, withReplace, scope)
+    return true
+  }
+  searchScope.value = scope
+  searchReplaceVisible.value = withReplace
+  refreshSearchResults()
+  focusEditorSearch(withReplace)
   return true
 }
 
@@ -599,8 +618,10 @@ function mountEditor() {
         { key: 'Mod-b', run: editor => wrapMarkdownSelection(editor, '**', '**', 'bold') },
         { key: 'Mod-i', run: editor => wrapMarkdownSelection(editor, '*', '*', 'italic') },
         { key: 'Mod-k', run: insertMarkdownLink },
-        { key: 'Mod-f', preventDefault: true, run: editor => openEditorSearch(editor) },
-        { key: 'Ctrl-h', mac: 'Mod-Alt-f', preventDefault: true, run: editor => openEditorSearch(editor, true) },
+        { key: 'Mod-f', preventDefault: true, run: editor => openEditorSearch(editor, false, 'block') },
+        { key: 'Mod-Shift-f', preventDefault: true, run: editor => openEditorSearch(editor, false, 'document') },
+        { key: 'Mod-r', preventDefault: true, run: editor => openEditorSearch(editor, true, 'block') },
+        { key: 'Mod-Shift-r', preventDefault: true, run: editor => openEditorSearch(editor, true, 'document') },
         { key: 'Mod-g', preventDefault: true, run: () => navigateSearch(1) },
         { key: 'Mod-Shift-g', preventDefault: true, run: () => navigateSearch(-1) },
         { key: 'Mod-Shift-8', run: editor => toggleMarkdownList(editor, 'unordered') },
@@ -623,6 +644,7 @@ function mountEditor() {
         '.cm-scroller': {
           fontFamily: 'JetBrains Mono, SFMono-Regular, Menlo, Consolas, monospace',
           lineHeight: '1.36',
+          overflowX: 'hidden',
         },
         '.cm-content': {
           padding: '0 0 120px 0',
@@ -2497,6 +2519,10 @@ function runEditorCommand(command: EditorCommand, editor: EditorView) {
     void store.openExternalFile()
     return true
   }
+  if (command === 'search:block') return openEditorSearch(editor, false, 'block')
+  if (command === 'search:document') return openEditorSearch(editor, false, 'document')
+  if (command === 'replace:block') return openEditorSearch(editor, true, 'block')
+  if (command === 'replace:document') return openEditorSearch(editor, true, 'document')
   if (command === 'block:split') return splitBlockFromKeymap(editor)
   if (command === 'block:add-end') return addBlockAtEnd(editor)
   if (command === 'block:add-start') return addBlockAtStart(editor)
@@ -2530,12 +2556,23 @@ function resetEditorFontSize() {
 
 function onEditorCommand(command: EditorCommand) {
   if (!view) return
+  if (command.startsWith('search:') || command.startsWith('replace:')) {
+    runEditorCommand(command, view)
+    return
+  }
   if (isFormControl(document.activeElement)) return
   runEditorCommand(command, view)
 }
 
 function onWindowKeydown(event: KeyboardEvent) {
   if (!view || event.defaultPrevented) return
+  if (applySearchModeShortcut(event)) return
+  if (searchVisible.value && event.key === 'Escape') {
+    event.preventDefault()
+    event.stopPropagation()
+    closeEditorSearch()
+    return
+  }
   const target = event.target as HTMLElement | null
   if (isFormControl(target)) return
   handleEditorShortcut(event, view)
@@ -2830,26 +2867,28 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
                   @keydown="onReplaceInputKeydown"
                 >
               </label>
-              <button
-                type="button"
-                class="editor-search-replace-button"
-                :disabled="searchMatches.length === 0"
-                title="替换当前结果（Enter）"
-                aria-label="替换当前结果"
-                @click="replaceCurrentSearchMatch"
-              >
-                <Replace :size="16" />
-              </button>
-              <button
-                type="button"
-                class="editor-search-replace-button"
-                :disabled="searchMatches.length === 0"
-                :title="searchScope === 'block' ? '替换当前块全部结果' : '替换全文全部结果'"
-                :aria-label="searchScope === 'block' ? '替换当前块' : '替换全文'"
-                @click="replaceAllSearchMatches"
-              >
-                <ReplaceAll :size="16" />
-              </button>
+              <div class="editor-search-replace-actions">
+                <button
+                  type="button"
+                  class="editor-search-replace-button"
+                  :disabled="searchMatches.length === 0"
+                  title="替换当前结果（Enter）"
+                  aria-label="替换当前结果"
+                  @click="replaceCurrentSearchMatch"
+                >
+                  <Replace :size="15" />
+                </button>
+                <button
+                  type="button"
+                  class="editor-search-replace-button"
+                  :disabled="searchMatches.length === 0"
+                  :title="searchScope === 'block' ? '替换当前块全部结果' : '替换全文全部结果'"
+                  :aria-label="searchScope === 'block' ? '替换当前块' : '替换全文'"
+                  @click="replaceAllSearchMatches"
+                >
+                  <ReplaceAll :size="15" />
+                </button>
+              </div>
             </div>
           </Transition>
         </aside>

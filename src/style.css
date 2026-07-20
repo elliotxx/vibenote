@@ -152,50 +152,50 @@ select:focus {
 }
 
 .editor-search-panel {
+  --editor-search-control-size: clamp(28px, calc(var(--editor-font-size, 13px) * 2.15), 72px);
+  --editor-search-field-height: clamp(30px, calc(var(--editor-font-size, 13px) * 2.3), 80px);
+  --editor-search-scope-width: max(106px, calc(var(--editor-font-size, 13px) * 8.2));
   position: absolute;
   top: 12px;
   right: 12px;
   z-index: 260;
-  width: min(680px, calc(100% - 24px));
-  padding: 7px;
-  border: 1px solid color-mix(in srgb, var(--line) 82%, var(--ink) 18%);
-  border-radius: 13px;
-  background: color-mix(in srgb, var(--surface-control) 94%, transparent);
-  box-shadow:
-    0 18px 44px oklch(24% 0.034 250 / 0.18),
-    0 2px 8px oklch(24% 0.034 250 / 0.08),
-    inset 0 1px 0 oklch(100% 0 0 / 0.72);
-  backdrop-filter: blur(18px) saturate(1.08);
+  width: min(calc(var(--editor-font-size, 13px) * 43), calc(100% - 24px));
+  padding: clamp(6px, 0.46em, 16px);
+  border: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: var(--surface-control);
+  box-shadow: 0 12px 28px oklch(24% 0.034 250 / 0.12);
   cursor: default;
+  font-size: var(--editor-font-size, 13px);
 }
 
 .editor-search-row {
   display: grid;
-  grid-template-columns: 34px 112px minmax(220px, 1fr) 34px auto 34px;
-  gap: 5px;
+  grid-template-columns: var(--editor-search-control-size) var(--editor-search-scope-width) minmax(0, 1fr) var(--editor-search-control-size) auto var(--editor-search-control-size);
+  gap: clamp(3px, 0.23em, 8px);
   align-items: center;
 }
 
 .editor-search-scope {
   display: inline-grid;
   grid-template-columns: 1fr 1fr;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--line-soft);
-  border-radius: 9px;
-  background: var(--surface-soft);
-  width: 112px;
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  width: var(--editor-search-scope-width);
 }
 
 .editor-search-scope button {
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 6px;
+  height: clamp(25px, 1.92em, 68px);
+  padding: 0 0.46em;
+  border-radius: 0;
   color: var(--muted);
   background: transparent;
-  font-size: 11px;
+  font-size: 1em;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   white-space: nowrap;
   cursor: pointer;
   transition: color 140ms ease, background 140ms ease, box-shadow 140ms ease;
@@ -206,38 +206,40 @@ select:focus {
 }
 
 .editor-search-scope button.active {
-  color: var(--ink);
-  background: var(--surface-control);
-  box-shadow: 0 1px 3px oklch(24% 0.034 250 / 0.12);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent-tint) 64%, var(--surface-control));
+  box-shadow: none;
 }
 
 .editor-search-field {
   display: flex;
   align-items: center;
   min-width: 0;
-  height: 34px;
-  padding: 0 9px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
+  height: var(--editor-search-field-height);
+  padding: 0 0.54em;
+  border: 1px solid var(--line-soft);
+  border-radius: 0;
   color: var(--muted);
-  background: var(--surface-editor);
-  transition: border-color 140ms ease, box-shadow 140ms ease;
+  background: color-mix(in srgb, var(--surface-editor) 88%, var(--surface-soft));
+  box-shadow: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
 }
 
 .editor-search-field:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 72%, var(--line));
-  box-shadow: 0 0 0 3px oklch(52% 0.12 265 / 0.11);
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--line));
+  background: var(--surface-editor);
+  box-shadow: none;
 }
 
 .editor-search-field input {
   min-width: 0;
-  height: 30px;
-  padding: 0 8px;
+  height: calc(var(--editor-search-field-height) - 4px);
+  padding: 0 0.46em;
   border: 0;
   background: transparent;
   box-shadow: none;
   font-family: JetBrains Mono, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: 1em;
 }
 
 .editor-search-field input:focus {
@@ -247,9 +249,10 @@ select:focus {
 
 .editor-search-count {
   flex: 0 0 auto;
-  color: var(--faint);
+  min-width: 3.1em;
+  color: var(--muted);
   font-family: JetBrains Mono, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10px;
+  font-size: 1em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -260,20 +263,20 @@ select:focus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
+  width: var(--editor-search-control-size);
+  height: var(--editor-search-control-size);
+  border-radius: 0;
   color: var(--muted);
   background: transparent;
   cursor: pointer;
-  transition: color 130ms ease, background 130ms ease, transform 130ms ease;
+  transition: color 120ms ease, background 120ms ease, transform 120ms ease;
 }
 
 .editor-search-icon-button:hover,
 .editor-search-toggle:hover,
 .editor-search-navigation button:hover {
-  color: var(--ink);
-  background: var(--surface-soft);
+  color: var(--accent);
+  background: var(--accent-tint);
 }
 
 .editor-search-icon-button:active,
@@ -293,53 +296,88 @@ select:focus {
 
 .editor-search-navigation {
   display: inline-grid;
-  grid-template-columns: 34px 34px;
-  border: 1px solid var(--line-soft);
-  border-radius: 9px;
+  grid-template-columns: var(--editor-search-control-size) var(--editor-search-control-size);
+  gap: 1px;
+  border: 0;
+  border-radius: 0;
+  background: var(--line-soft);
   overflow: hidden;
 }
 
 .editor-search-navigation button {
   border-radius: 0;
+  background: var(--surface-control);
 }
 
 .editor-search-navigation button + button {
-  border-left: 1px solid var(--line-soft);
+  border-left: 0;
 }
 
 .editor-search-replace-row {
   display: grid;
-  grid-template-columns: 34px 112px minmax(220px, 1fr) 34px 34px;
-  gap: 5px;
+  grid-template-columns: var(--editor-search-control-size) var(--editor-search-scope-width) minmax(0, 1fr) var(--editor-search-control-size) auto var(--editor-search-control-size);
+  gap: clamp(3px, 0.23em, 8px);
   align-items: center;
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid var(--line-soft);
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 0;
+}
+
+.editor-search-replace-actions {
+  display: inline-grid;
+  grid-column: 4 / 7;
+  grid-template-columns: var(--editor-search-control-size) var(--editor-search-control-size);
+  gap: 1px;
+  justify-self: end;
+  border: 0;
+  border-radius: 0;
+  overflow: hidden;
+  background: var(--line-soft);
 }
 
 .editor-search-replace-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  width: var(--editor-search-control-size);
+  height: var(--editor-search-control-size);
+  border: 0;
+  border-radius: 0;
   color: var(--muted);
   background: var(--surface-control);
   cursor: pointer;
-  transition: color 130ms ease, border-color 130ms ease, background 130ms ease;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.editor-search-replace-button + .editor-search-replace-button {
+  border-left: 0;
 }
 
 .editor-search-replace-button:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
   color: var(--accent);
   background: var(--accent-tint);
+}
+
+.editor-search-toggle:focus-visible,
+.editor-search-icon-button:focus-visible,
+.editor-search-navigation button:focus-visible,
+.editor-search-scope button:focus-visible,
+.editor-search-replace-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 52%, transparent);
+  outline-offset: -2px;
 }
 
 .editor-search-replace-button:disabled {
   opacity: 0.42;
   cursor: not-allowed;
+}
+
+.editor-search-toggle svg,
+.editor-search-icon-button svg,
+.editor-search-navigation svg,
+.editor-search-replace-button svg {
+  width: clamp(15px, 1.15em, 38px);
+  height: clamp(15px, 1.15em, 38px);
 }
 
 .cm-editor .vibenote-search-match {
@@ -400,7 +438,7 @@ select:focus {
   }
 
   .editor-search-replace-row {
-    grid-template-columns: 34px minmax(0, 1fr) 34px 34px;
+    grid-template-columns: var(--editor-search-control-size) minmax(0, 1fr) auto;
   }
 
   .editor-search-scope-spacer {
@@ -409,6 +447,10 @@ select:focus {
 
   .editor-search-replace-field {
     grid-column: 2;
+  }
+
+  .editor-search-replace-actions {
+    grid-column: 3;
   }
 }
 

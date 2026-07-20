@@ -825,7 +825,7 @@ test.describe('editor search and replace', () => {
     const panel = page.locator('.editor-search-panel')
     const query = panel.getByLabel('搜索内容')
     await expect(panel).toBeVisible()
-    await expect(panel.getByRole('button', { name: '当前块' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(panel.getByRole('button', { name: '当前块', exact: true })).toHaveAttribute('aria-pressed', 'true')
     await expect(panel.getByLabel('替换内容')).toHaveCount(0)
     await expect(panel.getByRole('button', { name: '展开替换' })).toHaveAttribute('aria-expanded', 'false')
 
@@ -833,18 +833,18 @@ test.describe('editor search and replace', () => {
     await expect(panel.locator('.editor-search-count')).toHaveText('1 / 2')
     await expect(page.locator('.vibenote-search-match')).toHaveCount(2)
 
-    await panel.getByRole('button', { name: '全文' }).click()
+    await panel.getByRole('button', { name: '全文', exact: true }).click()
     await expect(query).toHaveValue('alpha')
     await expect(panel.locator('.editor-search-count')).toHaveText('1 / 3')
     await expect(page.locator('.vibenote-search-match')).toHaveCount(3)
 
     await panel.getByRole('button', { name: '展开替换' }).click()
     await panel.getByLabel('替换内容').fill('beta')
-    await panel.getByRole('button', { name: '当前块' }).click()
+    await panel.getByRole('button', { name: '当前块', exact: true }).click()
     await panel.getByRole('button', { name: '替换当前块' }).click()
     await expect(panel.locator('.editor-search-count')).toHaveText('无结果')
 
-    await panel.getByRole('button', { name: '全文' }).click()
+    await panel.getByRole('button', { name: '全文', exact: true }).click()
     await expect(panel.locator('.editor-search-count')).toHaveText('1 / 1')
     await panel.getByRole('button', { name: '替换全文' }).click()
     await expect(panel.locator('.editor-search-count')).toHaveText('无结果')
@@ -862,13 +862,33 @@ test.describe('editor search and replace', () => {
     await expect(panel).toHaveCount(0)
     await expect(page.locator('.vibenote-search-match')).toHaveCount(0)
 
-    await page.keyboard.press(`${modifier}+Alt+F`)
+    await page.keyboard.press(`${modifier}+Shift+F`)
     await expect(panel).toBeVisible()
+    await expect(panel.getByRole('button', { name: '全文', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(panel.getByLabel('替换内容')).toHaveCount(0)
+
+    await page.keyboard.press(`${modifier}+R`)
+    await expect(panel.getByRole('button', { name: '当前块', exact: true })).toHaveAttribute('aria-pressed', 'true')
     await expect(panel.getByLabel('替换内容')).toBeVisible()
     await expect(panel.getByRole('button', { name: '折叠替换' })).toHaveAttribute('aria-expanded', 'true')
 
+    await page.keyboard.press(`${modifier}+Shift+R`)
+    await expect(panel.getByRole('button', { name: '全文', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(panel.getByLabel('替换内容')).toBeVisible()
+
     await page.keyboard.press(`${modifier}+F`)
+    await expect(panel.getByRole('button', { name: '当前块', exact: true })).toHaveAttribute('aria-pressed', 'true')
     await expect(panel.getByLabel('替换内容')).toHaveCount(0)
+
+    await panel.getByRole('button', { name: '全文', exact: true }).focus()
+    await page.keyboard.press('Escape')
+    await expect(panel).toHaveCount(0)
+
+    await page.locator('.windowbar').click()
+    await page.keyboard.press(`${modifier}+Shift+R`)
+    await expect(panel).toBeVisible()
+    await expect(panel.getByRole('button', { name: '全文', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(panel.getByLabel('替换内容')).toBeVisible()
   })
 
   test('keeps the search controls inside a narrow editor viewport', async ({ page }) => {
@@ -883,6 +903,68 @@ test.describe('editor search and replace', () => {
     expect(rect!.x).toBeGreaterThanOrEqual(0)
     expect(rect!.x + rect!.width).toBeLessThanOrEqual(360)
     await expect(panel.getByRole('button', { name: '替换当前块' })).toBeVisible()
+  })
+
+  test('keeps search toolbar typography in sync with editor zoom', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('vibenote:settings', JSON.stringify({
+        theme: 'light',
+        fontSize: 32,
+        tabSize: 2,
+        defaultLanguage: 'markdown',
+      }))
+    })
+    await loadFixture(page, searchFixture)
+    await page.keyboard.press(`${modifier}+F`)
+
+    const typography = () => page.evaluate(() => {
+      const editor = document.querySelector<HTMLElement>('.cm-editor')!
+      const panel = document.querySelector<HTMLElement>('.editor-search-panel')!
+      const input = document.querySelector<HTMLElement>('.editor-search-field input')!
+      const scope = document.querySelector<HTMLElement>('.editor-search-scope button')!
+      const count = document.querySelector<HTMLElement>('.editor-search-count')!
+      return {
+        editor: Number.parseFloat(getComputedStyle(editor).fontSize),
+        panel: Number.parseFloat(getComputedStyle(panel).fontSize),
+        input: Number.parseFloat(getComputedStyle(input).fontSize),
+        scope: Number.parseFloat(getComputedStyle(scope).fontSize),
+        count: Number.parseFloat(getComputedStyle(count).fontSize),
+      }
+    })
+
+    await expect.poll(typography).toEqual({ editor: 32, panel: 32, input: 32, scope: 32, count: 32 })
+
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.editor-search-panel')).toHaveCount(0)
+    await page.keyboard.press(`${modifier}+=`)
+    await page.keyboard.press(`${modifier}+F`)
+    await expect.poll(typography).toEqual({ editor: 33, panel: 33, input: 33, scope: 33, count: 33 })
+  })
+
+  test('wraps long unbroken text without a horizontal editor scrollbar', async ({ page }) => {
+    const longToken = `LS0t${'S1CR'.repeat(1500)}`
+    const longLineFixture = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
+      `---block:markdown;auto=1;created=${created}`,
+      '# Encoded payload',
+      longToken,
+    ].join('\n')}`
+
+    await page.setViewportSize({ width: 1100, height: 720 })
+    await loadFixture(page, longLineFixture)
+    await expect(page.locator('.cm-content')).toContainText(longToken.slice(0, 64))
+
+    const scroller = await page.locator('.cm-scroller').evaluate((element) => {
+      const node = element as HTMLElement
+      return {
+        overflowX: getComputedStyle(node).overflowX,
+        overflowWidth: node.scrollWidth - node.clientWidth,
+        scrollLeft: node.scrollLeft,
+      }
+    })
+
+    expect(scroller.overflowX).toBe('hidden')
+    expect(scroller.overflowWidth).toBeLessThanOrEqual(1)
+    expect(scroller.scrollLeft).toBe(0)
   })
 })
 

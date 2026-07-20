@@ -19,6 +19,10 @@ type SearchResult = {
 type EditorCommand =
   | 'file:new'
   | 'file:open'
+  | 'search:block'
+  | 'search:document'
+  | 'replace:block'
+  | 'replace:document'
   | 'block:split'
   | 'block:add-end'
   | 'block:add-start'
