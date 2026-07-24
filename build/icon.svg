@@ -22,13 +22,15 @@
       <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#5e789e" flood-opacity=".28"/>
     </filter>
   </defs>
-  <rect x="0" y="0" width="1024" height="1024" rx="226" fill="url(#base)"/>
-  <rect x="24" y="24" width="976" height="976" rx="204" fill="none" stroke="#bfd3ef" stroke-width="22"/>
-  <g filter="url(#soft-shadow)">
-    <rect x="284" y="276" width="456" height="74" rx="37" fill="url(#line)"/>
-    <rect x="284" y="410" width="456" height="74" rx="37" fill="url(#line)"/>
-    <path fill="none" stroke="url(#line)" stroke-linecap="round" stroke-linejoin="round" stroke-width="74" d="M321 581h296c40 0 72 32 72 72v74c0 21 13 35 35 40"/>
-    <path fill="#eff7ff" d="M696 628c21 72 56 109 128 132-72 23-107 60-128 132-21-72-56-109-128-132 72-23 107-60 128-132Z"/>
-    <path fill="url(#spark)" d="M696 650c17 61 47 92 108 110-61 18-91 49-108 110-17-61-47-92-108-110 61-18 91-49 108-110Z"/>
+  <g transform="translate(76.8 76.8) scale(.85)">
+    <rect x="0" y="0" width="1024" height="1024" rx="226" fill="url(#base)"/>
+    <rect x="24" y="24" width="976" height="976" rx="204" fill="none" stroke="#bfd3ef" stroke-width="22"/>
+    <g filter="url(#soft-shadow)">
+      <rect x="284" y="276" width="456" height="74" rx="37" fill="url(#line)"/>
+      <rect x="284" y="410" width="456" height="74" rx="37" fill="url(#line)"/>
+      <path fill="none" stroke="url(#line)" stroke-linecap="round" stroke-linejoin="round" stroke-width="74" d="M321 581h296c40 0 72 32 72 72v74c0 21 13 35 35 40"/>
+      <path fill="#eff7ff" d="M696 628c21 72 56 109 128 132-72 23-107 60-128 132-21-72-56-109-128-132 72-23 107-60 128-132Z"/>
+      <path fill="url(#spark)" d="M696 650c17 61 47 92 108 110-61 18-91 49-108 110-17-61-47-92-108-110 61-18 91-49 108-110Z"/>
+    </g>
   </g>
 </svg>
