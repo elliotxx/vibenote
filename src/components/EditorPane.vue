@@ -157,6 +157,7 @@ const blockToolbarPointerActive = ref(false)
 let blockToolbarScrollActive = false
 let editorScrollElement: HTMLElement | null = null
 let scrollJumpHideTimer: number | null = null
+let scrollJumpFrame: number | null = null
 let lastEditorScrollTop = 0
 let lastEditorScrollTime = 0
 let unsubscribeEditorCommand: (() => void) | null = null
@@ -254,6 +255,7 @@ onBeforeUnmount(() => {
   if (blockToolbarFrame) window.cancelAnimationFrame(blockToolbarFrame)
   if (blockToolbarHideTimer) window.clearTimeout(blockToolbarHideTimer)
   if (scrollJumpHideTimer) window.clearTimeout(scrollJumpHideTimer)
+  if (scrollJumpFrame) window.cancelAnimationFrame(scrollJumpFrame)
   stopAiPopoverInteraction()
   editorScrollElement?.removeEventListener('scroll', onEditorScroll)
   editorScrollElement = null
@@ -1983,13 +1985,33 @@ function jumpEditorScroll() {
   const scroller = editorScrollElement
   if (!scroller) return
 
-  const top = scrollJump.value.target === 'top'
-    ? 0
-    : Math.max(0, scroller.scrollHeight - scroller.clientHeight)
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
+  const target = scrollJump.value.target
   hideScrollJump()
-  scroller.scrollTo({ top, behavior: reducedMotion ? 'auto' : 'smooth' })
+  if (scrollJumpFrame) {
+    window.cancelAnimationFrame(scrollJumpFrame)
+    scrollJumpFrame = null
+  }
+
+  if (target === 'top') {
+    scroller.scrollTop = 0
+  } else {
+    scrollEditorToBottom()
+  }
+}
+
+function scrollEditorToBottom(remainingFrames = 3) {
+  const scroller = editorScrollElement
+  if (!scroller) return
+
+  scroller.scrollTop = scroller.scrollHeight
+  if (remainingFrames <= 0) {
+    scrollJumpFrame = null
+    return
+  }
+
+  scrollJumpFrame = window.requestAnimationFrame(() => {
+    scrollEditorToBottom(remainingFrames - 1)
+  })
 }
 
 function onWindowResize() {

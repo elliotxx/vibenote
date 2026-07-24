@@ -720,7 +720,7 @@ test.describe('editor text selection shortcuts', () => {
 
   test('offers contextual top and bottom jumps after fast scrolling', async ({ page }) => {
     const created = '2026-07-01T10:38:41.565Z'
-    const lines = Array.from({ length: 180 }, (_, index) => `scroll target ${String(index + 1).padStart(3, '0')}`)
+    const lines = Array.from({ length: 5_000 }, (_, index) => `scroll target ${String(index + 1).padStart(4, '0')}`)
     const content = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
       `---block:markdown;auto=1;created=${created}`,
       ...lines,
