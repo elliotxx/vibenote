@@ -2,7 +2,17 @@
 import { Compartment, EditorSelection, EditorState } from '@codemirror/state'
 import { addCursorAbove, addCursorBelow, defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { indentUnit } from '@codemirror/language'
-import { lineNumbers, keymap, drawSelection, highlightActiveLine, EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view'
+import {
+  crosshairCursor,
+  drawSelection,
+  EditorView,
+  highlightActiveLine,
+  keymap,
+  lineNumbers,
+  rectangularSelection,
+  ViewPlugin,
+  type ViewUpdate,
+} from '@codemirror/view'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   AlignLeft,
@@ -611,7 +621,11 @@ function mountEditor() {
         EditorState.tabSize.of(store.settings.tabSize),
         indentUnit.of(' '.repeat(store.settings.tabSize)),
       ]),
+      EditorState.allowMultipleSelections.of(true),
       drawSelection(),
+      rectangularSelection(),
+      crosshairCursor(),
+      EditorView.clickAddsSelectionRange.of(event => event.altKey && event.button === 0),
       highlightActiveLine(),
       keymap.of([
         { key: 'Mod-Alt-Enter', run: splitBlockFromKeymap },

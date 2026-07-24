@@ -75,6 +75,35 @@ async function linePoint(page: Page, text: string, offset = 8) {
   return point
 }
 
+async function lineColumnPoint(page: Page, text: string, column: number) {
+  const point = await page.evaluate(({ text, column }) => {
+    const line = Array.from(document.querySelectorAll<HTMLElement>('.cm-line'))
+      .find(element => (element.textContent || '').includes(text))
+    if (!line) return null
+
+    const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT)
+    let remaining = column
+    let node = walker.nextNode()
+    while (node) {
+      const length = node.textContent?.length || 0
+      if (remaining <= length) {
+        const range = document.createRange()
+        range.setStart(node, remaining)
+        range.collapse(true)
+        const rect = range.getBoundingClientRect()
+        const lineRect = line.getBoundingClientRect()
+        return { x: rect.left, y: lineRect.top + lineRect.height / 2 }
+      }
+      remaining -= length
+      node = walker.nextNode()
+    }
+    return null
+  }, { text, column })
+
+  if (!point) throw new Error(`Line or column not found: ${text}:${column}`)
+  return point
+}
+
 async function copySelection(page: Page) {
   await page.evaluate(() => navigator.clipboard.writeText(''))
   await page.keyboard.press(`${modifier}+C`)
@@ -278,6 +307,50 @@ test.describe('editor text selection shortcuts', () => {
     await expect.poll(() => hasVisibleSelectionHighlight(page)).toBe(true)
     await expect.poll(() => hasNaturalSelectionStyling(page)).toBe(true)
     await expect.poll(() => copySelection(page)).toBe('plain')
+  })
+
+  test('adds multiple cursors with Option-click', async ({ page }) => {
+    const first = await lineColumnPoint(page, '# Stream', 1)
+    const second = await lineColumnPoint(page, 'Drop plain text notes here.', 1)
+
+    await page.mouse.click(first.x, first.y)
+    await page.keyboard.down('Alt')
+    await page.mouse.click(second.x, second.y)
+    await page.keyboard.up('Alt')
+
+    await expect(page.locator('.cm-cursor')).toHaveCount(2)
+    await page.keyboard.type('X')
+    await expect(page.locator('.cm-content')).toContainText('#X Stream')
+    await expect(page.locator('.cm-content')).toContainText('DXrop plain text notes here.')
+  })
+
+  test('replaces a rectangular Option-drag selection on every covered line', async ({ page }) => {
+    const created = '2026-07-01T10:38:41.565Z'
+    const content = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
+      `---block:markdown;auto=1;created=${created}`,
+      'alpha one',
+      'bravo two',
+      'charlie three',
+    ].join('\n')}`
+    await page.goto('about:blank')
+    await loadFixture(page, content)
+
+    const start = await lineColumnPoint(page, 'alpha one', 1)
+    const end = await lineColumnPoint(page, 'charlie three', 5)
+    await page.keyboard.down('Alt')
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(end.x, end.y, { steps: 8 })
+    await page.mouse.up()
+    await page.keyboard.up('Alt')
+
+    await expect(page.locator('.cm-selectionBackground')).toHaveCount(3)
+    await expect.poll(() => copySelection(page)).toBe('lpha\nravo\nharl')
+
+    await page.keyboard.type('X')
+    await expect(page.locator('.cm-content')).toContainText('aX one')
+    await expect(page.locator('.cm-content')).toContainText('bX two')
+    await expect(page.locator('.cm-content')).toContainText('cXie three')
   })
 
   test('supports cross-block mouse selection without exposing delimiters', async ({ page }) => {
