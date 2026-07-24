@@ -114,6 +114,16 @@ async function main() {
     await page.getByTitle('关闭设置').click()
     await page.locator('.cm-content').click()
     await page.keyboard.type('AI setting note')
+
+    const editorHost = page.locator('.editor-host')
+    const editorHostBox = await editorHost.boundingBox()
+    if (!editorHostBox) {
+      fail('editor host is missing before opening the AI suggestion')
+    }
+    await page.mouse.move(
+      editorHostBox.x + editorHostBox.width - 24,
+      editorHostBox.y + 24,
+    )
     await page.getByTitle('AI 优化选区或此块表述').click()
     await page.getByLabel('AI 表述优化建议').waitFor({ timeout: 10000 })
     await page.getByText('AI generated note').waitFor({ timeout: 10000 })
