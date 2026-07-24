@@ -35,6 +35,17 @@ async function openSettings(page: Page) {
   await expect(page.getByRole('heading', { name: '设置' })).toBeVisible()
 }
 
+async function clickBlockToolbarAction(page: Page, title: string) {
+  const host = page.locator('.editor-host')
+  const box = await host.boundingBox()
+  if (!box) throw new Error('Editor host not found')
+  await page.mouse.move(box.x + box.width - 24, box.y + 24)
+
+  const action = page.getByTitle(title)
+  await expect(action).toBeVisible()
+  await action.click()
+}
+
 async function hasNoVisibleEditorSelection(page: Page) {
   return page.evaluate(() => {
     return !Array.from(document.querySelectorAll<HTMLElement>('.cm-selectionBackground'))
@@ -232,7 +243,7 @@ test.describe('AI settings', () => {
 
     await page.getByText('- keep this list item').click()
     await expect.poll(() => hasNoVisibleEditorSelection(page)).toBe(true)
-    await page.getByTitle('AI 优化选区或此块表述').click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
     await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
     await expect(page.getByText('表述优化 / 当前块')).toBeVisible()
     await expect(page.getByText('polished from block')).toBeVisible()
@@ -290,7 +301,7 @@ test.describe('AI settings', () => {
     })
 
     await page.getByText('rough sentence').click()
-    await page.getByTitle('AI 优化选区或此块表述').click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
 
     const popover = page.getByLabel('AI 表述优化建议')
     await expect(popover).toHaveClass(/loading/)
@@ -340,7 +351,7 @@ test.describe('AI settings', () => {
     })
 
     await page.getByText('rough sentence').click()
-    await page.getByTitle('AI 优化选区或此块表述').click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
 
     const popover = page.getByLabel('AI 表述优化建议')
     await expect(popover).toHaveClass(/loading/)
@@ -386,7 +397,7 @@ test.describe('AI settings', () => {
     })
 
     await page.getByText('rough sentence').click()
-    await page.getByTitle('AI 优化选区或此块表述').click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
 
     const popover = page.getByLabel('AI 表述优化建议')
     await expect(popover.locator('.ai-suggestion-error-state')).toContainText('fetch failed')
@@ -428,7 +439,7 @@ test.describe('AI settings', () => {
     })
 
     await page.getByText('scrollable line 5', { exact: true }).click()
-    await page.getByTitle('AI 优化选区或此块表述').click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
 
     const popover = page.getByLabel('AI 表述优化建议')
     await expect(popover).toHaveClass(/loading/)
@@ -481,7 +492,7 @@ test.describe('AI settings', () => {
     })
 
     await page.getByText('rough sentence').click()
-    await page.getByTitle('AI 优化选区或此块表述').click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
     await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
 
     await page.getByRole('button', { name: '复制' }).click()
@@ -575,7 +586,7 @@ test.describe('AI settings', () => {
     })
 
     await page.getByText('rough sentence').click()
-    await page.getByTitle('AI 优化选区或此块表述').click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
     await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
 
     const beforeMove = await page.locator('.ai-suggestion-popover').boundingBox()
@@ -632,7 +643,7 @@ test.describe('AI settings', () => {
     })
 
     await page.getByText('scrollable line 5', { exact: true }).click()
-    await page.getByTitle('AI 优化选区或此块表述').click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
     const popovers = page.getByLabel('AI 表述优化建议')
     await expect(popovers).toHaveCount(1)
     await expect(page.getByText('polished suggestion 1')).toBeVisible()
@@ -658,7 +669,7 @@ test.describe('AI settings', () => {
     expect(Math.abs(firstAfterReturn!.x - firstBeforeScroll!.x)).toBeLessThan(2)
     expect(Math.abs(firstAfterReturn!.y - firstBeforeScroll!.y)).toBeLessThan(2)
 
-    await page.getByTitle('AI 优化选区或此块表述').click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
     await expect(popovers).toHaveCount(2)
     await expect(page.getByText('polished suggestion 2')).toBeVisible()
   })
@@ -682,7 +693,7 @@ test.describe('AI settings', () => {
     })
 
     await page.locator('.cm-content .cm-line', { hasText: 'rough sentence' }).first().click({ force: true })
-    await page.getByTitle('AI 优化选区或此块表述').click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
     await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
     await expect(page.getByText('polished sentence')).toBeVisible()
 
@@ -721,7 +732,7 @@ test.describe('AI settings', () => {
     })
 
     await page.getByText('申请 code-host').click()
-    await page.getByTitle('AI 优化选区或此块表述').click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
     await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
 
     const diffState = await page.evaluate(() => {
@@ -764,7 +775,7 @@ test.describe('AI settings', () => {
     }, blockLines.join('\n'))
 
     await page.getByText('已经足够清晰').click()
-    await page.getByTitle('AI 优化选区或此块表述').click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
 
     await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
     await expect(page.getByText('AI 返回内容与原文基本一致，未检测到文字差异。')).toBeVisible()
@@ -798,7 +809,7 @@ test.describe('AI settings', () => {
     })
 
     await page.getByText('申请 code-host').click()
-    await page.getByTitle('AI 优化选区或此块表述').click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
     await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
     await expect(page.getByText('右侧最后一行需要完整展示')).toBeVisible()
 
@@ -853,7 +864,7 @@ test.describe('AI settings', () => {
     })
 
     await page.getByText('修复设置保存问题').click()
-    await page.getByTitle('AI 提取选区或此块 Todo').click()
+    await clickBlockToolbarAction(page, 'AI 提取选区或此块 Todo')
     await expect(page.getByText('- 判断是否发布新版本')).toBeVisible()
     await expect(page.getByText('- 确认安装提示词可用')).toHaveCount(2)
     await expect(page.getByText('成本中心:')).toHaveCount(0)

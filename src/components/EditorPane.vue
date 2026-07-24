@@ -152,6 +152,9 @@ let note: LoadedNote | null = null
 let saveTimer: number | null = null
 let aiStatusTimer: number | null = null
 let blockToolbarFrame: number | null = null
+let blockToolbarHideTimer: number | null = null
+const blockToolbarPointerActive = ref(false)
+let blockToolbarScrollActive = false
 let editorScrollElement: HTMLElement | null = null
 let scrollJumpHideTimer: number | null = null
 let lastEditorScrollTop = 0
@@ -179,6 +182,9 @@ const SCROLL_JUMP_MIN_DELTA = 8
 const SCROLL_JUMP_LARGE_DELTA = 96
 const SCROLL_JUMP_MIN_VELOCITY = 0.5
 const SCROLL_JUMP_HIDE_DELAY = 1500
+const BLOCK_TOOLBAR_HOT_ZONE_WIDTH = 184
+const BLOCK_TOOLBAR_HOT_ZONE_HEIGHT = 88
+const BLOCK_TOOLBAR_SCROLL_HIDE_DELAY = 1200
 
 const searchResultLabel = computed(() => {
   if (!searchQuery.value) return '输入关键词'
@@ -246,6 +252,7 @@ onBeforeUnmount(() => {
   flushSaveSync()
   if (aiStatusTimer) window.clearTimeout(aiStatusTimer)
   if (blockToolbarFrame) window.cancelAnimationFrame(blockToolbarFrame)
+  if (blockToolbarHideTimer) window.clearTimeout(blockToolbarHideTimer)
   if (scrollJumpHideTimer) window.clearTimeout(scrollJumpHideTimer)
   stopAiPopoverInteraction()
   editorScrollElement?.removeEventListener('scroll', onEditorScroll)
@@ -1829,7 +1836,13 @@ function updateAiQuickActions(editor: EditorView | null) {
 }
 
 function updateBlockToolbar(editor: EditorView | null) {
-  if (!editor || !editorHost.value || !editor.hasFocus) {
+  const shouldReveal = blockToolbarPointerActive.value || blockToolbarScrollActive
+  if (
+    !editor
+    || !editorHost.value
+    || !shouldReveal
+    || (!editor.hasFocus && !blockToolbarPointerActive.value)
+  ) {
     blockToolbar.value = { ...blockToolbar.value, visible: false }
     return
   }
@@ -1855,14 +1868,66 @@ function updateBlockToolbar(editor: EditorView | null) {
   const blockStartTop = coords ? coords.top - hostRect.top + 4 : stickyTop
   blockToolbar.value = {
     visible: true,
-    top: Math.max(stickyTop, blockStartTop),
+    top: blockToolbarPointerActive.value ? stickyTop : Math.max(stickyTop, blockStartTop),
   }
 }
 
 function onEditorScroll() {
+  revealBlockToolbarForScroll()
   updateScrollJump()
   syncAiSuggestionPositions()
   scheduleBlockToolbarUpdate()
+}
+
+function revealBlockToolbarForScroll() {
+  blockToolbarScrollActive = true
+  if (blockToolbarHideTimer) window.clearTimeout(blockToolbarHideTimer)
+  blockToolbarHideTimer = window.setTimeout(() => {
+    blockToolbarScrollActive = false
+    blockToolbarHideTimer = null
+    scheduleBlockToolbarUpdate()
+  }, BLOCK_TOOLBAR_SCROLL_HIDE_DELAY)
+}
+
+function onEditorHostMouseMove(event: MouseEvent) {
+  setBlockToolbarPointerActive(isBlockToolbarRevealArea(event.clientX, event.clientY))
+}
+
+function isBlockToolbarHotZone(clientX: number, clientY: number) {
+  if (!editorHost.value) return false
+  const rect = editorHost.value.getBoundingClientRect()
+  return clientX >= rect.right - BLOCK_TOOLBAR_HOT_ZONE_WIDTH
+    && clientY <= rect.top + BLOCK_TOOLBAR_HOT_ZONE_HEIGHT
+}
+
+function isBlockToolbarRevealArea(clientX: number, clientY: number) {
+  if (isBlockToolbarHotZone(clientX, clientY)) return true
+
+  const toolbar = document.querySelector<HTMLElement>('.block-toolbar')
+  if (!toolbar) return false
+  const rect = toolbar.getBoundingClientRect()
+  return clientX >= rect.left
+    && clientX <= rect.right
+    && clientY >= rect.top
+    && clientY <= rect.bottom
+}
+
+function setBlockToolbarPointerActive(active: boolean) {
+  if (active === blockToolbarPointerActive.value) return
+  blockToolbarPointerActive.value = active
+  scheduleBlockToolbarUpdate()
+}
+
+function onEditorHostMouseLeave(event: MouseEvent) {
+  setBlockToolbarPointerActive(isBlockToolbarRevealArea(event.clientX, event.clientY))
+}
+
+function onBlockToolbarMouseEnter() {
+  setBlockToolbarPointerActive(true)
+}
+
+function onBlockToolbarMouseLeave(event: MouseEvent) {
+  setBlockToolbarPointerActive(isBlockToolbarRevealArea(event.clientX, event.clientY))
 }
 
 function updateScrollJump() {
@@ -2793,7 +2858,13 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
 
 <template>
   <section class="editor-pane">
-    <div ref="editorHost" class="editor-host" @mousedown.self="focusEditorContent">
+    <div
+      ref="editorHost"
+      class="editor-host"
+      @mousedown.self="focusEditorContent"
+      @mousemove.capture="onEditorHostMouseMove"
+      @mouseleave="onEditorHostMouseLeave"
+    >
       <div ref="editorMount" class="editor-mount" />
       <Transition name="editor-search">
         <aside
@@ -3188,6 +3259,8 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
         class="block-toolbar"
         :style="{ top: `${blockToolbar.top}px` }"
         aria-label="当前块操作"
+        @mouseenter="onBlockToolbarMouseEnter"
+        @mouseleave="onBlockToolbarMouseLeave"
       >
         <button
           class="block-action-button"

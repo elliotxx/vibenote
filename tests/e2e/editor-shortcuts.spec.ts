@@ -104,6 +104,18 @@ async function lineColumnPoint(page: Page, text: string, column: number) {
   return point
 }
 
+async function hoverEditorTopRight(page: Page) {
+  const host = page.locator('.editor-host')
+  const box = await host.boundingBox()
+  if (!box) throw new Error('Editor host not found')
+  const point = { x: box.x + box.width - 24, y: box.y + 24 }
+  const isInsideHost = await page.evaluate(({ x, y }) => {
+    return Boolean(document.elementFromPoint(x, y)?.closest('.editor-host'))
+  }, point)
+  if (!isInsideHost) throw new Error(`Top-right point is outside editor host: ${JSON.stringify(point)}`)
+  await page.mouse.move(point.x, point.y)
+}
+
 async function copySelection(page: Page) {
   await page.evaluate(() => navigator.clipboard.writeText(''))
   await page.keyboard.press(`${modifier}+C`)
@@ -606,24 +618,41 @@ test.describe('editor text selection shortcuts', () => {
     await expect(page.locator('.cm-content')).toContainText('Drop plain text notes here. continuously typing')
   })
 
-  test('shows block actions only for the focused editor block', async ({ page }) => {
+  test('reveals block actions only while scrolling or hovering the top-right hot zone', async ({ page }) => {
     await loadFixture(page)
 
     const toolbar = page.locator('.block-toolbar')
+    await expect(toolbar).toHaveCount(0)
+
+    await hoverEditorTopRight(page)
     await expect(toolbar).toBeVisible()
     await expect(toolbar.locator('.block-action-button')).toHaveCount(5)
-
-    const firstBox = await toolbar.boundingBox()
-    expect(firstBox).not.toBeNull()
-
-    await clickLine(page, '{"service"')
+    await page.waitForTimeout(500)
     await expect(toolbar).toBeVisible()
-    const secondBox = await toolbar.boundingBox()
-    expect(secondBox).not.toBeNull()
-    expect(secondBox!.y).toBeGreaterThan(firstBox!.y)
 
-    await page.locator('.status-language select').click()
-    await expect(toolbar).toBeHidden()
+    const toolbarBox = await toolbar.boundingBox()
+    expect(toolbarBox).not.toBeNull()
+    await page.mouse.move(
+      toolbarBox!.x + toolbarBox!.width / 2,
+      toolbarBox!.y + toolbarBox!.height / 2,
+      { steps: 8 },
+    )
+    await page.waitForTimeout(300)
+    await expect(toolbar).toBeVisible()
+
+    const hostBox = await page.locator('.editor-host').boundingBox()
+    expect(hostBox).not.toBeNull()
+    await page.mouse.move(hostBox!.x + hostBox!.width / 2, hostBox!.y + hostBox!.height / 2)
+    await expect(toolbar).toHaveCount(0)
+
+    await page.evaluate(() => {
+      const scroller = document.querySelector<HTMLElement>('.cm-scroller')
+      if (!scroller) throw new Error('Missing editor scroller')
+      scroller.scrollTop = 40
+      scroller.dispatchEvent(new Event('scroll'))
+    })
+    await expect(toolbar).toBeVisible()
+    await expect(toolbar).toHaveCount(0, { timeout: 2_000 })
   })
 
   test('keeps block actions floating above long wrapped text', async ({ page }) => {
@@ -636,6 +665,7 @@ test.describe('editor text selection shortcuts', () => {
 
     await loadFixture(page, content)
     await clickLine(page, '本周目标')
+    await hoverEditorTopRight(page)
 
     const layout = await page.evaluate(() => {
       const toolbar = document.querySelector<HTMLElement>('.block-toolbar')?.getBoundingClientRect()
@@ -670,7 +700,7 @@ test.describe('editor text selection shortcuts', () => {
     await clickLine(page, 'line 01')
 
     const toolbar = page.locator('.block-toolbar')
-    await expect(toolbar).toBeVisible()
+    await expect(toolbar).toHaveCount(0)
 
     await page.evaluate(() => {
       const scroller = document.querySelector<HTMLElement>('.cm-scroller')
