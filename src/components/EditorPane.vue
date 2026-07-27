@@ -405,6 +405,48 @@ const selectionRightFill = ViewPlugin.fromClass(class {
   }
 })
 
+const editorScrollTail = ViewPlugin.fromClass(class {
+  readonly view: EditorView
+  private frame = 0
+  private resizeObserver: ResizeObserver
+
+  constructor(view: EditorView) {
+    this.view = view
+    this.resizeObserver = new ResizeObserver(() => this.schedule())
+    this.resizeObserver.observe(view.scrollDOM)
+    this.schedule()
+  }
+
+  update(update: ViewUpdate) {
+    if (update.docChanged || update.viewportChanged || update.geometryChanged) {
+      this.schedule()
+    }
+  }
+
+  destroy() {
+    if (this.frame) window.cancelAnimationFrame(this.frame)
+    this.resizeObserver.disconnect()
+  }
+
+  private schedule() {
+    if (this.frame) return
+    this.frame = window.requestAnimationFrame(() => this.measure())
+  }
+
+  private measure() {
+    this.frame = 0
+    const finalLine = this.view.viewport.to >= this.view.state.doc.length
+      ? Array.from(this.view.contentDOM.querySelectorAll<HTMLElement>('.cm-line:not(.block-delimiter-line)')).at(-1)
+      : null
+    const finalLineHeight = finalLine?.getBoundingClientRect().height || this.view.defaultLineHeight
+    const tailHeight = Math.max(0, this.view.scrollDOM.clientHeight - finalLineHeight)
+    const value = `${tailHeight}px`
+    if (this.view.dom.style.getPropertyValue('--editor-scroll-tail') !== value) {
+      this.view.dom.style.setProperty('--editor-scroll-tail', value)
+    }
+  }
+})
+
 function syncSearchDecorations() {
   if (!view) return
   view.dispatch({
@@ -683,7 +725,7 @@ function mountEditor() {
           overflowX: 'hidden',
         },
         '.cm-content': {
-          padding: '0 0 120px 0',
+          padding: '0 0 var(--editor-scroll-tail, 120px) 0',
         },
         '.cm-line': {
           padding: '1px 10px',
@@ -731,6 +773,7 @@ function mountEditor() {
         },
       }),
       selectionRightFill,
+      editorScrollTail,
       blockField,
       searchDecorationField,
       flowMapField,

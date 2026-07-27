@@ -768,6 +768,44 @@ test.describe('editor text selection shortcuts', () => {
     await expect(bottomJump).toBeHidden({ timeout: 2200 })
   })
 
+  test('allows the final block to scroll to the top of the editor viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 })
+    const created = '2026-07-27T10:00:00.000Z'
+    const precedingLines = Array.from(
+      { length: 120 },
+      (_, index) => `preceding line ${String(index + 1).padStart(3, '0')}`,
+    )
+    const content = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
+      `---block:markdown;auto=1;created=${created}`,
+      ...precedingLines,
+      `---block:markdown;auto=1;created=${created}`,
+      'final block anchor',
+    ].join('\n')}`
+
+    await loadFixture(page, content)
+
+    const maximumScroll = await page.evaluate(async () => {
+      const scroller = document.querySelector<HTMLElement>('.cm-scroller')
+      if (!scroller) throw new Error('Missing editor scroller')
+      for (let frame = 0; frame < 6; frame += 1) {
+        scroller.scrollTop = scroller.scrollHeight
+        scroller.dispatchEvent(new Event('scroll'))
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+      }
+      return scroller.scrollHeight - scroller.clientHeight
+    })
+    expect(maximumScroll).toBeGreaterThan(500)
+    await expect(page.locator('.cm-line', { hasText: 'final block anchor' })).toBeVisible()
+
+    await expect.poll(() => page.evaluate(() => {
+      const scroller = document.querySelector<HTMLElement>('.cm-scroller')
+      const finalLine = Array.from(document.querySelectorAll<HTMLElement>('.cm-line'))
+        .find(line => line.textContent === 'final block anchor')
+      if (!scroller || !finalLine) return Number.POSITIVE_INFINITY
+      return Math.abs(Math.round(finalLine.getBoundingClientRect().top - scroller.getBoundingClientRect().top))
+    })).toBeLessThanOrEqual(8)
+  })
+
   test('supports editor font size shortcuts without page zoom', async ({ page }) => {
     await loadFixture(page)
 
