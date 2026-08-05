@@ -58,7 +58,6 @@ import {
   type ScratchBlock,
 } from '../editor/blocks'
 import { activeImageLineField, richDecorations, setActiveImageLine } from '../editor/richDecorations'
-import { flowMapField } from '../editor/flowMaps'
 import {
   findEditorSearchMatches,
   searchDecorationField,
@@ -776,7 +775,6 @@ function mountEditor() {
       editorScrollTail,
       blockField,
       searchDecorationField,
-      flowMapField,
       blockDecorations,
       blockGutterDecorations,
       EditorView.editorAttributes.compute([blockField], state => {
