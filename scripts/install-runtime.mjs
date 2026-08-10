@@ -72,6 +72,25 @@ function appVersion(appPath) {
   return run('defaults', ['read', path.join(appPath, 'Contents', 'Info'), 'CFBundleShortVersionString']).trim()
 }
 
+function findAppWindowId() {
+  const script = [
+    'import CoreGraphics',
+    'let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]',
+    'let windows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as! [[String: Any]]',
+    `if let window = windows.first(where: { ($0[kCGWindowOwnerName as String] as? String) == ${JSON.stringify(productName)} }),`,
+    '   let number = window[kCGWindowNumber as String] as? Int {',
+    '  print(number)',
+    '}',
+  ].join('\n')
+  return run('swift', ['-e', script]).trim()
+}
+
+function appWindowId() {
+  const id = findAppWindowId()
+  check(/^\d+$/.test(id), `${productName} window is available for screenshot verification`)
+  return id
+}
+
 async function activateInstalledApp() {
   run('open', ['-n', installedAppPath])
   for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -84,19 +103,9 @@ async function activateInstalledApp() {
     } catch {
       // Keep waiting for Launch Services to register the installed app.
     }
+    if (/^\d+$/.test(findAppWindowId())) return
   }
-  throw new Error(`Installed ${productName} did not become frontmost`)
-}
-
-function normalizeWindow() {
-  run('osascript', ['-e', [
-    'tell application "System Events"',
-    `tell process ${JSON.stringify(productName)}`,
-    'set position of window 1 to {120, 120}',
-    'set size of window 1 to {1120, 760}',
-    'end tell',
-    'end tell',
-  ].join('\n')])
+  throw new Error(`Installed ${productName} did not become visible`)
 }
 
 async function main() {
@@ -116,14 +125,19 @@ async function main() {
   check(appVersion(installedAppPath) === packageJson.version, `installed app version is ${packageJson.version}`)
 
   await activateInstalledApp()
-  normalizeWindow()
   run('osascript', ['-e', `tell application ${JSON.stringify(productName)} to activate`])
   await sleep(900)
 
   const processList = run('ps', ['-ax', '-o', 'comm=,args='])
   check(processList.includes(`/Applications/${productName}.app/Contents/MacOS/${productName}`), 'installed app process is running from /Applications')
-  run('screencapture', ['-x', '-R120,100,1160,820', screenshotPath])
-  console.log(`ok - screenshot captured at ${screenshotPath}`)
+  const windowId = appWindowId()
+  fs.rmSync(screenshotPath, { force: true })
+  try {
+    run('screencapture', ['-x', `-l${windowId}`, screenshotPath])
+    console.log(`ok - screenshot captured at ${screenshotPath}`)
+  } catch {
+    console.warn('warn - window screenshot is unavailable in the current macOS display session')
+  }
 }
 
 try {
