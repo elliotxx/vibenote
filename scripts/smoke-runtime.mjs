@@ -1,141 +1,51 @@
-import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PackagedAppHarness, noteContent } from './lib/packaged-app-harness.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const productName = packageJson.build.productName
 const releaseArch = process.env.VIBENOTE_RELEASE_ARCH || 'arm64'
 const appBundlePath = path.join(root, 'dist', `mac-${releaseArch}`, `${productName}.app`)
-const streamPath = path.join(os.homedir(), 'Library', 'Application Support', productName, 'notes', 'stream.txt')
-const screenshotPath = path.join(os.tmpdir(), 'vibenote-runtime-smoke.png')
 const marker = `runtime-smoke-${Date.now()}`
-let backup = null
-
-function run(command, args, options = {}) {
-  return execFileSync(command, args, { cwd: root, encoding: 'utf8', ...options })
-}
-
-function runShell(script) {
-  return execFileSync('/bin/zsh', ['-lc', script], { cwd: root, encoding: 'utf8' })
-}
+const primary = process.platform === 'darwin' ? 'Meta' : 'Control'
 
 function check(condition, message) {
-  if (!condition) {
-    throw new Error(message)
-  }
+  if (!condition) throw new Error(message)
   console.log(`ok - ${message}`)
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
+const harness = new PackagedAppHarness({
+  appBundlePath,
+  initialContent: noteContent([
+    { language: 'markdown', auto: true, content: '' },
+  ]),
+})
 
-async function paste(text) {
-  run('osascript', ['-e', `tell application ${JSON.stringify(productName)} to activate`])
-  await sleep(150)
-  runShell(`printf %s ${JSON.stringify(text)} | pbcopy`)
-  run('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down'])
-  await sleep(250)
-}
-
-async function keyCode(code, modifiers) {
-  const modifierText = modifiers.length ? ` using {${modifiers.join(', ')}}` : ''
-  run('osascript', ['-e', `tell application "System Events" to key code ${code}${modifierText}`])
-  await sleep(250)
-}
-
-function frontmostProcessName() {
-  try {
-    return run('osascript', ['-e', 'tell application "System Events" to name of first process whose frontmost is true'], { stdio: ['ignore', 'pipe', 'ignore'] }).trim()
-  } catch {
-    return ''
-  }
-}
-
-async function activateApp() {
-  run('open', ['-n', appBundlePath])
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    await sleep(300)
-    try {
-      run('osascript', ['-e', `tell application ${JSON.stringify(productName)} to activate`])
-      await sleep(150)
-      if (frontmostProcessName() === productName) return
-    } catch {
-      // Keep waiting for Launch Services to register the app.
-    }
-  }
-  throw new Error(`${productName} did not become frontmost; frontmost process is ${frontmostProcessName()}`)
-}
-
-function quitApp() {
-  try {
-    run('osascript', ['-e', `tell application ${JSON.stringify(productName)} to quit`])
-  } catch {
-    // The app may have already quit.
-  }
-}
-
-async function waitForAppToExit() {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    try {
-      run('pgrep', ['-x', productName], { stdio: ['ignore', 'pipe', 'ignore'] })
-    } catch {
-      return
-    }
-    await sleep(200)
-  }
-  throw new Error(`${productName} did not exit before runtime verification setup`)
-}
-
-async function main() {
+try {
   check(fs.existsSync(appBundlePath), `packaged app exists at ${appBundlePath}`)
-  quitApp()
-  await waitForAppToExit()
-  if (fs.existsSync(streamPath)) {
-    backup = fs.readFileSync(streamPath)
-  }
-  fs.mkdirSync(path.dirname(streamPath), { recursive: true })
-  fs.writeFileSync(
-    streamPath,
-    `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n---block:markdown;auto=1;created=2026-07-03T00:00:00.000Z\n`,
-  )
+  const page = await harness.launch()
+  check(await page.locator('.cm-editor').count() === 1, `${productName} starts in headless verification mode`)
 
-  await activateApp()
-  console.log(`ok - ${productName} accepted activation before keyboard smoke`)
+  await page.locator('.cm-content').click({ position: { x: 24, y: 24 } })
+  await page.keyboard.insertText(`${marker}-one`)
+  await page.keyboard.press(`${primary}+Enter`)
+  await page.keyboard.insertText(`${marker}-two`)
+  await page.keyboard.press('Alt+Enter')
+  await page.keyboard.insertText(`${marker}-before`)
 
-  await paste(`${marker}-one`)
-  await keyCode(36, ['command down'])
-  await paste(`${marker}-two`)
-  await keyCode(36, ['option down'])
-  await paste(`${marker}-before`)
-  await sleep(1000)
-
-  run('screencapture', ['-x', '-R300,80,1280,820', screenshotPath])
-  console.log(`ok - screenshot captured at ${screenshotPath}`)
-
-  const content = fs.readFileSync(streamPath, 'utf8')
   const markerVariants = [`${marker}-one`, `${marker}-two`, `${marker}-before`]
-  const markerCount = markerVariants.filter(value => content.includes(value)).length
+  const content = await harness.waitForStream(
+    value => markerVariants.every(item => value.includes(item)),
+    'Runtime smoke text was not persisted',
+  )
   const blockCount = (content.match(/---block:/g) || []).length
   const markerBlocks = content.split(/---block:[^\n]+\n/).filter(block => markerVariants.some(value => block.includes(value)))
-  check(markerCount === markerVariants.length, 'runtime smoke text was saved')
   check(blockCount >= 3, 'runtime shortcuts create separate blocks')
   check(markerBlocks.length >= 3, 'runtime shortcut markers are distributed across blocks')
   check(!content.includes(`${marker}-before---block:`), 'block-before shortcut keeps delimiters on separate lines')
-}
-
-try {
-  await main()
   console.log('Runtime smoke verification completed.')
 } finally {
-  quitApp()
-  await waitForAppToExit()
-  if (backup) {
-    fs.mkdirSync(path.dirname(streamPath), { recursive: true })
-    fs.writeFileSync(streamPath, backup)
-    console.log('ok - note stream file restored after smoke verification')
-  }
+  await harness.cleanup()
 }

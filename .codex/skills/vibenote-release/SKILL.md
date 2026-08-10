@@ -62,16 +62,17 @@ Resolve resource paths relative to this skill folder.
      npm run verify:edges
      npm run verify:install
      ```
+   - These commands must run through the packaged-app harness in headless verification mode:
+     - Keep every Electron window hidden and hide the macOS Dock icon.
+     - Use an isolated temporary `VIBENOTE_USER_DATA_DIR`.
+     - Do not use AppleScript, global keyboard input, the clipboard, screenshots, or the user's real note stream.
+     - Fail if any application window becomes visible.
    - Stop on any failure. Do not tag a failed build.
 
-5. **Manual dogfood gate**
-   - Verify the DMG installs into the macOS Applications folder.
-   - Launch the app.
-   - Enter test content, quit, relaunch, and confirm persistence.
-   - Confirm data remains under:
-     ```sh
-     $HOME/Library/Application Support/Vibenote/notes/stream.txt
-     ```
+5. **Optional visible dogfood**
+   - The automated install gate must copy the DMG build into the macOS Applications folder, launch it hidden, edit isolated test content, quit, relaunch, and confirm persistence.
+   - Run a visible foreground dogfood pass only when the user explicitly requests it or when a headless gate exposes a UI issue that requires visual diagnosis.
+   - Never use the user's real note stream for automated release verification.
    - Confirm the app does not read, migrate, or modify Heynote data.
 
 6. **Publish by pushing the version tag**
@@ -101,7 +102,7 @@ Stop before tagging or publishing if any of these are true:
 - `npm run release:mac` fails locally or in GitHub Actions.
 - Any required verification fails.
 - `SHA256SUMS` is missing or does not validate.
-- Manual dogfood finds launch, edit, save, quit, relaunch, or persistence issues.
+- Automated packaged-app verification finds launch, edit, save, quit, relaunch, visibility, isolation, or persistence issues.
 
 ## Final Response Requirements
 

@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PackagedAppHarness, noteContent } from './lib/packaged-app-harness.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
@@ -10,7 +10,6 @@ const productName = packageJson.build.productName
 const releaseArch = process.env.VIBENOTE_RELEASE_ARCH || 'arm64'
 const dmgPath = path.join(root, 'dist', `${productName}-${packageJson.version}-${releaseArch}.dmg`)
 const installedAppPath = `/Applications/${productName}.app`
-const screenshotPath = path.join(os.tmpdir(), 'vibenote-install-smoke.png')
 let mountedPath = null
 
 function run(command, args, options = {}) {
@@ -22,37 +21,11 @@ function check(condition, message) {
   console.log(`ok - ${message}`)
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-function quitApp() {
-  try {
-    run('osascript', ['-e', `tell application ${JSON.stringify(productName)} to quit`])
-  } catch {
-    // The app may not be running.
-  }
-}
-
-async function waitForAppToExit() {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    try {
-      run('pgrep', ['-x', productName], { stdio: ['ignore', 'pipe', 'ignore'] })
-    } catch {
-      return
-    }
-    await sleep(200)
-  }
-  throw new Error(`${productName} did not exit before install verification setup`)
-}
-
 function mountDmg() {
   const output = run('hdiutil', ['attach', dmgPath, '-nobrowse', '-readonly'])
   const mountLine = output.split('\n').find(line => line.includes('/Volumes/'))
   const match = mountLine?.match(/(\/Volumes\/.*)$/)
-  if (!match) {
-    throw new Error(`Could not find mounted volume in hdiutil output:\n${output}`)
-  }
+  if (!match) throw new Error(`Could not find mounted volume in hdiutil output:\n${output}`)
   mountedPath = match[1].trim()
   return mountedPath
 }
@@ -72,47 +45,9 @@ function appVersion(appPath) {
   return run('defaults', ['read', path.join(appPath, 'Contents', 'Info'), 'CFBundleShortVersionString']).trim()
 }
 
-function findAppWindowId() {
-  const script = [
-    'import CoreGraphics',
-    'let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]',
-    'let windows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as! [[String: Any]]',
-    `if let window = windows.first(where: { ($0[kCGWindowOwnerName as String] as? String) == ${JSON.stringify(productName)} }),`,
-    '   let number = window[kCGWindowNumber as String] as? Int {',
-    '  print(number)',
-    '}',
-  ].join('\n')
-  return run('swift', ['-e', script]).trim()
-}
-
-function appWindowId() {
-  const id = findAppWindowId()
-  check(/^\d+$/.test(id), `${productName} window is available for screenshot verification`)
-  return id
-}
-
-async function activateInstalledApp() {
-  run('open', ['-n', installedAppPath])
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    await sleep(300)
-    try {
-      run('osascript', ['-e', `tell application ${JSON.stringify(productName)} to activate`])
-      await sleep(150)
-      const frontmost = run('osascript', ['-e', 'tell application "System Events" to name of first process whose frontmost is true'], { stdio: ['ignore', 'pipe', 'ignore'] }).trim()
-      if (frontmost === productName) return
-    } catch {
-      // Keep waiting for Launch Services to register the installed app.
-    }
-    if (/^\d+$/.test(findAppWindowId())) return
-  }
-  throw new Error(`Installed ${productName} did not become visible`)
-}
-
-async function main() {
+let harness = null
+try {
   check(fs.existsSync(dmgPath), `DMG exists at ${dmgPath}`)
-  quitApp()
-  await waitForAppToExit()
-
   const mountPath = mountDmg()
   const appInDmg = path.join(mountPath, `${productName}.app`)
   check(fs.existsSync(appInDmg), `DMG contains ${productName}.app`)
@@ -121,30 +56,19 @@ async function main() {
   fs.rmSync(installedAppPath, { recursive: true, force: true })
   run('ditto', [appInDmg, installedAppPath])
   console.log(`ok - installed app copied to ${installedAppPath}`)
-
   check(appVersion(installedAppPath) === packageJson.version, `installed app version is ${packageJson.version}`)
 
-  await activateInstalledApp()
-  run('osascript', ['-e', `tell application ${JSON.stringify(productName)} to activate`])
-  await sleep(900)
-
-  const processList = run('ps', ['-ax', '-o', 'comm=,args='])
-  check(processList.includes(`/Applications/${productName}.app/Contents/MacOS/${productName}`), 'installed app process is running from /Applications')
-  const windowId = appWindowId()
-  fs.rmSync(screenshotPath, { force: true })
-  try {
-    run('screencapture', ['-x', `-l${windowId}`, screenshotPath])
-    console.log(`ok - screenshot captured at ${screenshotPath}`)
-  } catch {
-    console.warn('warn - window screenshot is unavailable in the current macOS display session')
-  }
-}
-
-try {
-  await main()
+  harness = new PackagedAppHarness({
+    appBundlePath: installedAppPath,
+    initialContent: noteContent([
+      { language: 'markdown', auto: true, content: 'headless install verification' },
+    ]),
+  })
+  const page = await harness.launch()
+  check(harness.processPath() === path.join(installedAppPath, 'Contents', 'MacOS', productName), 'installed app process runs from /Applications')
+  check(await page.locator('.cm-content').textContent() === 'headless install verification', 'installed app renders isolated verification content')
   console.log('Install runtime verification completed.')
 } finally {
-  quitApp()
-  await waitForAppToExit()
+  await harness?.cleanup()
   detachDmg()
 }

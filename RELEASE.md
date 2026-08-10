@@ -59,7 +59,8 @@ Acceptance criteria:
 
 - The DMG, bundled icon, version metadata, preload, renderer assets, and ripgrep runtime are present.
 - The DMG mounts and contains `Vibenote.app` plus an `Applications` symlink.
-- The packaged app launches as the frontmost app.
+- Packaged-app verification runs headlessly with every application window hidden.
+- Runtime verification uses an isolated temporary user-data directory and never modifies the user's real note stream.
 - Text pasted into the editor is saved.
 - Runtime text input persists valid block structure.
 - Rapid quit preserves long pasted content.
@@ -68,9 +69,11 @@ Acceptance criteria:
 - Formatting invalid JSON preserves the original content and block structure.
 - The DMG-installed `/Applications/Vibenote.app` launches from `/Applications`.
 
-### Manual Dogfood Gate
+The automated gates do not use AppleScript, global keyboard input, the system clipboard, or screenshots, so they can run without interrupting other desktop work.
 
-Use the installed app for normal note capture before tagging a release:
+### Optional Visible Dogfood
+
+Run this only when a visible UI check is explicitly needed:
 
 - Paste and edit Markdown, JSON, JavaScript or TypeScript, Python, and SQL snippets.
 - Quit and relaunch several times.
@@ -138,7 +141,7 @@ rm -rf "$HOME/Library/Application Support/Vibenote"
 Publish a version only when:
 
 - The full verification suite passes.
-- One short dogfood pass finds no data-loss or launch issues.
+- The headless packaged-app gates find no data-loss, launch, isolation, or visibility issues.
 - `SHA256SUMS` has been generated.
 - The tester warning and install instructions are included wherever the DMG is shared.
 - The tag-driven GitHub Actions release workflow passes.

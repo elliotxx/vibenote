@@ -8,6 +8,7 @@ import { rgPath } from '@vscode/ripgrep'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL) || !app.isPackaged
+const isHeadlessVerification = process.env.VIBENOTE_HEADLESS_VERIFY === '1'
 const APP_NAME = 'vibenote'
 const STREAM_FILE = 'stream.txt'
 
@@ -1155,6 +1156,7 @@ function createWindow() {
     title: 'Vibenote',
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#f5f6f8',
+    show: !isHeadlessVerification,
     ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -1392,7 +1394,11 @@ function startSearch(query) {
 }
 
 app.whenReady().then(async () => {
-  applyRuntimeIcon()
+  if (isHeadlessVerification && process.platform === 'darwin' && app.dock) {
+    app.dock.hide()
+  } else {
+    applyRuntimeIcon()
+  }
   const userDataPath = app.getPath('userData')
   const basePath = path.join(userDataPath, 'notes')
   library = new FileLibrary(basePath, userDataPath)
@@ -1408,21 +1414,23 @@ app.whenReady().then(async () => {
   })
   setupApplicationMenu()
   createWindow()
-  globalShortcut.register('CommandOrControl+Shift+Space', () => {
-    if (!mainWindow) return
-    if (mainWindow.isVisible() && mainWindow.isFocused()) {
-      mainWindow.hide()
-    } else {
-      mainWindow.show()
-      mainWindow.focus()
-    }
-  })
-  globalShortcut.register('CommandOrControl+Shift+D', () => {
-    sendEditorCommandWhenFocused('block:delete')
-  })
-  globalShortcut.register('Ctrl+Shift+D', () => {
-    sendEditorCommandWhenFocused('block:delete')
-  })
+  if (!isHeadlessVerification) {
+    globalShortcut.register('CommandOrControl+Shift+Space', () => {
+      if (!mainWindow) return
+      if (mainWindow.isVisible() && mainWindow.isFocused()) {
+        mainWindow.hide()
+      } else {
+        mainWindow.show()
+        mainWindow.focus()
+      }
+    })
+    globalShortcut.register('CommandOrControl+Shift+D', () => {
+      sendEditorCommandWhenFocused('block:delete')
+    })
+    globalShortcut.register('Ctrl+Shift+D', () => {
+      sendEditorCommandWhenFocused('block:delete')
+    })
+  }
 })
 
 app.on('open-file', (event, filePath) => {

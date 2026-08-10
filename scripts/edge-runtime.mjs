@@ -1,184 +1,65 @@
-import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PackagedAppHarness, noteContent } from './lib/packaged-app-harness.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const productName = packageJson.build.productName
 const releaseArch = process.env.VIBENOTE_RELEASE_ARCH || 'arm64'
 const appBundlePath = path.join(root, 'dist', `mac-${releaseArch}`, `${productName}.app`)
-const streamPath = path.join(os.homedir(), 'Library', 'Application Support', productName, 'notes', 'stream.txt')
-const screenshotPath = path.join(os.tmpdir(), 'vibenote-edge-smoke.png')
 const marker = `edge-smoke-${Date.now()}`
-let backup = null
-
-function run(command, args, options = {}) {
-  return execFileSync(command, args, { cwd: root, encoding: 'utf8', ...options })
-}
+const primary = process.platform === 'darwin' ? 'Meta' : 'Control'
 
 function check(condition, message) {
   if (!condition) throw new Error(message)
   console.log(`ok - ${message}`)
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-function note(blocks) {
-  return [
-    JSON.stringify({ formatVersion: '1.0.0', name: 'Stream', cursors: null, foldedRanges: [] }),
-    ...blocks.map((block, index) => [
-      `---block:${block.language};auto=${block.auto ? '1' : '0'};created=2026-06-30T00:00:0${index}.000Z`,
-      block.content,
-    ].join('\n')),
-  ].join('\n')
-}
-
 function blockCount(content) {
   return (content.match(/---block:/g) || []).length
 }
 
-function frontmostProcessName() {
-  try {
-    return run('osascript', ['-e', 'tell application "System Events" to name of first process whose frontmost is true'], { stdio: ['ignore', 'pipe', 'ignore'] }).trim()
-  } catch {
-    return ''
-  }
-}
-
-function quitApp() {
-  try {
-    run('osascript', ['-e', `tell application ${JSON.stringify(productName)} to quit`])
-  } catch {
-    // The app may not be running.
-  }
-}
-
-async function waitForAppToExit() {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    try {
-      run('pgrep', ['-x', productName])
-    } catch {
-      return
-    }
-    await sleep(200)
-  }
-  throw new Error(`${productName} did not exit before verification setup`)
-}
-
-async function activateApp() {
-  run('open', ['-n', appBundlePath])
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    await sleep(300)
-    try {
-      run('osascript', ['-e', `tell application ${JSON.stringify(productName)} to activate`])
-      await sleep(150)
-      if (frontmostProcessName() === productName) {
-        normalizeWindow()
-        // Frontmost is reported before the renderer is consistently ready to
-        // accept pointer and keyboard events on slower packaged-app launches.
-        await sleep(900)
-        return
-      }
-    } catch {
-      // Keep waiting for Launch Services to register the app.
-    }
-  }
-  throw new Error(`${productName} did not become frontmost; frontmost process is ${frontmostProcessName()}`)
-}
-
-function normalizeWindow() {
-  run('osascript', ['-e', [
-    'tell application "System Events"',
-    `tell process ${JSON.stringify(productName)}`,
-    'set position of window 1 to {80, 90}',
-    'set size of window 1 to {980, 700}',
-    'end tell',
-    'end tell',
-  ].join('\n')])
-}
-
-async function focusEditor() {
-  run('osascript', ['-e', [
-    'tell application "System Events"',
-    `tell process ${JSON.stringify(productName)}`,
-    'set windowPosition to position of window 1',
-    'set clickX to (item 1 of windowPosition) + 180',
-    'set clickY to (item 2 of windowPosition) + 120',
-    'click at {clickX, clickY}',
-    'end tell',
-    'end tell',
-  ].join('\n')])
-  await sleep(150)
-}
-
-async function keyStroke(key, modifiers) {
-  const modifierText = modifiers.length ? ` using {${modifiers.join(', ')}}` : ''
-  run('osascript', ['-e', `tell application "System Events" to keystroke ${JSON.stringify(key)}${modifierText}`])
-  await sleep(250)
-}
-
-async function verifyDeleteEdges() {
-  fs.writeFileSync(streamPath, note([
+const harness = new PackagedAppHarness({
+  appBundlePath,
+  initialContent: noteContent([
     { language: 'markdown', auto: true, content: `${marker}-delete` },
     { language: 'markdown', auto: true, content: `${marker}-keep` },
-  ]))
-  await activateApp()
-  await focusEditor()
-  await sleep(1200)
-  await keyStroke('d', ['command down', 'shift down'])
-  await sleep(900)
-
-  let content = fs.readFileSync(streamPath, 'utf8')
-  check(content.includes(`${marker}-keep`), 'delete keeps the non-active block')
-  check(!content.includes(`${marker}-delete`), 'delete removes the active block')
-  check(blockCount(content) === 1, 'delete persists exactly one remaining block')
-
-  await keyStroke('d', ['command down', 'shift down'])
-  await sleep(700)
-  content = fs.readFileSync(streamPath, 'utf8')
-  check(content.includes(`${marker}-keep`), 'delete refuses to remove the final block')
-  check(blockCount(content) === 1, 'final-block delete leaves block structure intact')
-  quitApp()
-  await waitForAppToExit()
-}
-
-async function verifyInvalidFormatEdge() {
-  const invalidJson = `{"${marker}": true`
-  fs.writeFileSync(streamPath, note([
-    { language: 'json', auto: false, content: invalidJson },
-  ]))
-  await activateApp()
-  await keyStroke('f', ['option down', 'shift down'])
-  await sleep(900)
-  const content = fs.readFileSync(streamPath, 'utf8')
-  check(content.includes(invalidJson), 'invalid JSON format attempt preserves original content')
-  check(blockCount(content) === 1, 'invalid format attempt preserves block structure')
-  run('screencapture', ['-x', '-R300,80,1280,820', screenshotPath])
-  console.log(`ok - screenshot captured at ${screenshotPath}`)
-}
-
-async function main() {
-  check(fs.existsSync(appBundlePath), `packaged app exists at ${appBundlePath}`)
-  if (fs.existsSync(streamPath)) backup = fs.readFileSync(streamPath)
-  fs.mkdirSync(path.dirname(streamPath), { recursive: true })
-  quitApp()
-  await waitForAppToExit()
-  await verifyDeleteEdges()
-  await verifyInvalidFormatEdge()
-}
+  ]),
+})
 
 try {
-  await main()
+  check(fs.existsSync(appBundlePath), `packaged app exists at ${appBundlePath}`)
+  let page = await harness.launch()
+  await page.locator('.cm-line').filter({ hasText: `${marker}-delete` }).click()
+  await page.keyboard.press(`${primary}+Shift+d`)
+
+  let content = await harness.waitForStream(
+    value => !value.includes(`${marker}-delete`),
+    'Current block deletion was not persisted',
+  )
+  check(content.includes(`${marker}-keep`), 'delete keeps the non-active block')
+  check(blockCount(content) === 1, 'delete persists exactly one remaining block')
+
+  await page.keyboard.press(`${primary}+Shift+d`)
+  await page.waitForTimeout(500)
+  content = harness.readStream()
+  check(content.includes(`${marker}-keep`), 'delete refuses to remove the final block')
+  check(blockCount(content) === 1, 'final-block delete leaves block structure intact')
+
+  await harness.stop()
+  const invalidJson = `{"${marker}": true`
+  harness.seedStream(noteContent([
+    { language: 'json', auto: false, content: invalidJson },
+  ]))
+  page = await harness.launch()
+  await page.locator('.cm-line').filter({ hasText: marker }).click()
+  await page.keyboard.press('Alt+Shift+f')
+  await page.waitForTimeout(500)
+  content = harness.readStream()
+  check(content.includes(invalidJson), 'invalid JSON format attempt preserves original content')
+  check(blockCount(content) === 1, 'invalid format attempt preserves block structure')
   console.log('Edge runtime verification completed.')
 } finally {
-  quitApp()
-  await waitForAppToExit()
-  if (backup) {
-    fs.writeFileSync(streamPath, backup)
-    console.log('ok - note stream file restored after edge verification')
-  }
+  await harness.cleanup()
 }
