@@ -115,12 +115,6 @@ async function focusEditor() {
   await sleep(150)
 }
 
-async function keyCode(code, modifiers) {
-  const modifierText = modifiers.length ? ` using {${modifiers.join(', ')}}` : ''
-  run('osascript', ['-e', `tell application "System Events" to key code ${code}${modifierText}`])
-  await sleep(250)
-}
-
 async function keyStroke(key, modifiers) {
   const modifierText = modifiers.length ? ` using {${modifiers.join(', ')}}` : ''
   run('osascript', ['-e', `tell application "System Events" to keystroke ${JSON.stringify(key)}${modifierText}`])
@@ -129,13 +123,12 @@ async function keyStroke(key, modifiers) {
 
 async function verifyDeleteEdges() {
   fs.writeFileSync(streamPath, note([
-    { language: 'markdown', auto: true, content: `${marker}-keep` },
     { language: 'markdown', auto: true, content: `${marker}-delete` },
+    { language: 'markdown', auto: true, content: `${marker}-keep` },
   ]))
   await activateApp()
   await focusEditor()
   await sleep(1200)
-  await keyCode(125, ['command down'])
   await keyStroke('d', ['command down', 'shift down'])
   await sleep(900)
 
