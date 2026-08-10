@@ -116,6 +116,21 @@ async function hoverEditorTopRight(page: Page) {
   await page.mouse.move(point.x, point.y)
 }
 
+async function hoverBlockTopRight(page: Page, text: string) {
+  const point = await page.evaluate((text) => {
+    const host = document.querySelector<HTMLElement>('.editor-host')
+    const line = Array.from(document.querySelectorAll<HTMLElement>('.cm-line'))
+      .find(element => (element.textContent || '').includes(text))
+    if (!host || !line) return null
+    const hostRect = host.getBoundingClientRect()
+    const lineRect = line.getBoundingClientRect()
+    return { x: hostRect.right - 24, y: lineRect.top + 12 }
+  }, text)
+
+  if (!point) throw new Error(`Block line not found: ${text}`)
+  await page.mouse.move(point.x, point.y)
+}
+
 async function copySelection(page: Page) {
   await page.evaluate(() => navigator.clipboard.writeText(''))
   await page.keyboard.press(`${modifier}+C`)
@@ -653,6 +668,32 @@ test.describe('editor text selection shortcuts', () => {
     })
     await expect(toolbar).toBeVisible()
     await expect(toolbar).toHaveCount(0, { timeout: 2_000 })
+  })
+
+  test('reveals block actions from the active block top-right corner', async ({ page }) => {
+    await loadFixture(page)
+    await clickLine(page, '2 + 2 * 10')
+
+    const toolbar = page.locator('.block-toolbar')
+    await expect(toolbar).toHaveCount(0)
+
+    await hoverBlockTopRight(page, '2 + 2 * 10')
+    await expect(toolbar).toBeVisible()
+
+    const [toolbarBox, hostBox] = await Promise.all([
+      toolbar.boundingBox(),
+      page.locator('.editor-host').boundingBox(),
+    ])
+    expect(toolbarBox).not.toBeNull()
+    expect(hostBox).not.toBeNull()
+    expect(toolbarBox!.y).toBeGreaterThan(hostBox!.y + 88)
+
+    await page.mouse.move(
+      toolbarBox!.x + toolbarBox!.width / 2,
+      toolbarBox!.y + toolbarBox!.height / 2,
+    )
+    await page.waitForTimeout(300)
+    await expect(toolbar).toBeVisible()
   })
 
   test('keeps block actions floating above long wrapped text', async ({ page }) => {

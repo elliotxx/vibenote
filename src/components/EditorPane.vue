@@ -1904,14 +1904,10 @@ function updateBlockToolbar(editor: EditorView | null) {
     return
   }
 
-  const line = editor.state.doc.lineAt(block.content.from)
-  const coords = editor.coordsAtPos(line.from)
   const hostRect = editorHost.value.getBoundingClientRect()
-  const stickyTop = 8
-  const blockStartTop = coords ? coords.top - hostRect.top + 4 : stickyTop
   blockToolbar.value = {
     visible: true,
-    top: blockToolbarPointerActive.value ? stickyTop : Math.max(stickyTop, blockStartTop),
+    top: blockToolbarTop(editor, block, hostRect),
   }
 }
 
@@ -1937,10 +1933,23 @@ function onEditorHostMouseMove(event: MouseEvent) {
 }
 
 function isBlockToolbarHotZone(clientX: number, clientY: number) {
-  if (!editorHost.value) return false
+  if (!editorHost.value || !view) return false
   const rect = editorHost.value.getBoundingClientRect()
+  const block = activeBlock(view.state)
+  if (!block) return false
+  const top = rect.top + blockToolbarTop(view, block, rect)
   return clientX >= rect.right - BLOCK_TOOLBAR_HOT_ZONE_WIDTH
-    && clientY <= rect.top + BLOCK_TOOLBAR_HOT_ZONE_HEIGHT
+    && clientX <= rect.right
+    && clientY >= top
+    && clientY <= Math.min(rect.bottom, top + BLOCK_TOOLBAR_HOT_ZONE_HEIGHT)
+}
+
+function blockToolbarTop(editor: EditorView, block: ScratchBlock, hostRect: DOMRect) {
+  const line = editor.state.doc.lineAt(block.content.from)
+  const coords = editor.coordsAtPos(line.from)
+  const stickyTop = 8
+  const blockStartTop = coords ? coords.top - hostRect.top + 4 : stickyTop
+  return Math.max(stickyTop, blockStartTop)
 }
 
 function isBlockToolbarRevealArea(clientX: number, clientY: number) {
