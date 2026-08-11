@@ -1636,7 +1636,7 @@ select:focus {
   border-top: 1px solid var(--line-soft);
 }
 
-.settings-section:nth-child(3) {
+.settings-section-wide {
   grid-column: 1 / -1;
 }
 
@@ -1706,12 +1706,55 @@ select:focus {
   white-space: nowrap;
 }
 
+.settings-description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.git-repository-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.git-repository-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-backup-state {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 6px;
+  padding: 9px 10px;
+  color: var(--ink-soft);
+  background: var(--surface-control);
+  font-size: 12px;
+}
+
+.git-backup-state.error {
+  color: var(--danger, #b42318);
+}
+
 @media (max-width: 620px) {
   .settings-sections {
     grid-template-columns: 1fr;
   }
 
-  .settings-section:nth-child(3) {
+  .settings-section-wide {
     grid-column: auto;
+  }
+
+  .git-backup-state {
+    flex-direction: column;
+    gap: 4px;
   }
 }

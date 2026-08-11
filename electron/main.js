@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { rgPath } from '@vscode/ripgrep'
+import { GitBackupManager } from './gitBackup.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL) || !app.isPackaged
@@ -20,9 +21,13 @@ if (process.env.VIBENOTE_USER_DATA_DIR) {
 let mainWindow = null
 let library = null
 let aiSettings = null
+let gitBackup = null
 let currentSearch = null
 let pendingOpenBuffer = null
+let quitFlushPromise = null
+let quitFlushComplete = false
 const pendingOpenFiles = []
+const quitFlushAcks = new Map()
 
 function runtimeIconPath() {
   const candidate = app.isPackaged
@@ -392,6 +397,7 @@ class FileLibrary {
     this.backups = new BackupManager(userDataPath)
     this.externalDocuments = new Map()
     this.loaded = new Map()
+    this.onInternalChange = () => {}
   }
 
   async init() {
@@ -574,6 +580,7 @@ class FileLibrary {
     }
     await writeAtomic(filePath, content)
     this.loaded.set(identifier, content)
+    if (document.kind === 'internal') this.onInternalChange()
     return true
   }
 
@@ -589,6 +596,7 @@ class FileLibrary {
     }
     writeAtomicSync(filePath, content)
     this.loaded.set(identifier, content)
+    if (document.kind === 'internal') this.onInternalChange()
     return true
   }
 
@@ -622,6 +630,7 @@ class FileLibrary {
       fileName = `${base}-${counter++}.txt`
     }
     await writeAtomic(path.join(this.basePath, fileName), initialContent(name))
+    this.onInternalChange()
     return fileName
   }
 
@@ -634,6 +643,7 @@ class FileLibrary {
     }
     await fs.promises.unlink(safeJoin(this.basePath, relativePath))
     this.loaded.delete(relativePath)
+    this.onInternalChange()
     return true
   }
 
@@ -684,6 +694,7 @@ class FileLibrary {
     await fs.promises.mkdir(imagesPath, { recursive: true })
     const filePath = path.join(imagesPath, fileName)
     await fs.promises.writeFile(filePath, Buffer.from(data))
+    if (this.documentRecord(documentPath).kind === 'internal') this.onInternalChange()
     return filePath
   }
 
@@ -1404,6 +1415,18 @@ app.whenReady().then(async () => {
   library = new FileLibrary(basePath, userDataPath)
   aiSettings = new AiSettingsStore(userDataPath)
   await library.init()
+  gitBackup = new GitBackupManager({
+    userDataPath,
+    notesPath: basePath,
+    appVersion: app.getVersion(),
+    onStatusChanged(status) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('git-backup:status-changed', status)
+      }
+    },
+  })
+  library.onInternalChange = () => gitBackup?.markDirty()
+  await gitBackup.init()
   for (const filePath of pendingOpenFiles.splice(0)) {
     pendingOpenBuffer = await library.openExternalPath(filePath)
   }
@@ -1444,6 +1467,37 @@ app.on('open-file', (event, filePath) => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
+  gitBackup?.stop()
+})
+
+app.on('before-quit', event => {
+  if (quitFlushComplete || !gitBackup?.getSettings().enabled) return
+  event.preventDefault()
+  if (quitFlushPromise) return
+  const deadlineAt = Date.now() + 5_000
+  quitFlushPromise = (async () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const requestId = crypto.randomUUID()
+      const rendererBudget = Math.max(0, Math.min(1_000, deadlineAt - Date.now()))
+      const acknowledged = new Promise(resolve => {
+        const timeout = setTimeout(() => {
+          quitFlushAcks.delete(requestId)
+          resolve(false)
+        }, rendererBudget)
+        quitFlushAcks.set(requestId, () => {
+          clearTimeout(timeout)
+          quitFlushAcks.delete(requestId)
+          resolve(true)
+        })
+      })
+      mainWindow.webContents.send('app:flush-before-quit', requestId)
+      await acknowledged
+    }
+    await gitBackup.flushForQuit(deadlineAt)
+  })().finally(() => {
+    quitFlushComplete = true
+    app.quit()
+  })
 })
 
 app.on('window-all-closed', () => {
@@ -1495,6 +1549,20 @@ ipcMain.handle('settings:get', () => nativeTheme.themeSource)
 ipcMain.handle('settings:setTheme', (_event, theme) => {
   nativeTheme.themeSource = theme
   return true
+})
+ipcMain.handle('git-backup:getSettings', () => gitBackup.getSettings())
+ipcMain.handle('git-backup:getStatus', () => gitBackup.getStatus())
+ipcMain.handle('git-backup:chooseRepository', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose Git backup repository',
+    properties: ['openDirectory', 'createDirectory'],
+  })
+  if (result.canceled || result.filePaths.length === 0) return gitBackup.getSettings()
+  return gitBackup.configureRepository(result.filePaths[0])
+})
+ipcMain.handle('git-backup:setEnabled', (_event, enabled) => gitBackup.setEnabled(Boolean(enabled)))
+ipcMain.on('app:flush-before-quit-complete', (_event, requestId) => {
+  quitFlushAcks.get(String(requestId))?.()
 })
 ipcMain.handle('ai:getSettings', () => aiSettings.readSettings())
 ipcMain.handle('ai:saveSettings', (_event, settings) => aiSettings.saveSettings(settings))

@@ -48,6 +48,25 @@ contextBridge.exposeInMainWorld('vibenote', {
     getTheme: () => ipcRenderer.invoke('settings:get'),
     setTheme: theme => ipcRenderer.invoke('settings:setTheme', theme),
   },
+  gitBackup: {
+    getSettings: () => ipcRenderer.invoke('git-backup:getSettings'),
+    getStatus: () => ipcRenderer.invoke('git-backup:getStatus'),
+    chooseRepository: () => ipcRenderer.invoke('git-backup:chooseRepository'),
+    setEnabled: enabled => ipcRenderer.invoke('git-backup:setEnabled', enabled),
+    onStatusChanged: callback => {
+      const listener = (_event, status) => callback(status)
+      ipcRenderer.on('git-backup:status-changed', listener)
+      return () => ipcRenderer.removeListener('git-backup:status-changed', listener)
+    },
+  },
+  lifecycle: {
+    onFlushBeforeQuit: callback => {
+      const listener = (_event, requestId) => callback(requestId)
+      ipcRenderer.on('app:flush-before-quit', listener)
+      return () => ipcRenderer.removeListener('app:flush-before-quit', listener)
+    },
+    confirmFlushBeforeQuit: requestId => ipcRenderer.send('app:flush-before-quit-complete', requestId),
+  },
   ai: {
     getSettings: () => ipcRenderer.invoke('ai:getSettings'),
     saveSettings: settings => ipcRenderer.invoke('ai:saveSettings', settings),

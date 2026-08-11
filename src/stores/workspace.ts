@@ -22,6 +22,7 @@ const defaultAiSettings: AiSettings = {
 }
 
 let unsubscribeOpenedBuffer: (() => void) | null = null
+let unsubscribeGitBackupStatus: (() => void) | null = null
 
 export const useWorkspaceStore = defineStore('workspace', () => {
   const buffers = ref<BufferInfo[]>([])
@@ -29,6 +30,24 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const currentContent = ref('')
   const searchResults = ref<SearchResult[]>([])
   const recoveries = ref<RecoveryInfo[]>([])
+  const gitBackupSettings = ref<GitBackupSettings>({
+    version: 1,
+    enabled: false,
+    repositoryPath: null,
+    repositoryInitializedByApp: false,
+  })
+  const gitBackupStatus = ref<GitBackupStatus>({
+    version: 1,
+    lastAttemptAt: null,
+    lastExportAt: null,
+    lastCommitAt: null,
+    lastPushAt: null,
+    lastCommitHash: null,
+    lastResult: 'disabled',
+    lastErrorCode: null,
+    lastErrorMessage: null,
+    pushPending: false,
+  })
   const settings = reactive<Settings>({
     theme: 'light',
     fontSize: 13,
@@ -51,6 +70,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       settings.ai = { ...defaultAiSettings, ...parsed.ai, hasApiKey: false }
     }
     settings.ai = { ...settings.ai, ...(await window.vibenote.ai.getSettings()) }
+    try {
+      gitBackupSettings.value = await window.vibenote.gitBackup.getSettings()
+      gitBackupStatus.value = await window.vibenote.gitBackup.getStatus()
+      if (!unsubscribeGitBackupStatus) {
+        unsubscribeGitBackupStatus = window.vibenote.gitBackup.onStatusChanged(status => {
+          gitBackupStatus.value = status
+        })
+      }
+    } catch {
+      // Git backup is optional; note loading and saving must remain available.
+    }
     watchOpenedBuffers()
     await refreshBuffers()
     localStorage.removeItem('vibenote:openTabs')
@@ -234,12 +264,26 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return window.vibenote.ai.complete(payload)
   }
 
+  async function chooseGitBackupRepository() {
+    gitBackupSettings.value = await window.vibenote.gitBackup.chooseRepository()
+    gitBackupStatus.value = await window.vibenote.gitBackup.getStatus()
+    return gitBackupSettings.value
+  }
+
+  async function setGitBackupEnabled(enabled: boolean) {
+    gitBackupSettings.value = await window.vibenote.gitBackup.setEnabled(enabled)
+    gitBackupStatus.value = await window.vibenote.gitBackup.getStatus()
+    return gitBackupSettings.value
+  }
+
   return {
     buffers,
     currentPath,
     currentContent,
     searchResults,
     recoveries,
+    gitBackupSettings,
+    gitBackupStatus,
     settings,
     bufferTitle,
     init,
@@ -264,5 +308,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     clearAiApiKey,
     testAiConnection,
     completeWithAi,
+    chooseGitBackupRepository,
+    setGitBackupEnabled,
   }
 })

@@ -88,6 +88,26 @@ type RecoveryContent = RecoveryInfo & {
   content: string
 }
 
+type GitBackupSettings = {
+  version: number
+  enabled: boolean
+  repositoryPath: string | null
+  repositoryInitializedByApp: boolean
+}
+
+type GitBackupStatus = {
+  version: number
+  lastAttemptAt: string | null
+  lastExportAt: string | null
+  lastCommitAt: string | null
+  lastPushAt: string | null
+  lastCommitHash: string | null
+  lastResult: string
+  lastErrorCode: string | null
+  lastErrorMessage: string | null
+  pushPending: boolean
+}
+
 interface Window {
   vibenote: {
     buffer: {
@@ -122,6 +142,17 @@ interface Window {
     settings: {
       getTheme(): Promise<string>
       setTheme(theme: string): Promise<boolean>
+    }
+    gitBackup: {
+      getSettings(): Promise<GitBackupSettings>
+      getStatus(): Promise<GitBackupStatus>
+      chooseRepository(): Promise<GitBackupSettings>
+      setEnabled(enabled: boolean): Promise<GitBackupSettings>
+      onStatusChanged(callback: (status: GitBackupStatus) => void): () => void
+    }
+    lifecycle: {
+      onFlushBeforeQuit(callback: (requestId: string) => void): () => void
+      confirmFlushBeforeQuit(requestId: string): void
     }
     ai: {
       getSettings(): Promise<AiSettings>

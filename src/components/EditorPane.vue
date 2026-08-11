@@ -163,6 +163,7 @@ let scrollJumpFrame: number | null = null
 let lastEditorScrollTop = 0
 let lastEditorScrollTime = 0
 let unsubscribeEditorCommand: (() => void) | null = null
+let unsubscribeQuitFlush: (() => void) | null = null
 let editorBufferPath: string | null = null
 const EDITOR_FONT_MIN = 11
 const EDITOR_FONT_MAX = 48
@@ -243,6 +244,13 @@ const statusTone = computed(() => {
 onMounted(() => {
   mountEditor()
   unsubscribeEditorCommand = window.vibenote.commands.onEditorCommand(onEditorCommand)
+  unsubscribeQuitFlush = window.vibenote.lifecycle.onFlushBeforeQuit(requestId => {
+    try {
+      flushSaveSync()
+    } finally {
+      window.vibenote.lifecycle.confirmFlushBeforeQuit(requestId)
+    }
+  })
   window.addEventListener('vibenote:goto-line', onGotoLine as EventListener)
   window.addEventListener('keydown', onWindowKeydown)
   window.addEventListener('focus', onWindowFocus)
@@ -263,6 +271,8 @@ onBeforeUnmount(() => {
   editorScrollElement = null
   unsubscribeEditorCommand?.()
   unsubscribeEditorCommand = null
+  unsubscribeQuitFlush?.()
+  unsubscribeQuitFlush = null
   window.removeEventListener('vibenote:goto-line', onGotoLine as EventListener)
   window.removeEventListener('keydown', onWindowKeydown)
   window.removeEventListener('focus', onWindowFocus)

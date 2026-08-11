@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { X } from 'lucide-vue-next'
 import EditorPane from './components/EditorPane.vue'
 import { useWorkspaceStore } from './stores/workspace'
@@ -9,6 +9,7 @@ const showSettings = ref(false)
 const apiKeyDraft = ref('')
 const apiKeyStatus = ref('')
 const connectionStatus = ref('')
+const gitBackupMessage = ref('')
 
 const aiProviderDefaults = {
   openai: {
@@ -98,6 +99,56 @@ async function testConnection() {
     connectionStatus.value = `连接失败：${localizeMessage(errorMessage(error))}`
   }
 }
+
+const gitRepositoryLabel = computed(() => {
+  const configured = store.gitBackupSettings.repositoryPath
+  if (!configured) return '尚未选择仓库'
+  return configured.split(/[\\/]/).filter(Boolean).at(-1) || '已选择 Git 仓库'
+})
+
+const gitBackupStatusLabel = computed(() => {
+  if (gitBackupMessage.value) return gitBackupMessage.value
+  if (store.gitBackupStatus.lastErrorMessage) return store.gitBackupStatus.lastErrorMessage
+  const labels: Record<string, string> = {
+    disabled: '自动备份已关闭',
+    ready: '仓库已就绪',
+    'no-changes': '内容已是最新',
+    'committed-local': '已创建本地快照提交',
+    pushed: '已安全推送',
+    'push-failed': '本地提交已保留，推送失败',
+    'push-manual-required': '本地提交已保留，请手动检查远端',
+    'repository-unavailable': '备份仓库不可用',
+    'mirror-conflict': '备份快照被外部修改，已停止更新',
+    conflict: 'Git 仓库存在未解决操作',
+    'identity-missing': '请先配置 Git 用户名和邮箱',
+  }
+  return labels[store.gitBackupStatus.lastResult] || '等待下一次快照'
+})
+
+const gitBackupTimeLabel = computed(() => {
+  const timestamp = store.gitBackupStatus.lastPushAt || store.gitBackupStatus.lastCommitAt || store.gitBackupStatus.lastExportAt
+  if (!timestamp) return '尚无快照记录'
+  return `最近更新：${new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(timestamp))}`
+})
+
+async function chooseGitRepository() {
+  gitBackupMessage.value = ''
+  try {
+    await store.chooseGitBackupRepository()
+  } catch (error) {
+    gitBackupMessage.value = localizeMessage(errorMessage(error))
+  }
+}
+
+async function toggleGitBackup(event: Event) {
+  const enabled = (event.target as HTMLInputElement).checked
+  gitBackupMessage.value = ''
+  try {
+    await store.setGitBackupEnabled(enabled)
+  } catch (error) {
+    gitBackupMessage.value = localizeMessage(errorMessage(error))
+  }
+}
 </script>
 
 <template>
@@ -174,7 +225,30 @@ async function testConnection() {
             </label>
           </section>
 
-          <section class="settings-section">
+          <section class="settings-section settings-section-wide">
+            <h3>Git 自动备份</h3>
+            <p class="settings-description">每 5 分钟将内部笔记导出为单向快照。原始笔记目录仍是唯一数据来源。</p>
+            <label class="checkbox-label">
+              <input
+                :checked="store.gitBackupSettings.enabled"
+                type="checkbox"
+                :disabled="!store.gitBackupSettings.repositoryPath"
+                @change="toggleGitBackup"
+              />
+              启用自动快照与安全推送
+            </label>
+            <div class="git-repository-row">
+              <button class="secondary-button" @click="chooseGitRepository">选择 Git 仓库</button>
+              <span class="git-repository-name" :title="gitRepositoryLabel">{{ gitRepositoryLabel }}</span>
+            </div>
+            <div class="git-backup-state" :class="{ error: store.gitBackupStatus.lastErrorCode || gitBackupMessage }">
+              <span>{{ gitBackupStatusLabel }}</span>
+              <span>{{ gitBackupTimeLabel }}</span>
+            </div>
+            <p class="settings-description">仅提交 Vibenote 管理的快照路径；远端不安全或需要人工判断时只保留本地提交。</p>
+          </section>
+
+          <section class="settings-section settings-section-wide">
             <h3>AI</h3>
             <label class="checkbox-label">
               <input v-model="store.settings.ai.enabled" type="checkbox" @change="store.saveSettings" />

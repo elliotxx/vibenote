@@ -42,6 +42,7 @@ The first release focuses on a minimal capture loop: one window, one buffer, pla
 - Current-block formatting.
 - Local image storage for pasted images, referenced from the text stream.
 - Autosave plus synchronous save on quit.
+- Optional one-way Git snapshot backup for internal notes and referenced images.
 - macOS global show/hide shortcut.
 - Isolated app data; Vibenote does not read, migrate, or modify Heynote data.
 
@@ -107,6 +108,14 @@ Vibenote uses its own Electron `userData` directory:
 $HOME/Library/Application Support/Vibenote/notes/stream.txt
 $HOME/Library/Application Support/Vibenote/notes/.images/
 ```
+
+### Optional Git snapshot backup
+
+Open Settings, choose a dedicated Git repository, then enable Git backup. Vibenote exports a verified snapshot every five minutes and creates commits only for `.vibenote-backup.json` and `vibenote-backup/`. The active `userData/notes` directory remains the single source of truth; the repository is a derived, one-way backup and is never read back into the app.
+
+An empty selected directory can be initialized automatically. For an existing repository, configure the Git author identity yourself. With no remote, commits stay local. Vibenote pushes only when one unambiguous remote and a safe upstream baseline are available; otherwise it preserves the local commit and asks for manual attention. It never manages branches, remotes, or credentials and never runs history-changing or synchronization commands such as pull, merge, rebase, reset, checkout, or clean.
+
+The exported `vibenote-backup/manifest.json` records document and asset hashes. For manual recovery, inspect and verify that manifest, then copy the required exported text or images to a separate safe location. Vibenote intentionally has no automatic import or restore UI.
 
 Uninstall the app:
 
@@ -184,6 +193,9 @@ GitHub Actions builds the macOS arm64 DMG, verifies `SHA256SUMS`, and creates a 
 npm run build
 npm run verify:package
 npm run verify:runtime
+npm run verify:git-backup-export
+npm run verify:git-backup-module
+npm run verify:git-backup
 npm run verify:stability
 npm run verify:edges
 npm run verify:install

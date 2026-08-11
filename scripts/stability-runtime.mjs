@@ -46,6 +46,8 @@ try {
 
   page = await harness.launch()
   await page.locator('.cm-content').waitFor({ state: 'attached' })
+  await page.locator('.cm-content').click()
+  await page.keyboard.press('Meta+Home')
   const reloadedText = await page.locator('.cm-content').textContent()
   check(reloadedText?.includes(`${marker}-start`), 'relaunch loads the persisted payload into the editor')
   check(harness.readStream().includes(`${marker}-end`), 'relaunch preserves the complete payload on disk')

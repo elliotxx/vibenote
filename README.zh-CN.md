@@ -42,6 +42,7 @@ Vibenote 是一个面向 macOS 的本地纯文本笔记应用。它把所有内�
 - 当前 block 格式化。
 - 粘贴图片后保存到本地应用数据目录，并在正文中引用。
 - 自动保存和退出前同步保存。
+- 可选的内部笔记与引用图片单向 Git 快照备份。
 - macOS 全局显示/隐藏快捷键。
 - 本地应用数据隔离，不读取、迁移或修改 Heynote 数据。
 
@@ -107,6 +108,14 @@ Vibenote 使用独立的 Electron `userData` 目录：
 $HOME/Library/Application Support/Vibenote/notes/stream.txt
 $HOME/Library/Application Support/Vibenote/notes/.images/
 ```
+
+### 可选 Git 快照备份
+
+在设置中选择一个专用 Git 仓库，再开启 Git 自动备份。Vibenote 每 5 分钟导出一次经过校验的快照，并且只提交 `.vibenote-backup.json` 和 `vibenote-backup/`。活动数据仍以 `userData/notes` 为唯一事实来源；Git 仓库只是单向派生备份，应用不会从仓库反向读取或导入。
+
+所选空目录可以由应用初始化。已有仓库需要用户自行配置 Git 作者身份。没有 remote 时提交只保留在本地；只有单一明确 remote 和安全 upstream 基线同时成立时才会自动 push，否则保留本地提交并提示人工处理。Vibenote 不管理分支、remote 或凭据，也不会执行 pull、merge、rebase、reset、checkout、clean 等同步或历史改写命令。
+
+导出的 `vibenote-backup/manifest.json` 记录文档和图片哈希。需要人工恢复时，应先检查并验证 manifest，再把所需文本或图片复制到另一个安全位置。Vibenote 暂不提供自动导入或恢复界面。
 
 卸载应用：
 

@@ -3,6 +3,8 @@ import { formatInitialContent } from './common/noteFormat'
 const STORAGE_KEY = 'vibenote:mock-buffers'
 const AI_SETTINGS_KEY = 'vibenote:mock-ai-settings'
 const RECOVERIES_KEY = 'vibenote:mock-recoveries'
+const GIT_BACKUP_SETTINGS_KEY = 'vibenote:mock-git-backup-settings'
+const GIT_BACKUP_STATUS_KEY = 'vibenote:mock-git-backup-status'
 
 let mockApiKey = ''
 
@@ -10,6 +12,7 @@ type MockBuffer = BufferInfo & { content: string }
 type BufferOpenedCallback = (buffer: BufferInfo | null) => void
 
 const openedCallbacks = new Set<BufferOpenedCallback>()
+const gitBackupStatusCallbacks = new Set<(status: GitBackupStatus) => void>()
 
 function toBufferInfo(buffer: MockBuffer): BufferInfo {
   const { content, ...info } = buffer
@@ -60,6 +63,39 @@ function readMockAiSettings(): AiSettings {
     hasApiKey: Boolean(mockApiKey),
     keyStorage: mockApiKey ? 'local-fallback' : 'none',
   }
+}
+
+function readMockGitBackupSettings(): GitBackupSettings {
+  const stored = localStorage.getItem(GIT_BACKUP_SETTINGS_KEY)
+  return {
+    version: 1,
+    enabled: false,
+    repositoryPath: null,
+    repositoryInitializedByApp: false,
+    ...(stored ? JSON.parse(stored) : {}),
+  }
+}
+
+function readMockGitBackupStatus(): GitBackupStatus {
+  const stored = localStorage.getItem(GIT_BACKUP_STATUS_KEY)
+  return {
+    version: 1,
+    lastAttemptAt: null,
+    lastExportAt: null,
+    lastCommitAt: null,
+    lastPushAt: null,
+    lastCommitHash: null,
+    lastResult: 'disabled',
+    lastErrorCode: null,
+    lastErrorMessage: null,
+    pushPending: false,
+    ...(stored ? JSON.parse(stored) : {}),
+  }
+}
+
+function writeMockGitBackupStatus(status: GitBackupStatus) {
+  localStorage.setItem(GIT_BACKUP_STATUS_KEY, JSON.stringify(status))
+  for (const callback of gitBackupStatusCallbacks) callback(status)
 }
 
 export function installDevMock() {
@@ -212,6 +248,61 @@ export function installDevMock() {
       },
       async setTheme() {
         return true
+      },
+    },
+    gitBackup: {
+      async getSettings() {
+        return readMockGitBackupSettings()
+      },
+      async getStatus() {
+        return readMockGitBackupStatus()
+      },
+      async chooseRepository() {
+        const settings = {
+          ...readMockGitBackupSettings(),
+          repositoryPath: 'Demo Git repository',
+          repositoryInitializedByApp: true,
+        }
+        localStorage.setItem(GIT_BACKUP_SETTINGS_KEY, JSON.stringify(settings))
+        writeMockGitBackupStatus({
+          ...readMockGitBackupStatus(),
+          lastAttemptAt: new Date().toISOString(),
+          lastExportAt: new Date().toISOString(),
+          lastResult: 'ready',
+          lastErrorCode: null,
+          lastErrorMessage: null,
+        })
+        return settings
+      },
+      async setEnabled(enabled: boolean) {
+        const current = readMockGitBackupSettings()
+        if (enabled && !current.repositoryPath) throw new Error('Choose a Git repository first')
+        const settings = { ...current, enabled }
+        localStorage.setItem(GIT_BACKUP_SETTINGS_KEY, JSON.stringify(settings))
+        writeMockGitBackupStatus({
+          ...readMockGitBackupStatus(),
+          lastAttemptAt: enabled ? new Date().toISOString() : readMockGitBackupStatus().lastAttemptAt,
+          lastCommitAt: enabled ? new Date().toISOString() : readMockGitBackupStatus().lastCommitAt,
+          lastResult: enabled ? 'committed-local' : 'disabled',
+          lastErrorCode: null,
+          lastErrorMessage: null,
+          pushPending: false,
+        })
+        return settings
+      },
+      onStatusChanged(callback: (status: GitBackupStatus) => void) {
+        gitBackupStatusCallbacks.add(callback)
+        return () => gitBackupStatusCallbacks.delete(callback)
+      },
+    },
+    lifecycle: {
+      onFlushBeforeQuit(callback: (requestId: string) => void) {
+        const listener = (event: Event) => callback((event as CustomEvent<string>).detail)
+        window.addEventListener('vibenote:mock-flush-before-quit', listener)
+        return () => window.removeEventListener('vibenote:mock-flush-before-quit', listener)
+      },
+      confirmFlushBeforeQuit(requestId: string) {
+        window.dispatchEvent(new CustomEvent('vibenote:mock-flush-complete', { detail: requestId }))
       },
     },
     ai: {
