@@ -1,0 +1,33 @@
+name: Public safety
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  public-safety:
+    name: Public safety
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Check tracked content
+        env:
+          PUBLIC_SAFETY_BLOCKED_PATTERNS: ${{ secrets.PUBLIC_SAFETY_BLOCKED_PATTERNS }}
+        run: node scripts/public-safety-check.mjs --tracked
+
+      - name: Test public-safety checker
+        run: node --test scripts/public-safety-check.test.mjs

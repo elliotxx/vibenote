@@ -305,7 +305,7 @@ recovery + 覆盖前快照
 
 ### 真实远端认证兼容性
 
-本地 bare remote 可以闭环验证 push 逻辑，但不能证明所有 GitHub、GitLab、code-host、自建 SSH 或企业代理环境都可用。该项不阻塞本地实现和自动化验证；对外声明真实远端兼容前，需要用户选择一个真实远端完成 push，并提供远端 commit 页面或 `git ls-remote` 结果。
+本地 bare remote 可以闭环验证 push 逻辑，但不能证明所有公共或自建 Git 服务、SSH 配置及代理环境都可用。该项不阻塞本地实现和自动化验证；对外声明真实远端兼容前，需要用户选择一个真实远端完成 push，并提供远端 commit 页面或 `git ls-remote` 结果。
 
 ### 最终视觉接受度
 

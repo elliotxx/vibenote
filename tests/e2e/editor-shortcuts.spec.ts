@@ -700,7 +700,7 @@ test.describe('editor text selection shortcuts', () => {
     const created = '2026-07-01T10:38:41.565Z'
     const content = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
       `---block:markdown;auto=1;created=${created}`,
-      '本周目标：业务规模化 2人日（member-b1、member-c0.7、member-a0.3）、稳定性收敛 1人日（member-c0.3、member-a0.7）、评测+成本 1人日（member-d 1）',
+      '本周目标：功能交付 2 人日（成员甲 1、成员乙 0.7、成员丙 0.3）、稳定性收敛 1 人日（成员乙 0.3、成员丙 0.7）、评测与成本 1 人日（成员丁 1）',
       '2026.7.6-26.7.10',
     ].join('\n')}`
 

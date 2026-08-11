@@ -24,6 +24,9 @@
     "verify:runtime": "node scripts/smoke-runtime.mjs",
     "verify:data-safety": "node scripts/data-safety-runtime.mjs",
     "verify:ai-runtime": "node scripts/ai-runtime.mjs",
+    "verify:public-safety": "node scripts/public-safety-check.mjs",
+    "test:public-safety": "node --test scripts/public-safety-check.test.mjs",
+    "setup:hooks": "git config core.hooksPath .githooks",
     "verify:stability": "node scripts/stability-runtime.mjs",
     "verify:edges": "node scripts/edge-runtime.mjs",
     "verify:install": "node scripts/install-runtime.mjs"

@@ -709,8 +709,8 @@ test.describe('AI settings', () => {
 
   test('highlights only changed tokens in AI suggestion diffs', async ({ page }) => {
     await loadFixture(page, [
-      '申请 code-host service-alpha service-beta service-gamma 大账号权限 P0 @member-a',
-      '业务场景分类和打标，进一步打标 P3 @member-b token 消耗',
+      '申请 code-host project-alpha 权限 P0 <member-a>',
+      '业务场景分类和标记，进一步标记 P3 <member-b> token 消耗',
     ])
     await openSettings(page)
 
@@ -725,8 +725,8 @@ test.describe('AI settings', () => {
         ok: true,
         message: 'Polished note inserted',
         content: [
-          '申请 code-host、service-alpha、service-beta、service-gamma 大账号权限 P0 @member-a',
-          '业务场景分类和打标，继续推进 P3 @member-b，关注 token 消耗',
+          '申请 code-host、project-alpha 权限 P0 <member-a>',
+          '业务场景分类和标记，继续推进 P3 <member-b>，关注 token 消耗',
         ].join('\n'),
       })
     })
@@ -746,7 +746,7 @@ test.describe('AI settings', () => {
       }
     })
 
-    expect(diffState.sourceChangedText.join('')).toContain('进一步打标')
+    expect(diffState.sourceChangedText.join('')).toContain('进一步标记')
     expect(diffState.targetChangedText.join('')).toContain('继续推进')
     expect(diffState.targetFirstLineText).toContain('申请 code-host')
     expect(diffState.targetFirstLineChangedText).not.toContain('申请 code-host')
@@ -785,8 +785,8 @@ test.describe('AI settings', () => {
 
   test('scales the AI suggestion diff with editor font size', async ({ page }) => {
     await loadFixture(page, [
-      '申请 code-host service-alpha service-beta service-gamma 大账号权限 P0 @member-a',
-      '业务场景分类和打标，进一步打标 P3 @member-b token 消耗',
+      '申请 code-host project-alpha 权限 P0 <member-a>',
+      '业务场景分类和标记，进一步标记 P3 <member-b> token 消耗',
     ], { fontSize: 36 })
     await openSettings(page)
 
@@ -801,8 +801,8 @@ test.describe('AI settings', () => {
         ok: true,
         message: 'Polished note inserted',
         content: [
-          '申请 code-host、service-alpha、service-beta、service-gamma 大账号权限 P0 @member-a',
-          '业务场景分类和打标，继续推进 P3 @member-b，关注 token 消耗',
+          '申请 code-host、project-alpha 权限 P0 <member-a>',
+          '业务场景分类和标记，继续推进 P3 <member-b>，关注 token 消耗',
           '右侧最后一行需要完整展示',
         ].join('\n'),
       })
