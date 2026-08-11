@@ -58,6 +58,7 @@ import {
   type ScratchBlock,
 } from '../editor/blocks'
 import { activeImageLineField, richDecorations, setActiveImageLine } from '../editor/richDecorations'
+import { markdownStrongPreview } from '../editor/markdownStrongPreview'
 import {
   findEditorSearchMatches,
   searchDecorationField,
@@ -785,6 +786,7 @@ function mountEditor() {
       }),
       activeImageLineField,
       richDecorations,
+      markdownStrongPreview,
       protectDelimiters,
       delimiterChangeProtection,
       autoDetectPlugin,

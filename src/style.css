@@ -640,6 +640,11 @@ select:focus {
   font-weight: 700;
 }
 
+.tok-strong-marker {
+  color: var(--faint);
+  font-weight: 500;
+}
+
 .markdown-task-checkbox {
   appearance: none;
   display: inline-grid;

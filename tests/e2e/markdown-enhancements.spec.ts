@@ -41,6 +41,10 @@ async function savedContent(page: Page) {
   })
 }
 
+async function visibleLineText(page: Page, containing: string) {
+  return page.locator('.cm-line').filter({ hasText: containing }).first().innerText()
+}
+
 test.describe('markdown block writing enhancements', () => {
   test('highlights common markdown syntax while keeping the block as plain text', async ({ page }) => {
     const fixture = markdownFixture([
@@ -73,6 +77,10 @@ test.describe('markdown block writing enhancements', () => {
     await page.keyboard.press(`${modifier}+A`)
     await page.keyboard.press(`${modifier}+B`)
     await expect.poll(() => savedContent(page)).toContain('**bold text**')
+    await expect(page.locator('.tok-strong-marker')).toHaveCount(2)
+    await page.keyboard.press('End')
+    await expect(page.locator('.tok-strong-marker')).toHaveCount(0)
+    await expect(page.locator('.tok-strong')).toHaveText('bold text')
 
     await page.goto('about:blank')
     await loadFixture(page, markdownFixture(['italic text']))
@@ -99,6 +107,75 @@ test.describe('markdown block writing enhancements', () => {
     await clickLine(page, 'ordered me')
     await page.keyboard.press(`${modifier}+Shift+7`)
     await expect.poll(() => savedContent(page)).toContain('1. ordered me')
+  })
+
+  test('previews strong text and reveals only the fragments touched by the selection', async ({ page }) => {
+    const fixture = markdownFixture(['before **one** and **two** after'])
+    await loadFixture(page, fixture)
+
+    await expect(page.locator('.tok-strong')).toHaveCount(2)
+    await expect(page.locator('.tok-strong-marker')).toHaveCount(0)
+    await expect.poll(() => visibleLineText(page, 'before')).toBe('before one and two after')
+
+    await page.locator('.tok-strong').nth(1).click()
+    await expect(page.locator('.tok-strong-marker')).toHaveCount(2)
+    await expect.poll(() => visibleLineText(page, 'before')).toBe('before one and **two** after')
+
+    await page.keyboard.down('Alt')
+    await page.locator('.tok-strong').first().click()
+    await page.keyboard.up('Alt')
+    await expect(page.locator('.tok-strong-marker')).toHaveCount(4)
+    await expect.poll(() => visibleLineText(page, 'before')).toBe('before **one** and **two** after')
+
+    await page.keyboard.press('End')
+    await expect(page.locator('.tok-strong-marker')).toHaveCount(0)
+    await expect.poll(() => visibleLineText(page, 'before')).toBe('before one and two after')
+    await expect.poll(() => savedContent(page)).toBe(fixture)
+  })
+
+  test('keeps markdown source available to copy and search', async ({ context, page }) => {
+    const fixture = markdownFixture(['before **bold** after'])
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+      origin: 'http://127.0.0.1:3344',
+    })
+    await loadFixture(page, fixture)
+
+    await clickLine(page, 'before')
+    await page.keyboard.press(`${modifier}+A`)
+    await page.evaluate(() => navigator.clipboard.writeText(''))
+    await page.keyboard.press(`${modifier}+C`)
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('before **bold** after')
+
+    await page.keyboard.press(`${modifier}+F`)
+    await page.keyboard.type('**bold**')
+    await expect(page.locator('.editor-search-count')).toHaveText('1 / 1')
+    await expect.poll(() => savedContent(page)).toBe(fixture)
+  })
+
+  test('does not partially preview unsupported or non-markdown strong syntax', async ({ page }) => {
+    const created = '2026-07-02T09:00:00.000Z'
+    const fixture = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
+      `---block:markdown;auto=1;created=${created}`,
+      'valid **bold**',
+      '\\**escaped**',
+      '`**code**`',
+      '***triple***',
+      '__underscore__',
+      '**unclosed',
+      `---block:text;auto=0;created=${created}`,
+      '**plain block**',
+    ].join('\n')}`
+    await loadFixture(page, fixture)
+
+    await expect(page.locator('.tok-strong')).toHaveCount(1)
+    await expect.poll(() => visibleLineText(page, 'valid')).toBe('valid bold')
+    await expect.poll(() => visibleLineText(page, 'escaped')).toBe('\\**escaped**')
+    await expect.poll(() => visibleLineText(page, 'code')).toBe('`**code**`')
+    await expect.poll(() => visibleLineText(page, 'triple')).toBe('***triple***')
+    await expect.poll(() => visibleLineText(page, 'underscore')).toBe('__underscore__')
+    await expect.poll(() => visibleLineText(page, 'unclosed')).toBe('**unclosed')
+    await expect.poll(() => visibleLineText(page, 'plain block')).toBe('**plain block**')
+    await expect.poll(() => savedContent(page)).toBe(fixture)
   })
 
   test('continues and exits markdown lists from the Enter key', async ({ page }) => {

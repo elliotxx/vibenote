@@ -239,7 +239,6 @@ function syntaxPatterns(language: string): Array<[string, RegExp]> {
       ['tok-link', /(?<!!)\[[^\]\n]+]\((<[^>\n]+>|[^)\n]+)\)/g],
       ['tok-image', /!\[[^\]\n]*]\((<[^>\n]+>|[^)\n]+)\)/g],
       ['tok-inline-code', /`[^`\n]+`/g],
-      ['tok-strong', /\*\*[^*\n]+\*\*/g],
     ]
   }
   if (language === 'sql') {
