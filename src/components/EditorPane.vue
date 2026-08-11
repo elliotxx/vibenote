@@ -59,6 +59,7 @@ import {
 } from '../editor/blocks'
 import { activeImageLineField, richDecorations, setActiveImageLine } from '../editor/richDecorations'
 import { markdownStrongPreview } from '../editor/markdownStrongPreview'
+import { readCursorAnchor, validateCursorAnchor, writeCursorAnchor } from '../editor/cursorSession'
 import {
   findEditorSearchMatches,
   searchDecorationField,
@@ -150,6 +151,7 @@ let view: EditorView | null = null
 const indentationCompartment = new Compartment()
 let note: LoadedNote | null = null
 let saveTimer: number | null = null
+let cursorSaveTimer: number | null = null
 let aiStatusTimer: number | null = null
 let blockToolbarFrame: number | null = null
 let blockToolbarHideTimer: number | null = null
@@ -860,6 +862,9 @@ function mountEditor() {
           updateStatus(update.view)
           scheduleBlockToolbarUpdate(update.view)
         }
+        if (update.docChanged || update.selectionSet) {
+          scheduleCursorSave(update.view)
+        }
         if (update.selectionSet && searchVisible.value && searchScope.value === 'block') {
           scheduleSearchRefresh()
         }
@@ -873,7 +878,7 @@ function mountEditor() {
   lastEditorScrollTime = performance.now()
   editorScrollElement.addEventListener('scroll', onEditorScroll, { passive: true })
   applyEditorViewSettings(view)
-  moveCursorToEditableContent(view)
+  restoreCursorOrMoveToEditableContent(view)
   updateImageFocusClass(view)
   updateStatus(view)
   scheduleBlockToolbarUpdate(view)
@@ -895,6 +900,45 @@ function moveCursorToEditableContent(editor: EditorView) {
     selection: EditorSelection.cursor(firstBlock.content.from),
     effects: EditorView.scrollIntoView(firstBlock.content.from, { y: 'start' }),
   })
+}
+
+function restoreCursorOrMoveToEditableContent(editor: EditorView) {
+  const identifier = editorBufferPath
+  const blocks = editor.state.field(blockField)
+  const stored = identifier ? readCursorAnchor(window.localStorage, identifier) : null
+  const anchor = validateCursorAnchor(
+    stored,
+    editor.state.doc.length,
+    blocks.map(block => block.delimiter),
+  )
+  if (anchor === null) {
+    moveCursorToEditableContent(editor)
+    return
+  }
+  editor.dispatch({
+    selection: EditorSelection.cursor(anchor),
+    effects: EditorView.scrollIntoView(anchor, { y: 'center' }),
+  })
+}
+
+function scheduleCursorSave(editor: EditorView) {
+  if (cursorSaveTimer) window.clearTimeout(cursorSaveTimer)
+  const identifier = editorBufferPath
+  const anchor = editor.state.selection.main.head
+  cursorSaveTimer = window.setTimeout(() => {
+    cursorSaveTimer = null
+    if (identifier) writeCursorAnchor(window.localStorage, identifier, anchor)
+  }, 200)
+}
+
+function flushCursorSaveSync() {
+  if (cursorSaveTimer) {
+    window.clearTimeout(cursorSaveTimer)
+    cursorSaveTimer = null
+  }
+  if (view && editorBufferPath) {
+    writeCursorAnchor(window.localStorage, editorBufferPath, view.state.selection.main.head)
+  }
 }
 
 function focusEditorContent() {
@@ -2183,6 +2227,7 @@ function flushSave() {
 }
 
 function flushSaveSync() {
+  flushCursorSaveSync()
   if (!view || !note) return
   if (saveTimer) {
     window.clearTimeout(saveTimer)
