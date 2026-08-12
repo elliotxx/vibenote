@@ -1,5 +1,6 @@
 export type NoteMetadata = {
   formatVersion: string
+  id?: string
   name: string
   tags?: string[]
   cursors?: unknown
@@ -37,8 +38,22 @@ export function serializeNote(note: LoadedNote): string {
   })}\n${note.content}`
 }
 
-export function blockDelimiter(language: string, auto = false, date = new Date()): string {
-  return `\n---block:${language};auto=${auto ? '1' : '0'};created=${date.toISOString()}\n`
+export function blockDelimiter(
+  language: string,
+  auto = false,
+  date = new Date(),
+  preservedFields: Record<string, string> = {},
+): string {
+  const fields: Record<string, string> = {
+    ...preservedFields,
+    auto: auto ? '1' : '0',
+    created: date.toISOString(),
+  }
+  if (import.meta.env.VITE_VIBENOTE_BLOCK_IDS === '1' && !fields.id) {
+    fields.id = crypto.randomUUID()
+  }
+  const serialized = Object.entries(fields).map(([key, value]) => `;${key}=${value}`).join('')
+  return `\n---block:${language}${serialized}\n`
 }
 
 export function formatInitialContent(language = 'markdown'): string {

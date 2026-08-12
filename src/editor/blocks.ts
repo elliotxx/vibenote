@@ -4,15 +4,17 @@ import { blockDelimiter } from '../common/noteFormat'
 import { detectLanguage } from '../common/languages'
 
 export type ScratchBlock = {
+  id?: string
   language: string
   auto: boolean
   created?: string
+  fields: Record<string, string>
   delimiter: { from: number; to: number }
   content: { from: number; to: number }
   range: { from: number; to: number }
 }
 
-export const delimiterPattern = /(^|\n)---block:([a-z]+)(?:;auto=([01]))?(?:;created=([^\n;]+))?\n/g
+export const delimiterPattern = /(^|\n)---block:([^\n]+)\n/g
 export const internalBlockEdit = Annotation.define<boolean>()
 
 export function parseBlocks(doc: { length: number; sliceString(from: number, to?: number): string }): ScratchBlock[] {
@@ -23,12 +25,19 @@ export function parseBlocks(doc: { length: number; sliceString(from: number, to?
   }
   return matches.map((match, index) => {
     const next = matches[index + 1]
+    const [language, ...segments] = match[2].split(';')
+    const fields = Object.fromEntries(segments.map(segment => {
+      const equals = segment.indexOf('=')
+      return equals > 0 ? [segment.slice(0, equals), segment.slice(equals + 1)] : [segment, '']
+    }))
     const delimiterFrom = match.index! + (match[1] === '\n' ? 1 : 0)
     const delimiterTo = match.index! + match[0].length
     return {
-      language: match[2],
-      auto: match[3] === '1',
-      created: match[4],
+      id: fields.id,
+      language,
+      auto: fields.auto === '1',
+      created: fields.created,
+      fields,
       delimiter: { from: delimiterFrom, to: delimiterTo },
       content: { from: delimiterTo, to: next ? next.index! : doc.length },
       range: { from: delimiterFrom, to: next ? next.index! : doc.length },
@@ -254,7 +263,7 @@ export function splitCurrentBlock(view: EditorView, language: string, auto = fal
 }
 
 export function replaceBlockLanguage(view: EditorView, block: ScratchBlock, language: string, auto: boolean) {
-  const delimiter = blockDelimiter(language, auto, block.created ? new Date(block.created) : new Date()).trimStart()
+  const delimiter = blockDelimiter(language, auto, block.created ? new Date(block.created) : new Date(), block.fields).trimStart()
   view.dispatch({
     changes: { from: block.delimiter.from, to: block.delimiter.to, insert: delimiter },
     annotations: internalBlockEdit.of(true),

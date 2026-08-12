@@ -202,6 +202,9 @@ export function installDevMock() {
         openedCallbacks.add(callback)
         return () => openedCallbacks.delete(callback)
       },
+      onChanged() {
+        return () => {}
+      },
     },
     library: {
       async search(query: string) {

@@ -20,7 +20,7 @@ Vibenote 已经具备本地纯文本、block 边界、原子保存、recovery、
 - 每次实际写入都具备并发检查、幂等、快照、recovery 和原子替换。
 - 为未来 MCP 提供共享核心，但首版不实现 MCP。
 
-相关实施步骤见 [Agent 友好 CLI 实施计划](../plans/2026-08-12-agent-friendly-cli-implementation-plan.md)，竞品依据见 [Agent 友好型笔记工具调研](../research/2026-08-12-agent-friendly-note-tools.md)。
+相关实施步骤见 [Agent 友好 CLI 实施计划](../plans/2026-08-12-agent-friendly-cli-implementation-plan.md)，实现证据见 [Agent 友好 CLI 验收报告](../reports/2026-08-13-agent-friendly-cli-acceptance.md)，竞品依据见 [Agent 友好型笔记工具调研](../research/2026-08-12-agent-friendly-note-tools.md)。
 
 ## 现状与问题
 
@@ -141,8 +141,8 @@ Agent mutation 提交 `expectedRevision`：只有内容变化才发生冲突，�
 
 1. 获取锁；超时返回 `NOTE_BUSY`。
 2. 读取当前字节并计算 revision。
-3. 若调用方给出的 `expectedRevision` 不匹配当前内容 revision，返回 `REVISION_CONFLICT`，不写任何文件。
-4. 检查 idempotency 标记；命中时返回原结果，不重复追加。
+3. 检查 idempotency 标记；同 key 同请求直接重放，同 key 不同请求拒绝写入。该检查先于 revision，以便客户端在“写入成功但响应丢失”后安全重试。
+4. 未命中幂等记录时，若调用方给出的 `expectedRevision` 不匹配当前内容 revision，返回 `REVISION_CONFLICT`，不写任何文件。
 5. 计算候选内容并验证可重新解析。
 6. 创建旧内容 snapshot。
 7. 将候选内容写入 recovery。

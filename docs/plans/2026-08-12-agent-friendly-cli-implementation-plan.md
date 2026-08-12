@@ -6,6 +6,8 @@
 
 计划优先完成可自闭环的共享核心和 CLI。MCP、HTTP、外部文件、高风险 mutation、公开 PATH 安装和签名发布不进入本计划。
 
+源码 alpha 已于 2026-08-13 完成本计划的本地闭环，验证结果见 [Agent 友好 CLI 验收报告](../reports/2026-08-13-agent-friendly-cli-acceptance.md)。默认真实目录写入与新格式桌面写入仍保持 feature gate 关闭，等待公开启用决策。
+
 ## 阶段计划
 
 ### 阶段 1：冻结格式、响应与测试契约

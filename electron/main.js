@@ -6,6 +6,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { rgPath } from '@vscode/ripgrep'
 import { GitBackupManager } from './gitBackup.js'
+import { storageRevision } from '../core/noteFormat.js'
+import { NoteStore } from '../core/noteStore.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL) || !app.isPackaged
@@ -395,9 +397,14 @@ class FileLibrary {
     this.appImagesPath = path.join(userDataPath, 'images')
     this.externalRegistryPath = path.join(userDataPath, 'external-documents.json')
     this.backups = new BackupManager(userDataPath)
+    this.noteStore = new NoteStore({ userDataPath, appVersion: app.getVersion() })
     this.externalDocuments = new Map()
     this.loaded = new Map()
+    this.ignoredStorageRevisions = new Map()
+    this.noteWatcher = null
+    this.noteWatchTimers = new Map()
     this.onInternalChange = () => {}
+    this.onExternalInternalChange = () => {}
   }
 
   async init() {
@@ -427,6 +434,37 @@ class FileLibrary {
         console.warn('Failed to read external document registry', error)
       }
     }
+  }
+
+  startWatching() {
+    if (this.noteWatcher) return
+    this.noteWatcher = fs.watch(this.basePath, (_eventType, fileName) => {
+      const identifier = String(fileName || '')
+      if (!identifier.endsWith('.txt')) return
+      const existing = this.noteWatchTimers.get(identifier)
+      if (existing) clearTimeout(existing)
+      this.noteWatchTimers.set(identifier, setTimeout(async () => {
+        this.noteWatchTimers.delete(identifier)
+        try {
+          const record = await this.noteStore.readStorage({ identifier })
+          if (this.ignoredStorageRevisions.get(identifier) === record.storageRevision) {
+            this.ignoredStorageRevisions.delete(identifier)
+            return
+          }
+          this.onExternalInternalChange({ path: identifier, storageRevision: record.storageRevision })
+        } catch {
+          // The file may have moved before the watcher settled.
+        }
+      }, 100))
+    })
+    this.noteWatcher.unref()
+  }
+
+  stopWatching() {
+    this.noteWatcher?.close()
+    this.noteWatcher = null
+    for (const timer of this.noteWatchTimers.values()) clearTimeout(timer)
+    this.noteWatchTimers.clear()
   }
 
   async saveExternalRegistry() {
@@ -568,9 +606,32 @@ class FileLibrary {
     return content
   }
 
-  async save(identifier, content) {
+  async loadRecord(identifier) {
+    const document = this.documentRecord(identifier)
+    if (document.kind === 'internal') {
+      const record = await this.noteStore.readStorage({ identifier: document.identifier })
+      this.loaded.set(identifier, record.content)
+      return record
+    }
+    const content = await this.load(identifier)
+    return { content, storageRevision: storageRevision(content) }
+  }
+
+  async save(identifier, content, expectedStorageRevision) {
     const document = this.documentRecord(identifier)
     const filePath = document.filePath
+    if (document.kind === 'internal') {
+      const result = await this.noteStore.saveNote({
+        identifier: document.identifier,
+        content,
+        expectedStorageRevision,
+        acceptCurrent: expectedStorageRevision === undefined,
+      })
+      this.loaded.set(identifier, content)
+      this.ignoredStorageRevisions.set(document.identifier, result.storageRevision)
+      this.onInternalChange()
+      return result
+    }
     await this.backups.writeRecovery(document, content)
     if (fs.existsSync(filePath)) {
       const previous = await fs.promises.readFile(filePath, 'utf8')
@@ -581,12 +642,24 @@ class FileLibrary {
     await writeAtomic(filePath, content)
     this.loaded.set(identifier, content)
     if (document.kind === 'internal') this.onInternalChange()
-    return true
+    return { storageRevision: storageRevision(content) }
   }
 
-  saveSync(identifier, content) {
+  saveSync(identifier, content, expectedStorageRevision) {
     const document = this.documentRecord(identifier)
     const filePath = document.filePath
+    if (document.kind === 'internal') {
+      const result = this.noteStore.saveNoteSync({
+        identifier: document.identifier,
+        content,
+        expectedStorageRevision,
+        acceptCurrent: expectedStorageRevision === undefined,
+      })
+      this.loaded.set(identifier, content)
+      this.ignoredStorageRevisions.set(document.identifier, result.storageRevision)
+      this.onInternalChange()
+      return result
+    }
     this.backups.writeRecoverySync(document, content)
     if (fs.existsSync(filePath)) {
       const previous = fs.readFileSync(filePath, 'utf8')
@@ -597,7 +670,7 @@ class FileLibrary {
     writeAtomicSync(filePath, content)
     this.loaded.set(identifier, content)
     if (document.kind === 'internal') this.onInternalChange()
-    return true
+    return { storageRevision: storageRevision(content) }
   }
 
   async snapshot(identifier, content, reason = 'manual') {
@@ -1415,6 +1488,7 @@ app.whenReady().then(async () => {
   library = new FileLibrary(basePath, userDataPath)
   aiSettings = new AiSettingsStore(userDataPath)
   await library.init()
+  library.startWatching()
   gitBackup = new GitBackupManager({
     userDataPath,
     notesPath: basePath,
@@ -1426,6 +1500,9 @@ app.whenReady().then(async () => {
     },
   })
   library.onInternalChange = () => gitBackup?.markDirty()
+  library.onExternalInternalChange = change => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('buffer:changed', change)
+  }
   await gitBackup.init()
   for (const filePath of pendingOpenFiles.splice(0)) {
     pendingOpenBuffer = await library.openExternalPath(filePath)
@@ -1467,6 +1544,7 @@ app.on('open-file', (event, filePath) => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
+  library?.stopWatching()
   gitBackup?.stop()
 })
 
@@ -1496,7 +1574,13 @@ app.on('before-quit', event => {
     await gitBackup.flushForQuit(deadlineAt)
   })().finally(() => {
     quitFlushComplete = true
-    app.quit()
+    library?.stopWatching()
+    gitBackup?.stop()
+    if (isHeadlessVerification) {
+      app.exit(0)
+    } else {
+      app.quit()
+    }
   })
 })
 
@@ -1505,13 +1589,13 @@ app.on('window-all-closed', () => {
 })
 
 ipcMain.handle('buffer:list', () => library.list())
-ipcMain.handle('buffer:load', (_event, relativePath) => library.load(relativePath))
-ipcMain.handle('buffer:save', (_event, relativePath, content) => library.save(relativePath, content))
-ipcMain.on('buffer:saveSync', (event, relativePath, content) => {
+ipcMain.handle('buffer:load', (_event, relativePath) => library.loadRecord(relativePath))
+ipcMain.handle('buffer:save', (_event, relativePath, content, expectedStorageRevision) => library.save(relativePath, content, expectedStorageRevision))
+ipcMain.on('buffer:saveSync', (event, relativePath, content, expectedStorageRevision) => {
   try {
-    event.returnValue = { ok: library.saveSync(relativePath, content) }
+    event.returnValue = { ok: true, result: library.saveSync(relativePath, content, expectedStorageRevision) }
   } catch (error) {
-    event.returnValue = { ok: false, error: error instanceof Error ? error.message : String(error) }
+    event.returnValue = { ok: false, code: error?.code, recoveryId: error?.recoveryId, error: error instanceof Error ? error.message : String(error) }
   }
 })
 ipcMain.handle('buffer:snapshot', (_event, relativePath, content, reason) => library.snapshot(relativePath, content, reason))

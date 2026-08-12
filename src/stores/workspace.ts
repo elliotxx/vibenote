@@ -22,6 +22,7 @@ const defaultAiSettings: AiSettings = {
 }
 
 let unsubscribeOpenedBuffer: (() => void) | null = null
+let unsubscribeBufferChanged: (() => void) | null = null
 let unsubscribeGitBackupStatus: (() => void) | null = null
 
 export const useWorkspaceStore = defineStore('workspace', () => {
@@ -82,6 +83,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       // Git backup is optional; note loading and saving must remain available.
     }
     watchOpenedBuffers()
+    watchBufferChanges()
     await refreshBuffers()
     localStorage.removeItem('vibenote:openTabs')
     const pending = await window.vibenote.buffer.consumePendingOpen()
@@ -101,6 +103,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       if (!buffer) return
       await refreshBuffers()
       await openBuffer(buffer.path)
+    })
+  }
+
+  function watchBufferChanges() {
+    if (unsubscribeBufferChanged) return
+    unsubscribeBufferChanged = window.vibenote.buffer.onChanged(change => {
+      window.dispatchEvent(new CustomEvent('vibenote:buffer-changed', { detail: change }))
     })
   }
 
@@ -143,10 +152,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   async function saveBuffer(path: string | null | undefined, content: string) {
     if (!path) return
+    await window.vibenote.buffer.save(path, content)
     if (currentPath.value === path) {
       currentContent.value = content
     }
-    await window.vibenote.buffer.save(path, content)
     await refreshBuffers()
     await refreshRecoveries()
   }
@@ -157,10 +166,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function saveBufferSync(path: string | null | undefined, content: string) {
     if (!path) return
+    window.vibenote.buffer.saveSync(path, content)
     if (currentPath.value === path) {
       currentContent.value = content
     }
-    window.vibenote.buffer.saveSync(path, content)
   }
 
   function saveCurrentSync(content: string) {

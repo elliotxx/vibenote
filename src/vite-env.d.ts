@@ -126,6 +126,7 @@ interface Window {
       readRecovery(path: string): Promise<RecoveryContent>
       consumePendingOpen(): Promise<BufferInfo | null>
       onOpened(callback: (buffer: BufferInfo | null) => void): () => void
+      onChanged(callback: (change: { path: string; storageRevision: string }) => void): () => void
     }
     library: {
       search(query: string): Promise<SearchResult[]>

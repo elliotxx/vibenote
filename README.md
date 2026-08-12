@@ -146,6 +146,25 @@ npx vite --host 127.0.0.1 --port 3344 --strictPort
 
 The browser renderer uses a localStorage mock when the Electron preload bridge is unavailable, so it does not write real app data.
 
+### CLI alpha
+
+The source tree includes an Agent-oriented CLI alpha. It can discover capabilities, list and read internal notes, search blocks, and safely append one block with dry-run, optimistic revision checks, idempotency, snapshot, recovery, and atomic replacement.
+
+Run it from a source checkout:
+
+```sh
+node cli/vibenote.mjs capabilities --data-dir /path/to/isolated-user-data --output json
+node cli/vibenote.mjs search --data-dir /path/to/isolated-user-data --query "keyword" --limit 10 --output json
+```
+
+Mutation remains deliberately gated: `blocks append` requires an explicit `--data-dir`, an idempotency key, and either a dry-run revision or `--accept-current`. The CLI does not expose external files, replace, delete, restore, arbitrary paths, HTTP, or MCP. Use an isolated or backed-up data directory while the CLI remains alpha; public PATH installation is not yet provided.
+
+Verify the complete CLI contract with synthetic temporary data:
+
+```sh
+npm run verify:cli
+```
+
 Build the macOS release artifacts:
 
 ```sh
@@ -193,6 +212,8 @@ GitHub Actions builds the macOS arm64 DMG, verifies `SHA256SUMS`, and creates a 
 npm run build
 npm run verify:package
 npm run verify:runtime
+npm run verify:cli
+npm run verify:cli-coordination
 npm run verify:git-backup-export
 npm run verify:git-backup-module
 npm run verify:git-backup

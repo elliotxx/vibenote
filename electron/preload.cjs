@@ -1,15 +1,29 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
+const bufferStorageRevisions = new Map()
+
 contextBridge.exposeInMainWorld('vibenote', {
   buffer: {
     list: () => ipcRenderer.invoke('buffer:list'),
-    load: path => ipcRenderer.invoke('buffer:load', path),
-    save: (path, content) => ipcRenderer.invoke('buffer:save', path, content),
+    load: async path => {
+      const result = await ipcRenderer.invoke('buffer:load', path)
+      bufferStorageRevisions.set(path, result.storageRevision)
+      return result.content
+    },
+    save: async (path, content) => {
+      const result = await ipcRenderer.invoke('buffer:save', path, content, bufferStorageRevisions.get(path))
+      bufferStorageRevisions.set(path, result.storageRevision)
+      return true
+    },
     saveSync: (path, content) => {
-      const result = ipcRenderer.sendSync('buffer:saveSync', path, content)
+      const result = ipcRenderer.sendSync('buffer:saveSync', path, content, bufferStorageRevisions.get(path))
       if (!result?.ok) {
-        throw new Error(result?.error || 'Failed to save buffer synchronously')
+        const error = new Error(result?.error || 'Failed to save buffer synchronously')
+        error.code = result?.code
+        error.recoveryId = result?.recoveryId
+        throw error
       }
+      bufferStorageRevisions.set(path, result.result.storageRevision)
       return true
     },
     snapshot: (path, content, reason) => ipcRenderer.invoke('buffer:snapshot', path, content, reason),
@@ -32,6 +46,14 @@ contextBridge.exposeInMainWorld('vibenote', {
       const listener = (_event, buffer) => callback(buffer)
       ipcRenderer.on('buffer:opened', listener)
       return () => ipcRenderer.removeListener('buffer:opened', listener)
+    },
+    onChanged: callback => {
+      const listener = (_event, change) => {
+        if (bufferStorageRevisions.get(change.path) === change.storageRevision) return
+        callback(change)
+      }
+      ipcRenderer.on('buffer:changed', listener)
+      return () => ipcRenderer.removeListener('buffer:changed', listener)
     },
   },
   library: {

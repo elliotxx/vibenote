@@ -252,6 +252,7 @@ onMounted(() => {
     }
   })
   window.addEventListener('vibenote:goto-line', onGotoLine as EventListener)
+  window.addEventListener('vibenote:buffer-changed', onExternalBufferChanged)
   window.addEventListener('keydown', onWindowKeydown)
   window.addEventListener('focus', onWindowFocus)
   window.addEventListener('resize', onWindowResize)
@@ -274,6 +275,7 @@ onBeforeUnmount(() => {
   unsubscribeQuitFlush?.()
   unsubscribeQuitFlush = null
   window.removeEventListener('vibenote:goto-line', onGotoLine as EventListener)
+  window.removeEventListener('vibenote:buffer-changed', onExternalBufferChanged)
   window.removeEventListener('keydown', onWindowKeydown)
   window.removeEventListener('focus', onWindowFocus)
   window.removeEventListener('resize', onWindowResize)
@@ -648,6 +650,37 @@ function applySearchModeShortcut(event: KeyboardEvent) {
 }
 
 let searchRefreshQueued = false
+let applyingExternalReload = false
+
+async function onExternalBufferChanged(event: Event) {
+  const change = (event as CustomEvent<{ path: string }>).detail
+  if (!view || !note || change.path !== editorBufferPath) return
+  note.content = view.state.doc.toString()
+  if (serializeNote(note) !== store.currentContent) {
+    setAiStatus('检测到外部更新；当前草稿将在冲突恢复区保留')
+    return
+  }
+  if (saveTimer) {
+    window.clearTimeout(saveTimer)
+    saveTimer = null
+  }
+  try {
+    await store.openBuffer(editorBufferPath)
+    const refreshed = loadNote(store.currentContent)
+    applyingExternalReload = true
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: refreshed.content },
+      annotations: internalBlockEdit.of(true),
+    })
+    note = refreshed
+    setAiStatus('已加载外部更新', true)
+  } catch (error) {
+    setAiStatus(`外部更新加载失败：${error instanceof Error ? error.message : '无法读取文件'}`)
+  } finally {
+    applyingExternalReload = false
+  }
+}
+
 function scheduleSearchRefresh() {
   if (searchRefreshQueued || !searchVisible.value) return
   searchRefreshQueued = true
@@ -862,7 +895,7 @@ function mountEditor() {
       EditorView.updateListener.of(update => {
         if (update.docChanged) {
           mapAiSuggestionRanges(update)
-          scheduleSave()
+          if (!applyingExternalReload) scheduleSave()
           scheduleSearchRefresh()
         }
         if (update.docChanged || update.selectionSet || update.focusChanged || update.viewportChanged) {
@@ -2244,7 +2277,12 @@ function flushSaveSync() {
     saveTimer = null
   }
   note.content = view.state.doc.toString()
-  store.saveBufferSync(editorBufferPath, serializeNote(note))
+  try {
+    store.saveBufferSync(editorBufferPath, serializeNote(note))
+  } catch (error) {
+    setAiStatus(`保存失败：${error instanceof Error ? error.message : '无法写入文件'}`)
+    void store.refreshRecoveries()
+  }
 }
 
 function snapshotCurrentSync(reason: string) {

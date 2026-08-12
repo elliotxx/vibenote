@@ -506,13 +506,20 @@ export class GitBackupManager {
     const remaining = Math.max(0, deadlineAt - Date.now())
     if (remaining === 0) return this.getStatus()
     const task = this.runOnce({ localOnly: true }).catch(async error => this.recordFailure(error))
-    return Promise.race([
-      task,
-      new Promise(resolve => setTimeout(() => {
-        this.runner.stopAll()
-        resolve(this.getStatus())
-      }, remaining)),
-    ])
+    let timeout
+    try {
+      return await Promise.race([
+        task,
+        new Promise(resolve => {
+          timeout = setTimeout(() => {
+            this.runner.stopAll()
+            resolve(this.getStatus())
+          }, remaining)
+        }),
+      ])
+    } finally {
+      if (timeout) clearTimeout(timeout)
+    }
   }
 
   stop() {
