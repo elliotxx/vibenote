@@ -113,9 +113,37 @@ $HOME/Library/Application Support/Vibenote/notes/.images/
 
 在设置中选择一个专用 Git 仓库，再开启 Git 自动备份。Vibenote 每 5 分钟导出一次经过校验的快照，并且只提交 `.vibenote-backup.json` 和 `vibenote-backup/`。活动数据仍以 `userData/notes` 为唯一事实来源；Git 仓库只是单向派生备份，应用不会从仓库反向读取或导入。
 
+实际存储链路如下：
+
+```text
+编辑器 / 自动保存
+  -> $HOME/Library/Application Support/Vibenote/notes/  （活动文件）
+  -> 经过校验的临时快照
+  -> <所选仓库>/vibenote-backup/                        （派生副本）
+  -> 本地 Git commit
+  -> remote 满足安全条件时自动 push
+```
+
+普通编辑会直接写入活动文件，而不是写入 Git 仓库。所选仓库只包含备份所有权标记和导出的快照：
+
+```text
+<所选仓库>/
+├── .vibenote-backup.json
+└── vibenote-backup/
+    ├── manifest.json
+    ├── notes/
+    └── assets/
+```
+
+选择仓库时会先生成一份经过校验的初始快照；开启备份后会立即执行一次，之后每 5 分钟导出发生变化的笔记。退出应用时会先刷新待保存的笔记，并在较短时限内尝试创建本地备份提交，但退出阶段不会进行网络 push。没有 remote 时，备份会停留在本地 commit 状态。
+
 所选空目录可以由应用初始化。已有仓库需要用户自行配置 Git 作者身份。没有 remote 时提交只保留在本地；只有单一明确 remote 和安全 upstream 基线同时成立时才会自动 push，否则保留本地提交并提示人工处理。Vibenote 不管理分支、remote 或凭据，也不会执行 pull、merge、rebase、reset、checkout、clean 等同步或历史改写命令。
 
+复用已有仓库不会覆盖无关的已跟踪文件，因为提交范围只限于上述两个托管路径；但自动提交会进入该仓库的当前分支，符合安全条件的 remote 也可能收到这些提交，因此仍建议使用专用仓库。不要手动修改托管快照：检测到外部改动后会进入 `mirror-conflict` 并暂停覆盖，不会把修改反向导入应用。关闭备份不会删除已经导出的文件或 Git 历史。
+
 导出的 `vibenote-backup/manifest.json` 记录文档和图片哈希。需要人工恢复时，应先检查并验证 manifest，再把所需文本或图片复制到另一个安全位置。Vibenote 暂不提供自动导入或恢复界面。
+
+外部文档、API key、应用设置、recovery 文件和本地备份历史均不进入仓库。完整安全模型见 [Git 自动备份设计](docs/design/2026-08-11-git-auto-backup.md)。
 
 ### Agent CLI
 

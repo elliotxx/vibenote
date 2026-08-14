@@ -113,9 +113,37 @@ $HOME/Library/Application Support/Vibenote/notes/.images/
 
 Open Settings, choose a dedicated Git repository, then enable Git backup. Vibenote exports a verified snapshot every five minutes and creates commits only for `.vibenote-backup.json` and `vibenote-backup/`. The active `userData/notes` directory remains the single source of truth; the repository is a derived, one-way backup and is never read back into the app.
 
+The storage flow is:
+
+```text
+Editor/autosave
+  -> $HOME/Library/Application Support/Vibenote/notes/  (active files)
+  -> verified staging snapshot
+  -> <selected-repository>/vibenote-backup/             (derived copy)
+  -> local Git commit
+  -> safe push, when a remote is eligible
+```
+
+Vibenote writes normal edits directly to the active files, not to the Git repository. The selected repository contains only the backup ownership marker and exported snapshot:
+
+```text
+<selected-repository>/
+├── .vibenote-backup.json
+└── vibenote-backup/
+    ├── manifest.json
+    ├── notes/
+    └── assets/
+```
+
+Selecting a repository prepares an initial verified snapshot. Enabling backup runs it immediately; afterward, changed notes are exported on the five-minute schedule. Quitting flushes pending note saves and attempts a local backup commit within a short deadline, but does not perform a network push during quit. With no remote, the backup remains committed locally.
+
 An empty selected directory can be initialized automatically. For an existing repository, configure the Git author identity yourself. With no remote, commits stay local. Vibenote pushes only when one unambiguous remote and a safe upstream baseline are available; otherwise it preserves the local commit and asks for manual attention. It never manages branches, remotes, or credentials and never runs history-changing or synchronization commands such as pull, merge, rebase, reset, checkout, or clean.
 
+Using an existing repository does not overwrite unrelated tracked files because commits are scoped to the two managed paths above. It does add automatic commits to the repository's current branch, and an eligible remote may receive those commits, so a dedicated repository is recommended. Do not manually edit the managed snapshot: external changes trigger `mirror-conflict` and pause replacement instead of being imported. Disabling backup leaves the exported files and Git history in place.
+
 The exported `vibenote-backup/manifest.json` records document and asset hashes. For manual recovery, inspect and verify that manifest, then copy the required exported text or images to a separate safe location. Vibenote intentionally has no automatic import or restore UI.
+
+External documents, API keys, app settings, recovery files, and local backup history are excluded. See the [Git auto-backup design](docs/design/2026-08-11-git-auto-backup.md) for the complete safety model.
 
 Uninstall the app:
 
