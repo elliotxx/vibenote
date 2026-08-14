@@ -23,6 +23,53 @@ async function fixture(t) {
   return root
 }
 
+test('no arguments prints help on stdout', () => {
+  const result = run([])
+
+  assert.equal(result.status, 0)
+  assert.equal(result.stderr, '')
+  assert.match(result.stdout, /^Usage: vibenote /)
+  assert.match(result.stdout, /vibenote capabilities/)
+})
+
+test('help aliases print the same help on stdout', () => {
+  const expected = run([]).stdout
+
+  for (const args of [['help'], ['-h'], ['--help']]) {
+    const result = run(args)
+    assert.equal(result.status, 0, args.join(' '))
+    assert.equal(result.stderr, '', args.join(' '))
+    assert.equal(result.stdout, expected, args.join(' '))
+  }
+})
+
+test('blocks help aliases describe block subcommands', () => {
+  for (const flag of ['-h', '--help']) {
+    const result = run(['blocks', flag])
+    assert.equal(result.status, 0, flag)
+    assert.equal(result.stderr, '', flag)
+    assert.match(result.stdout, /^Usage: vibenote blocks <command>/)
+    assert.match(result.stdout, /blocks append/)
+  }
+})
+
+test('nested command help describes usage and options', () => {
+  const cases = [
+    { args: ['notes', '--help'], usage: 'Usage: vibenote notes <command>', option: 'notes read' },
+    { args: ['blocks', 'append', '--help'], usage: 'Usage: vibenote blocks append', option: '--dry-run' },
+    { args: ['notes', 'read', '-h'], usage: 'Usage: vibenote notes read', option: '--raw' },
+    { args: ['search', '--help'], usage: 'Usage: vibenote search', option: '--query' },
+  ]
+
+  for (const { args, usage, option } of cases) {
+    const result = run(args)
+    assert.equal(result.status, 0, args.join(' '))
+    assert.equal(result.stderr, '', args.join(' '))
+    assert.match(result.stdout, new RegExp(`^${usage}`), args.join(' '))
+    assert.match(result.stdout, new RegExp(option), args.join(' '))
+  }
+})
+
 test('capabilities emits one JSON document on stdout', async t => {
   const root = await fixture(t)
   const result = run(['capabilities', '--data-dir', root, '--output', 'json'])

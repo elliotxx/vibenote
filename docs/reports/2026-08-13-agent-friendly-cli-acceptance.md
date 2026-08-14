@@ -4,7 +4,7 @@
 
 Agent 友好 CLI alpha 的源码实现与本地自动化闭环通过。CLI 可独立于桌面窗口运行，提供能力发现、内部笔记列表/读取、block 列表/读取、固定字符串搜索和安全 append。写入具备 dry-run、内容 revision、幂等请求指纹、snapshot、recovery、note lock 与原子替换。
 
-默认真实数据目录 mutation 仍保持关闭；alpha 写入必须显式提供 `--data-dir`。新 block delimiter 的桌面写入 feature gate 默认关闭，先交付兼容 parser，再决定公开启用时点。公共 PATH 安装、签名发布、MCP 和第三方同步兼容不在本次完成范围。
+默认真实数据目录 mutation 仍保持关闭；alpha 写入必须显式提供 `--data-dir`。新 block delimiter 的桌面写入 feature gate 默认关闭，先交付兼容 parser，再决定公开启用时点。设置页现可安装、更新和卸载 `~/.local/bin/vibenote`；签名发布、MCP 和第三方同步兼容不在本次完成范围。
 
 ## 分阶段结果
 
@@ -15,6 +15,7 @@ Agent 友好 CLI alpha 的源码实现与本地自动化闭环通过。CLI 可�
 | CLI adapter | JSON/stdout/stderr 契约、stdin、确定退出码、显式目录写入门禁 | 通过 |
 | Electron 协作 | preload 维护 storage revision；clean 自动加载外部更新；dirty CAS 冲突保留 recovery | 通过 |
 | 兼容与安全 | 旧格式只读不改写；桌面新格式写入默认关闭；外部文件继续使用原 adapter | 通过 |
+| 设置页安装 | 受管启动器、内置 runtime、完整所有权校验、竞态保护、安装/更新/卸载 | 通过 |
 
 ## 真实端到端路径
 
@@ -32,6 +33,8 @@ capabilities -> notes list -> search -> blocks list
 - clean editor 收到 CLI append 后，由文件 watcher 通知并加载新 block。
 - dirty editor 收到 CLI append 后不覆盖外部版本；延迟 autosave 被 storage CAS 拒绝，本地草稿进入 recovery，目标 note 保留 CLI block。
 
+`scripts/agent-cli-install-runtime.mjs` 从打包应用的真实设置页点击“安装 Agent CLI”，在隔离临时目录生成受管启动器，再由独立子进程执行 `vibenote version` 和 `vibenote capabilities`，最后从设置页卸载。该启动器使用打包应用内的 Electron runtime，验证过程不依赖系统 Node.js，也不访问真实 `~/.local/bin`。
+
 验收使用无可见窗口的 headless Electron 模式，因此没有生成或提交含笔记内容的截图。磁盘 note、recovery 和运行时断言是该路径的权威证据。
 
 ## 已执行命令
@@ -41,6 +44,7 @@ capabilities -> notes list -> search -> blocks list
 ```sh
 node --test tests/unit/*.test.mjs
 npm run verify:cli
+npm run verify:agent-cli-install
 npm run build
 npm run verify:runtime
 npm run verify:data-safety
@@ -57,7 +61,9 @@ npm run test:public-safety
 git diff --check
 ```
 
-单元测试共 17 项，Playwright E2E 共 75 项。macOS `.app` 通过 `electron-builder --mac dir --arm64` 生成并用于协调、数据安全、稳定性、Git 备份和边界验收。DMG 生成不是本次 CLI 源码验收条件。
+单元测试共 28 项，包含 CLI 分层帮助入口、非受管同名命令、被修改启动器和更新竞态保护。Playwright E2E 共 76 项。macOS `.app` 通过 `electron-builder --mac dir --arm64` 生成并用于协调、数据安全、稳定性、Git 备份、边界和 Agent CLI 安装验收。DMG 生成不是本次 CLI 源码验收条件。
+
+阶段 6 扩展复验中，`verify:cli`、`verify:agent-cli-install`、`verify:runtime`、`verify:data-safety`、`verify:cli-coordination`、`verify:git-backup-module`、完整 E2E 和 public-safety 均通过。`verify:git-backup` 的功能断言已完成到退出前保存，但在当前高负载共享主机上未满足既有 6.5 秒进程退出时限；这项时限 gate 本次不记为通过，需在正常负载环境复验。
 
 ## 影响与兼容性
 
@@ -65,7 +71,7 @@ git diff --check
 - preload 的公开 `load/save/saveSync` 返回形态对 renderer 保持不变，storage revision 在 bridge 内部维护。
 - 旧 delimiter 可读取且只读命令保持原始字节；未知字段被保留。
 - 新 delimiter 写入默认关闭，避免尚未经过兼容阶段的旧应用读取新格式。
-- CLI package 文件已进入 Electron 构建清单，但公共安装方式仍未决定。
+- CLI package 文件已进入 Electron 构建清单；设置页只从 `/Applications` 或 `~/Applications` 中的应用安装受管启动器。
 
 ## 边界、性能与副作用
 
@@ -77,7 +83,7 @@ git diff --check
 
 ## 未验证与 Blocker
 
-- 公共 PATH/DMG 中的 CLI 安装体验。
+- 未定制 shell 的干净 macOS 用户环境是否默认包含 `~/.local/bin`；应用不会自动修改 shell 配置。
 - Developer ID 签名与 notarization。
 - iCloud、Dropbox 等第三方同步目录并发。
 - 目标 Agent 客户端的主观工具调用体验。

@@ -1,11 +1,13 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, protocol, shell } from 'electron'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { rgPath } from '@vscode/ripgrep'
 import { GitBackupManager } from './gitBackup.js'
+import { AgentCliInstaller } from './agentCliInstaller.js'
 import { storageRevision } from '../core/noteFormat.js'
 import { NoteStore } from '../core/noteStore.js'
 
@@ -24,6 +26,7 @@ let mainWindow = null
 let library = null
 let aiSettings = null
 let gitBackup = null
+let agentCliInstaller = null
 let currentSearch = null
 let pendingOpenBuffer = null
 let quitFlushPromise = null
@@ -36,6 +39,23 @@ function runtimeIconPath() {
     ? path.join(process.resourcesPath, 'icon.png')
     : path.join(__dirname, '../build/icon.png')
   return fs.existsSync(candidate) ? candidate : null
+}
+
+function loginShellPath() {
+  const fallback = process.env.PATH || ''
+  const shellPath = process.env.SHELL || '/bin/zsh'
+  try {
+    const marker = '__VIBENOTE_LOGIN_PATH__'
+    const output = execFileSync(shellPath, ['-lic', `printf '${marker}%s' "$PATH"`], {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+    const markerIndex = output.lastIndexOf(marker)
+    return markerIndex === -1 ? fallback : output.slice(markerIndex + marker.length)
+  } catch {
+    return fallback
+  }
 }
 
 function applyRuntimeIcon() {
@@ -1484,6 +1504,22 @@ app.whenReady().then(async () => {
     applyRuntimeIcon()
   }
   const userDataPath = app.getPath('userData')
+  const agentCliBinDirectory = isHeadlessVerification
+    ? path.resolve(process.env.VIBENOTE_AGENT_CLI_BIN_DIR || path.join(userDataPath, 'agent-cli-bin'))
+    : path.join(os.homedir(), '.local', 'bin')
+  const agentCliEntry = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar', 'cli', 'vibenote.mjs')
+    : path.join(__dirname, '..', 'cli', 'vibenote.mjs')
+  agentCliInstaller = new AgentCliInstaller({
+    binDirectory: agentCliBinDirectory,
+    runtimePath: process.execPath,
+    cliEntry: agentCliEntry,
+    appVersion: app.getVersion(),
+    pathValue: isHeadlessVerification ? process.env.PATH || '' : loginShellPath(),
+    allowedAppRoots: isHeadlessVerification
+      ? [path.dirname(path.dirname(path.dirname(path.dirname(process.execPath))))]
+      : undefined,
+  })
   const basePath = path.join(userDataPath, 'notes')
   library = new FileLibrary(basePath, userDataPath)
   aiSettings = new AiSettingsStore(userDataPath)
@@ -1645,6 +1681,9 @@ ipcMain.handle('git-backup:chooseRepository', async () => {
   return gitBackup.configureRepository(result.filePaths[0])
 })
 ipcMain.handle('git-backup:setEnabled', (_event, enabled) => gitBackup.setEnabled(Boolean(enabled)))
+ipcMain.handle('agent-cli:getStatus', () => agentCliInstaller.getStatus())
+ipcMain.handle('agent-cli:install', () => agentCliInstaller.install())
+ipcMain.handle('agent-cli:uninstall', () => agentCliInstaller.uninstall())
 ipcMain.on('app:flush-before-quit-complete', (_event, requestId) => {
   quitFlushAcks.get(String(requestId))?.()
 })

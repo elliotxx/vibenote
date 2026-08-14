@@ -10,6 +10,8 @@ const apiKeyDraft = ref('')
 const apiKeyStatus = ref('')
 const connectionStatus = ref('')
 const gitBackupMessage = ref('')
+const agentCliMessage = ref('')
+const agentCliBusy = ref(false)
 
 const aiProviderDefaults = {
   openai: {
@@ -149,6 +151,42 @@ async function toggleGitBackup(event: Event) {
     gitBackupMessage.value = localizeMessage(errorMessage(error))
   }
 }
+
+const agentCliStatusLabel = computed(() => {
+  if (agentCliMessage.value) return agentCliMessage.value
+  const labels: Record<AgentCliStatus['state'], string> = {
+    'not-installed': '尚未安装',
+    installed: `已安装 · v${store.agentCliStatus.appVersion}`,
+    'update-available': `有可用更新 · v${store.agentCliStatus.appVersion}`,
+    conflict: '安装位置存在其他同名命令',
+    'unsupported-location': '请先将 Vibenote 移到“应用程序”目录',
+  }
+  return labels[store.agentCliStatus.state]
+})
+
+async function installAgentCli() {
+  agentCliMessage.value = ''
+  agentCliBusy.value = true
+  try {
+    await store.installAgentCli()
+  } catch (error) {
+    agentCliMessage.value = `安装失败：${localizeMessage(errorMessage(error))}`
+  } finally {
+    agentCliBusy.value = false
+  }
+}
+
+async function uninstallAgentCli() {
+  agentCliMessage.value = ''
+  agentCliBusy.value = true
+  try {
+    await store.uninstallAgentCli()
+  } catch (error) {
+    agentCliMessage.value = `卸载失败：${localizeMessage(errorMessage(error))}`
+  } finally {
+    agentCliBusy.value = false
+  }
+}
 </script>
 
 <template>
@@ -246,6 +284,42 @@ async function toggleGitBackup(event: Event) {
               <span>{{ gitBackupTimeLabel }}</span>
             </div>
             <p class="settings-description">仅提交 Vibenote 管理的快照路径；远端不安全或需要人工判断时只保留本地提交。</p>
+          </section>
+
+          <section class="settings-section settings-section-wide">
+            <h3>Agent CLI</h3>
+            <p class="settings-description">安装 <code>vibenote</code> 命令，让本机 Agent 通过版本化 JSON 契约读取、搜索和安全追加笔记。</p>
+            <div class="settings-actions">
+              <button
+                v-if="store.agentCliStatus.state === 'not-installed' || store.agentCliStatus.state === 'update-available'"
+                class="secondary-button"
+                :disabled="agentCliBusy"
+                @click="installAgentCli"
+              >
+                {{ store.agentCliStatus.state === 'update-available' ? '更新 Agent CLI' : '安装 Agent CLI' }}
+              </button>
+              <button
+                v-if="store.agentCliStatus.state === 'installed' || store.agentCliStatus.state === 'update-available'"
+                class="ghost-button"
+                :disabled="agentCliBusy"
+                @click="uninstallAgentCli"
+              >
+                卸载
+              </button>
+            </div>
+            <div class="git-backup-state" :class="{ error: store.agentCliStatus.state === 'conflict' || agentCliMessage }">
+              <span>{{ agentCliStatusLabel }}</span>
+              <span v-if="store.agentCliStatus.commandPath" :title="store.agentCliStatus.commandPath">{{ store.agentCliStatus.commandPath }}</span>
+            </div>
+            <p v-if="(store.agentCliStatus.state === 'installed' || store.agentCliStatus.state === 'update-available') && !store.agentCliStatus.pathConfigured" class="settings-description">
+              命令已安装，但登录 shell 的 PATH 不包含 <code>{{ store.agentCliStatus.binDirectory }}</code>；Vibenote 不会自动修改 shell 配置。
+            </p>
+            <p v-if="store.agentCliStatus.state === 'unsupported-location'" class="settings-description">
+              请先将 Vibenote.app 移到系统或用户的“应用程序”目录，避免应用移动后命令失效。
+            </p>
+            <p v-if="store.agentCliStatus.state === 'conflict'" class="settings-description">
+              Vibenote 不会覆盖或删除非本应用管理的同名命令。请先手动检查安装位置。
+            </p>
           </section>
 
           <section class="settings-section settings-section-wide">

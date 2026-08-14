@@ -117,6 +117,17 @@ $HOME/Library/Application Support/Vibenote/notes/.images/
 
 导出的 `vibenote-backup/manifest.json` 记录文档和图片哈希。需要人工恢复时，应先检查并验证 manifest，再把所需文本或图片复制到另一个安全位置。Vibenote 暂不提供自动导入或恢复界面。
 
+### Agent CLI
+
+将 `Vibenote.app` 移到系统或用户的“应用程序”目录后，进入“设置 > Agent CLI”，点击“安装 Agent CLI”。应用会把受管启动器安装到 `~/.local/bin/vibenote`，直接使用应用内置运行时，不依赖系统 Node.js。
+
+```sh
+vibenote version
+vibenote capabilities
+```
+
+Vibenote 不会修改 shell 配置，也不会覆盖或删除非本应用管理的同名命令。如果登录 shell 的 `PATH` 尚未包含 `~/.local/bin`，设置页会明确提示；手动配置 PATH 并重开终端后即可使用。应用升级后，设置页会提供 CLI 更新操作。
+
 卸载应用：
 
 ```sh

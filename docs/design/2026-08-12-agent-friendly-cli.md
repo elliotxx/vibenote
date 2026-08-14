@@ -348,9 +348,15 @@ npm run verify:cli
 
 ## 非自闭环 Blocker
 
+### 设置页安装决策（2026-08-13）
+
+CLI 随桌面应用打包，由设置页安装、更新和卸载 `~/.local/bin/vibenote` 受管启动器。启动器使用应用内 Electron 的 Node 运行时，不依赖系统 Node.js。应用不修改 shell 配置；登录 shell 未包含 `~/.local/bin` 时只提示前置条件。
+
+安装流程 fail closed：只允许从 `/Applications` 或 `~/Applications` 中的应用安装；同名文件、符号链接、内容被修改的旧启动器均视为冲突；新安装使用排他硬链接落位，更新和卸载先把目标原子移出并重新验证完整规范内容，避免覆盖或删除竞态中出现的非受管文件。
+
 | Blocker | 阻塞内容 | 可继续工作 | 解锁条件 |
 | --- | --- | --- | --- |
-| 公共安装方式 | 是否把 CLI 安装到 PATH、随 DMG 分发或单独发布 | 核心、CLI、runtime、应用协作均可本地完成 | 确定公开分发体验并在干净 macOS 用户环境验收 |
+| 干净 macOS 安装体验 | 新用户的登录 shell 是否默认包含 `~/.local/bin` | 设置页安装、内置 runtime、冲突保护与隔离打包验收 | 在未定制 shell 的干净用户环境验证并决定是否增加引导 |
 | 未签名应用 | 面向陌生用户的系统信任与安装体验 | 源码运行和本机验证 | Developer ID 签名与 notarization 决策 |
 | 第三方同步目录 | iCloud/Dropbox 等并发语义 | 默认 userData 本地存储 | 选定目标同步系统并提供可复现实验环境 |
 | Agent 客户端兼容 | Codex/Claude Code/Cursor 的提示和工具调用体验 | CLI JSON 合同与合成 Agent harness | 在目标客户端执行独立验收并由用户确认体验 |

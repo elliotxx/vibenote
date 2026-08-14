@@ -81,6 +81,11 @@ contextBridge.exposeInMainWorld('vibenote', {
       return () => ipcRenderer.removeListener('git-backup:status-changed', listener)
     },
   },
+  agentCli: {
+    getStatus: () => ipcRenderer.invoke('agent-cli:getStatus'),
+    install: () => ipcRenderer.invoke('agent-cli:install'),
+    uninstall: () => ipcRenderer.invoke('agent-cli:uninstall'),
+  },
   lifecycle: {
     onFlushBeforeQuit: callback => {
       const listener = (_event, requestId) => callback(requestId)

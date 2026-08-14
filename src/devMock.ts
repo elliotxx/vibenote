@@ -7,6 +7,7 @@ const GIT_BACKUP_SETTINGS_KEY = 'vibenote:mock-git-backup-settings'
 const GIT_BACKUP_STATUS_KEY = 'vibenote:mock-git-backup-status'
 
 let mockApiKey = ''
+let mockAgentCliInstalled = false
 
 type MockBuffer = BufferInfo & { content: string }
 type BufferOpenedCallback = (buffer: BufferInfo | null) => void
@@ -96,6 +97,16 @@ function readMockGitBackupStatus(): GitBackupStatus {
 function writeMockGitBackupStatus(status: GitBackupStatus) {
   localStorage.setItem(GIT_BACKUP_STATUS_KEY, JSON.stringify(status))
   for (const callback of gitBackupStatusCallbacks) callback(status)
+}
+
+function mockAgentCliStatus(): AgentCliStatus {
+  return {
+    state: mockAgentCliInstalled ? 'installed' : 'not-installed',
+    commandPath: '/tmp/vibenote-mock-bin/vibenote',
+    binDirectory: '/tmp/vibenote-mock-bin',
+    appVersion: '0.1.11',
+    pathConfigured: true,
+  }
 }
 
 export function installDevMock() {
@@ -296,6 +307,19 @@ export function installDevMock() {
       onStatusChanged(callback: (status: GitBackupStatus) => void) {
         gitBackupStatusCallbacks.add(callback)
         return () => gitBackupStatusCallbacks.delete(callback)
+      },
+    },
+    agentCli: {
+      async getStatus() {
+        return mockAgentCliStatus()
+      },
+      async install() {
+        mockAgentCliInstalled = true
+        return mockAgentCliStatus()
+      },
+      async uninstall() {
+        mockAgentCliInstalled = false
+        return mockAgentCliStatus()
       },
     },
     lifecycle: {

@@ -49,6 +49,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     lastErrorMessage: null,
     pushPending: false,
   })
+  const agentCliStatus = ref<AgentCliStatus>({
+    state: 'not-installed',
+    commandPath: '',
+    binDirectory: '',
+    appVersion: '',
+    pathConfigured: false,
+  })
   const settings = reactive<Settings>({
     theme: 'light',
     fontSize: 13,
@@ -81,6 +88,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       }
     } catch {
       // Git backup is optional; note loading and saving must remain available.
+    }
+    try {
+      agentCliStatus.value = await window.vibenote.agentCli.getStatus()
+    } catch {
+      // Agent CLI installation is optional; note editing must remain available.
     }
     watchOpenedBuffers()
     watchBufferChanges()
@@ -285,6 +297,16 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return gitBackupSettings.value
   }
 
+  async function installAgentCli() {
+    agentCliStatus.value = await window.vibenote.agentCli.install()
+    return agentCliStatus.value
+  }
+
+  async function uninstallAgentCli() {
+    agentCliStatus.value = await window.vibenote.agentCli.uninstall()
+    return agentCliStatus.value
+  }
+
   return {
     buffers,
     currentPath,
@@ -293,6 +315,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     recoveries,
     gitBackupSettings,
     gitBackupStatus,
+    agentCliStatus,
     settings,
     bufferTitle,
     init,
@@ -319,5 +342,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     completeWithAi,
     chooseGitBackupRepository,
     setGitBackupEnabled,
+    installAgentCli,
+    uninstallAgentCli,
   }
 })

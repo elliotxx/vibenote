@@ -108,6 +108,14 @@ type GitBackupStatus = {
   pushPending: boolean
 }
 
+type AgentCliStatus = {
+  state: 'not-installed' | 'installed' | 'update-available' | 'conflict' | 'unsupported-location'
+  commandPath: string
+  binDirectory: string
+  appVersion: string
+  pathConfigured: boolean
+}
+
 interface Window {
   vibenote: {
     buffer: {
@@ -150,6 +158,11 @@ interface Window {
       chooseRepository(): Promise<GitBackupSettings>
       setEnabled(enabled: boolean): Promise<GitBackupSettings>
       onStatusChanged(callback: (status: GitBackupStatus) => void): () => void
+    }
+    agentCli: {
+      getStatus(): Promise<AgentCliStatus>
+      install(): Promise<AgentCliStatus>
+      uninstall(): Promise<AgentCliStatus>
     }
     lifecycle: {
       onFlushBeforeQuit(callback: (requestId: string) => void): () => void

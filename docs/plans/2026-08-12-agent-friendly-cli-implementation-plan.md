@@ -4,7 +4,7 @@
 
 本计划实现 [Agent 友好 CLI 设计](../design/2026-08-12-agent-friendly-cli.md) 的首版闭环：在不启动桌面应用、不访问真实笔记、不依赖网络的条件下，Agent 能发现能力、搜索和有界读取内部笔记，并通过 dry-run、revision、幂等与 snapshot 安全追加一个 block。
 
-计划优先完成可自闭环的共享核心和 CLI。MCP、HTTP、外部文件、高风险 mutation、公开 PATH 安装和签名发布不进入本计划。
+计划优先完成可自闭环的共享核心和 CLI。MCP、HTTP、外部文件、高风险 mutation 和签名发布不进入本计划。设置页安装作为 2026-08-13 的阶段 6 扩展加入。
 
 源码 alpha 已于 2026-08-13 完成本计划的本地闭环，验证结果见 [Agent 友好 CLI 验收报告](../reports/2026-08-13-agent-friendly-cli-acceptance.md)。默认真实目录写入与新格式桌面写入仍保持 feature gate 关闭，等待公开启用决策。
 
@@ -174,6 +174,15 @@ git diff --check
 
 完成标准：全部命令退出 0；若任何既有 gate 失败，必须定位并修复，不能以“与 CLI 无关”作为交付依据。
 
+### 阶段 6：设置页一键安装
+
+- 设置页展示未安装、已安装、可更新、冲突和应用位置不受支持状态。
+- 安装到 `~/.local/bin/vibenote`，使用应用内 Electron runtime，不依赖系统 Node.js。
+- 不修改 shell 配置；基于登录 shell 检测 PATH，并在缺少 `~/.local/bin` 时提示。
+- 不覆盖符号链接、非受管同名文件或被修改的受管启动器；更新和卸载在最终变更点重新验证所有权。
+- 仅允许从 `/Applications` 或 `~/Applications` 安装，避免移动应用后启动器失效。
+- 通过打包应用的真实设置页执行安装，再由独立子进程验证 `version`、`capabilities` 和卸载。
+
 ## 组件责任
 
 | 类别 | 预期文件 | 职责 |
@@ -193,7 +202,7 @@ git diff --check
 
 ## 验证方式
 
-阶段 1 至 5 的具体命令和场景即为执行顺序，最终统一由 `npm run verify:cli` 和现有回归 gates 收口。
+阶段 1 至 6 的具体命令和场景即为执行顺序，最终统一由 `npm run verify:cli`、`npm run verify:agent-cli-install` 和现有回归 gates 收口。
 
 ### 验收证据保存原则
 
@@ -216,7 +225,7 @@ git diff --check
 - stdout/stderr、JSON schema、退出码和读取上限稳定。
 - 现有数据安全、Git backup、编辑器和 public-safety gates 全部通过。
 
-完成不包括：MCP 可连接、CLI 已进入系统 PATH、签名 DMG 已发布、任意 Agent 客户端体验已获用户认可。
+完成不包括：MCP 可连接、Vibenote 自动修改 shell PATH、签名 DMG 已发布、任意 Agent 客户端体验已获用户认可。
 
 ## Blocker 汇总
 

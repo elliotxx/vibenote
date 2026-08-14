@@ -33,6 +33,7 @@
     "verify:public-safety": "node scripts/public-safety-check.mjs",
     "verify:cli": "node --test tests/unit/*.test.mjs && node scripts/cli-runtime.mjs",
     "verify:cli-coordination": "node scripts/cli-coordination-runtime.mjs",
+    "verify:agent-cli-install": "node scripts/agent-cli-install-runtime.mjs",
     "test:public-safety": "node --test scripts/public-safety-check.test.mjs",
     "setup:hooks": "git config core.hooksPath .githooks",
     "verify:stability": "node scripts/stability-runtime.mjs",

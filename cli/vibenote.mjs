@@ -94,6 +94,78 @@ function printSuccess(command, data, output) {
   else process.stdout.write(`${JSON.stringify(data, null, 2)}\n`)
 }
 
+const HELP_PAGES = Object.freeze({
+  '': `Usage: vibenote <command> [options]
+
+Commands:
+  version              Show the Vibenote version
+  capabilities         Show the versioned Agent CLI contract
+  doctor               Check note storage health
+  notes list           List internal notes
+  notes read           Read an internal note
+  blocks list          List blocks in an internal note
+  blocks read          Read one block
+  blocks append        Safely append one block
+  search               Search internal note blocks
+
+Run "vibenote <command> --help" for command options.
+Run "vibenote capabilities" for the machine-readable command contract.
+`,
+  notes: `Usage: vibenote notes <command> [options]
+
+Commands:
+  notes list           List internal notes
+  notes read           Read an internal note
+
+Run "vibenote notes <command> --help" for command options.
+`,
+  blocks: `Usage: vibenote blocks <command> [options]
+
+Commands:
+  blocks list          List blocks in an internal note
+  blocks read          Read one block
+  blocks append        Safely append one block
+
+Run "vibenote blocks <command> --help" for command options.
+`,
+  version: `Usage: vibenote version [--output json]
+`,
+  capabilities: `Usage: vibenote capabilities [--data-dir <path>] [--output json]
+`,
+  doctor: `Usage: vibenote doctor [--data-dir <path>] [--output json]
+`,
+  'notes.list': `Usage: vibenote notes list [--data-dir <path>] [--limit <n>] [--cursor <cursor>] [--output json]
+`,
+  'notes.read': `Usage: vibenote notes read --note <id> [--data-dir <path>] [--raw] [--output json]
+`,
+  'blocks.list': `Usage: vibenote blocks list --note <id> [--data-dir <path>] [--limit <n>] [--cursor <cursor>] [--output json]
+`,
+  'blocks.read': `Usage: vibenote blocks read --note <id> (--block <id> | --legacy-index <n>) [--offset <bytes>] [--max-bytes <bytes>] [--data-dir <path>] [--output json]
+`,
+  'blocks.append': `Usage: vibenote blocks append --data-dir <path> --note <id> (--content <text> | --content-stdin) --idempotency-key <key> (--expected-revision <revision> | --accept-current) [--language <language>] [--dry-run] [--output json]
+`,
+  search: `Usage: vibenote search --query <text> [--data-dir <path>] [--limit <n>] [--output json]
+`,
+})
+
+function helpText(topic = '') {
+  return HELP_PAGES[topic]
+}
+
+function helpTopic(argv) {
+  if (argv.length === 0) return ''
+  if (argv.length === 1 && ['help', '-h', '--help'].includes(argv[0])) return ''
+  if (argv[0] === 'help') {
+    const topic = argv.slice(1).join('.')
+    return Object.hasOwn(HELP_PAGES, topic) ? topic : null
+  }
+  if (['-h', '--help'].includes(argv.at(-1))) {
+    const topic = argv.slice(0, -1).join('.')
+    return Object.hasOwn(HELP_PAGES, topic) ? topic : null
+  }
+  return null
+}
+
 async function execute(command, options, dataDirectory) {
   if (command === 'version') return { version: packageJson.version }
   const store = new NoteStore({ userDataPath: dataDirectory.path, appVersion: packageJson.version })
@@ -123,17 +195,23 @@ async function execute(command, options, dataDirectory) {
   throw cliError('INVALID_ARGUMENT', 'Unknown command')
 }
 
-let command = ''
-try {
-  const parsed = parseArguments(process.argv.slice(2))
-  command = commandName(parsed.positionals)
-  const dataDirectory = command === 'version'
-    ? { path: '', source: 'none', explicit: false }
-    : resolveDataDirectory(parsed.options)
-  const data = await execute(command, parsed.options, dataDirectory)
-  printSuccess(command, data, parsed.options.output)
-} catch (error) {
-  const envelope = errorEnvelope(command, error)
-  process.stderr.write(`${JSON.stringify(envelope)}\n`)
-  process.exitCode = exitCodeFor(error?.code)
+const argv = process.argv.slice(2)
+const requestedHelpTopic = helpTopic(argv)
+if (requestedHelpTopic !== null) {
+  process.stdout.write(helpText(requestedHelpTopic))
+} else {
+  let command = ''
+  try {
+    const parsed = parseArguments(argv)
+    command = commandName(parsed.positionals)
+    const dataDirectory = command === 'version'
+      ? { path: '', source: 'none', explicit: false }
+      : resolveDataDirectory(parsed.options)
+    const data = await execute(command, parsed.options, dataDirectory)
+    printSuccess(command, data, parsed.options.output)
+  } catch (error) {
+    const envelope = errorEnvelope(command, error)
+    process.stderr.write(`${JSON.stringify(envelope)}\n`)
+    process.exitCode = exitCodeFor(error?.code)
+  }
 }
