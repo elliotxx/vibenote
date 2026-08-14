@@ -370,15 +370,14 @@ export class GitBackupManager {
     if (unresolved.stdout) throw new GitBackupError('conflict')
   }
 
-  async commitManagedSnapshot(repositoryPath, now) {
+  async commitManagedSnapshot(repositoryPath) {
     const status = await this.runner.run(repositoryPath, ['status', '--porcelain', '--', ...GIT_BACKUP_MANAGED_PATHS])
     if (!status.stdout) return null
     await this.runner.run(repositoryPath, ['add', '-A', '--', ...GIT_BACKUP_MANAGED_PATHS])
     const staged = await this.runner.run(repositoryPath, ['diff', '--cached', '--quiet', '--', ...GIT_BACKUP_MANAGED_PATHS], { allowFailure: true })
     if (staged.code === 0) return null
     if (staged.code !== 1) throw new GitBackupError('git-failed')
-    const timestamp = now.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC')
-    const message = `chore(vibenote): auto backup ${timestamp}\n\nVibenote-Auto-Backup: true`
+    const message = 'chore(vibenote): auto backup\n\nVibenote-Auto-Backup: true'
     await this.runner.run(repositoryPath, ['commit', '--only', '-m', message, '--', ...GIT_BACKUP_MANAGED_PATHS])
     return (await this.runner.run(repositoryPath, ['rev-parse', 'HEAD'])).stdout
   }
@@ -468,7 +467,7 @@ export class GitBackupManager {
       throw new GitBackupExportError('mirror-conflict', 'The published backup was modified outside Vibenote')
     }
 
-    const commitHash = await this.commitManagedSnapshot(repositoryPath, now)
+    const commitHash = await this.commitManagedSnapshot(repositoryPath)
     const head = await this.runner.run(repositoryPath, ['rev-parse', '--verify', 'HEAD'], { allowFailure: true })
     const statusPatch = {
       ...(exported ? { lastExportAt: now.toISOString() } : {}),

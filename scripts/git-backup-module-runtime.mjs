@@ -45,7 +45,10 @@ try {
   await git(repositoryPath, 'config', 'user.email', 'runtime@example.invalid')
   await manager.setEnabled(true)
   assert.equal(await git(repositoryPath, 'rev-list', '--count', 'HEAD'), '1')
-  assert.match(await git(repositoryPath, 'log', '-1', '--format=%B'), /^Vibenote-Auto-Backup:\s*true$/m)
+  assert.equal(
+    await git(repositoryPath, 'log', '-1', '--format=%B'),
+    'chore(vibenote): auto backup\n\nVibenote-Auto-Backup: true',
+  )
   assert.equal(manager.getStatus().lastResult, 'committed-local')
   await manager.requestRun({ reason: 'no-change' })
   assert.equal(await git(repositoryPath, 'rev-list', '--count', 'HEAD'), '1')

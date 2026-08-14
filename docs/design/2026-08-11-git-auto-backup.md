@@ -202,7 +202,7 @@ Git 任务始终位于保存链路之外。文件保存成功后，即使导出�
 提交信息固定为：
 
 ```text
-chore(vibenote): auto backup 2026-08-11 14:32:10
+chore(vibenote): auto backup
 
 Vibenote-Auto-Backup: true
 ```
