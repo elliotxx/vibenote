@@ -86,6 +86,7 @@ Only share the DMG with people who trust the build source. This release is unsig
 | Action | macOS shortcut |
 | --- | --- |
 | Show or hide app | `Cmd+Shift+Space` |
+| Open Settings | `Cmd+,` |
 | Add block after current block | `Cmd+Enter` |
 | Add block before current block | `Option+Enter` |
 | Add block at end of note stream | `Cmd+Shift+Enter` |

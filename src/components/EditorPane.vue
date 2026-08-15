@@ -2712,6 +2712,9 @@ function handleEditorShortcut(event: KeyboardEvent, editor: EditorView) {
   } else if (key === 'o' && primary) {
     void store.openExternalFile()
     handled = true
+  } else if (key === ',' && primary && !event.shiftKey && !event.altKey) {
+    emit('open-settings')
+    handled = true
   } else if (key === 'arrowleft' && !primary && !event.altKey && !event.shiftKey) {
     handled = revealCursorAroundActiveImage(editor, 'left')
   } else if (key === 'arrowright' && !primary && !event.altKey && !event.shiftKey) {
@@ -2778,6 +2781,10 @@ function runEditorCommand(command: EditorCommand, editor: EditorView) {
     void store.openExternalFile()
     return true
   }
+  if (command === 'settings:open') {
+    emit('open-settings')
+    return true
+  }
   if (command === 'search:block') return openEditorSearch(editor, false, 'block')
   if (command === 'search:document') return openEditorSearch(editor, false, 'document')
   if (command === 'replace:block') return openEditorSearch(editor, true, 'block')
@@ -2815,7 +2822,7 @@ function resetEditorFontSize() {
 
 function onEditorCommand(command: EditorCommand) {
   if (!view) return
-  if (command.startsWith('search:') || command.startsWith('replace:')) {
+  if (command.startsWith('search:') || command.startsWith('replace:') || command === 'settings:open') {
     runEditorCommand(command, view)
     return
   }
@@ -2830,6 +2837,13 @@ function onWindowKeydown(event: KeyboardEvent) {
     event.preventDefault()
     event.stopPropagation()
     closeEditorSearch()
+    return
+  }
+  const primary = event.metaKey || event.ctrlKey
+  if (primary && event.key === ',' && !event.shiftKey && !event.altKey) {
+    event.preventDefault()
+    event.stopPropagation()
+    emit('open-settings')
     return
   }
   const target = event.target as HTMLElement | null

@@ -86,6 +86,7 @@ Vibenote 当前只支持 macOS arm64。为了保持简单，首发版本不包�
 | 操作 | macOS 快捷键 |
 | --- | --- |
 | 显示或隐藏应用 | `Cmd+Shift+Space` |
+| 打开设置 | `Cmd+,` |
 | 在当前 block 后新增 block | `Cmd+Enter` |
 | 在当前 block 前新增 block | `Option+Enter` |
 | 在 note stream 末尾新增 block | `Cmd+Shift+Enter` |
