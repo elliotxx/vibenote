@@ -60,6 +60,28 @@ async function renderedLineBackground(page: Page, line: Locator) {
   }, `data:image/png;base64,${screenshot.toString('base64')}`)
 }
 
+async function renderedLineSamples(page: Page, line: Locator) {
+  const screenshot = await line.screenshot()
+  return page.evaluate(async source => {
+    const image = new Image()
+    image.src = source
+    await image.decode()
+    const canvas = document.createElement('canvas')
+    canvas.width = image.width
+    canvas.height = image.height
+    const context = canvas.getContext('2d')!
+    context.drawImage(image, 0, 0)
+    const sample = (x: number, y: number) => Array.from(context.getImageData(x, y, 1, 1).data.slice(0, 3))
+    const right = image.width - 8
+    const middle = Math.floor(image.height / 2)
+    return {
+      leftCenter: sample(1, middle),
+      rightCenter: sample(right, middle),
+      rightTop: sample(right, 0),
+    }
+  }, `data:image/png;base64,${screenshot.toString('base64')}`)
+}
+
 function colorDistance(left: number[], right: number[]) {
   return Math.sqrt(left.reduce((sum, channel, index) => sum + (channel - right[index]) ** 2, 0))
 }
@@ -170,7 +192,8 @@ test.describe('markdown block writing enhancements', () => {
   })
 
   test('optionally emphasizes priority lines without changing note content', async ({ page }) => {
-    const fixture = markdownFixture([
+    const created = '2026-08-17T09:00:00.000Z'
+    const fixture = `${markdownFixture([
       'Critical task P0',
       'Important task P1',
       'Planned task P2',
@@ -178,7 +201,11 @@ test.describe('markdown block writing enhancements', () => {
       'Mixed task P2 then P0',
       'Inline `P0` remains ordinary',
       'Another ordinary line',
-    ])
+    ])}\n${[
+      `---block:markdown;auto=0;created=${created}`,
+      'Regular block line',
+      'Regular block sibling',
+    ].join('\n')}`
     await loadFixture(page, fixture)
 
     const editor = page.locator('.cm-editor')
@@ -203,10 +230,18 @@ test.describe('markdown block writing enhancements', () => {
     await page.keyboard.press(`${modifier}+,`)
     await clickLine(page, 'Another ordinary line')
     await expect(editor).toHaveClass(/priority-line-emphasis/)
+    const activeOrdinaryLine = page.locator('.cm-line').filter({ hasText: 'Another ordinary line' })
+    await expect(activeOrdinaryLine).toHaveClass(/priority-block-line/)
     const ordinaryColor = await renderedLineBackground(
       page,
       page.locator('.cm-line').filter({ hasText: 'remains ordinary' }),
     )
+    const activeOrdinaryColor = await renderedLineBackground(page, activeOrdinaryLine)
+    expect(colorDistance(activeOrdinaryColor, ordinaryColor)).toBeLessThanOrEqual(1)
+    const activeOrdinarySamples = await renderedLineSamples(page, activeOrdinaryLine)
+    expect(colorDistance(activeOrdinarySamples.leftCenter, activeOrdinarySamples.rightCenter)).toBeGreaterThanOrEqual(20)
+    expect(colorDistance(activeOrdinarySamples.rightTop, activeOrdinarySamples.rightCenter)).toBeLessThanOrEqual(2)
+
     const priorityColors = await Promise.all([
       renderedLineBackground(page, criticalLine),
       renderedLineBackground(page, page.locator('.cm-line').filter({ hasText: 'Important task' })),
@@ -221,6 +256,28 @@ test.describe('markdown block writing enhancements', () => {
     expect(colorDistance(priorityColors[0], priorityColors[1])).toBeGreaterThanOrEqual(12)
     expect(colorDistance(priorityColors[1], priorityColors[2])).toBeGreaterThanOrEqual(12)
     expect(colorDistance(priorityColors[2], priorityColors[3])).toBeGreaterThanOrEqual(8)
+
+    await clickLine(page, 'Critical task')
+    const activePriorityColor = await renderedLineBackground(page, criticalLine)
+    expect(colorDistance(activePriorityColor, priorityColors[0])).toBeLessThanOrEqual(1)
+    const activePrioritySamples = await renderedLineSamples(page, criticalLine)
+    expect(colorDistance(activePrioritySamples.leftCenter, activePrioritySamples.rightCenter)).toBeGreaterThanOrEqual(20)
+    expect(colorDistance(activePrioritySamples.rightTop, activePrioritySamples.rightCenter)).toBeLessThanOrEqual(2)
+    const activeGutter = page.locator('.cm-lineNumbers .cm-gutterElement.cm-activeLineGutter')
+    const adjacentGutter = page.locator('.cm-lineNumbers .cm-gutterElement').filter({ hasText: '2' }).first()
+    const adjacentGutterColor = await adjacentGutter.evaluate(element => window.getComputedStyle(element).backgroundColor)
+    await expect(activeGutter).toHaveCSS('background-color', adjacentGutterColor)
+    await expect(activeGutter).toHaveCSS('font-weight', '700')
+
+    const regularLine = page.locator('.cm-line').filter({ hasText: 'Regular block line' })
+    const regularSibling = page.locator('.cm-line').filter({ hasText: 'Regular block sibling' })
+    await expect(regularLine).not.toHaveClass(/priority-block-line/)
+    await clickLine(page, 'Regular block line')
+    const activeRegularColor = await renderedLineBackground(page, regularLine)
+    const inactiveRegularColor = await renderedLineBackground(page, regularSibling)
+    expect(colorDistance(activeRegularColor, inactiveRegularColor)).toBeGreaterThanOrEqual(20)
+    const activeRegularSamples = await renderedLineSamples(page, regularLine)
+    expect(colorDistance(activeRegularSamples.leftCenter, activeRegularSamples.rightCenter)).toBeLessThanOrEqual(2)
 
     await expect.poll(() => page.evaluate(() => {
       const settings = JSON.parse(localStorage.getItem('vibenote:settings') || '{}')

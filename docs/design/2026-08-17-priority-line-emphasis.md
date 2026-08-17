@@ -18,7 +18,7 @@ Help readers scan priority across a note without turning the editor into a high-
 - P2 uses a muted blue wash.
 - P3 uses a light neutral wash.
 - Adjacent levels must remain distinguishable by rendered row color alone.
-- The active-line background takes precedence over the priority wash.
+- Only blocks containing a valid priority marker replace the active-line fill: the focused line keeps its row color and uses a neutral two-pixel left inset rule plus a stronger line number. Other blocks retain the default active-line treatment.
 - Priority washes take precedence over alternating block backgrounds.
 - Dark mode uses higher-lightness colors and slightly stronger washes for equivalent perceived contrast.
 

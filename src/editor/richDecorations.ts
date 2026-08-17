@@ -237,6 +237,17 @@ function addPriorityMarks(decorations: any[], state: any, block: ScratchBlock) {
       attributes: { class: `priority-line priority-line-p${priority}` },
     }).range(lineFrom))
   }
+
+  if (linePriorities.size > 0) {
+    let line = state.doc.lineAt(block.content.from)
+    while (line.from <= block.content.to && line.to >= block.content.from) {
+      decorations.push(Decoration.line({
+        attributes: { class: 'priority-block-line' },
+      }).range(line.from))
+      if (line.to >= block.content.to || line.number >= state.doc.lines) break
+      line = state.doc.line(line.number + 1)
+    }
+  }
 }
 
 function addMentionMarks(decorations: any[], state: any, block: ScratchBlock) {

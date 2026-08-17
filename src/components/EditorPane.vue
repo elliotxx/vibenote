@@ -7,6 +7,7 @@ import {
   drawSelection,
   EditorView,
   highlightActiveLine,
+  highlightActiveLineGutter,
   keymap,
   lineNumbers,
   rectangularSelection,
@@ -371,6 +372,15 @@ watch(
   },
 )
 
+function priorityLineEmphasisExtensions() {
+  return [
+    EditorView.editorAttributes.of({
+      class: store.settings.priorityLineEmphasis ? 'priority-line-emphasis' : '',
+    }),
+    ...(store.settings.priorityLineEmphasis ? [highlightActiveLineGutter()] : []),
+  ]
+}
+
 function applyEditorViewSettings(editor: EditorView | null) {
   if (!editor) return
   const tabSize = Math.min(8, Math.max(2, Math.trunc(store.settings.tabSize || 4)))
@@ -381,9 +391,7 @@ function applyEditorViewSettings(editor: EditorView | null) {
         indentUnit.of(' '.repeat(tabSize)),
       ]),
       priorityLineEmphasisCompartment.reconfigure(
-        EditorView.editorAttributes.of({
-          class: store.settings.priorityLineEmphasis ? 'priority-line-emphasis' : '',
-        }),
+        priorityLineEmphasisExtensions(),
       ),
     ],
   })
@@ -774,9 +782,7 @@ function mountEditor() {
         indentUnit.of(' '.repeat(store.settings.tabSize)),
       ]),
       priorityLineEmphasisCompartment.of(
-        EditorView.editorAttributes.of({
-          class: store.settings.priorityLineEmphasis ? 'priority-line-emphasis' : '',
-        }),
+        priorityLineEmphasisExtensions(),
       ),
       EditorState.allowMultipleSelections.of(true),
       drawSelection(),
