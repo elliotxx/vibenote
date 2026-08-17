@@ -336,6 +336,35 @@ test.describe('editor text selection shortcuts', () => {
     await expect.poll(() => copySelection(page)).toBe('plain')
   })
 
+  test('highlights other occurrences of the selected word', async ({ page }) => {
+    const created = '2026-07-01T10:38:41.565Z'
+    const content = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
+      `---block:markdown;auto=1;created=${created}`,
+      'alpha one',
+      'plain alpha',
+      'alphabets',
+      `---block:markdown;auto=1;created=${created}`,
+      'alpha two',
+    ].join('\n')}`
+    await page.goto('about:blank')
+    await loadFixture(page, content)
+
+    const word = await lineColumnPoint(page, 'alpha one', 2)
+    await page.mouse.dblclick(word.x, word.y)
+    await expect.poll(() => copySelection(page)).toBe('alpha')
+    await expect(page.locator('.cm-selectionMatch')).toHaveCount(2)
+    await expect(page.locator('.cm-line', { hasText: 'alphabets' }).locator('.cm-selectionMatch')).toHaveCount(0)
+
+    const start = await lineColumnPoint(page, 'alphabets', 0)
+    const end = await lineColumnPoint(page, 'alphabets', 3)
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(end.x, end.y, { steps: 6 })
+    await page.mouse.up()
+    await expect.poll(() => copySelection(page)).toBe('alp')
+    await expect(page.locator('.cm-selectionMatch')).toHaveCount(3)
+  })
+
   test('adds multiple cursors with Option-click', async ({ page }) => {
     const first = await lineColumnPoint(page, '# Stream', 1)
     const second = await lineColumnPoint(page, 'Drop plain text notes here.', 1)

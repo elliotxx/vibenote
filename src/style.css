@@ -382,6 +382,11 @@ select:focus {
   height: clamp(15px, 1.15em, 38px);
 }
 
+.cm-editor .cm-selectionMatch {
+  border-radius: 3px;
+  background: oklch(74% 0.09 252 / 0.62);
+}
+
 .cm-editor .vibenote-search-match {
   border-radius: 3px;
   background: oklch(88% 0.09 92 / 0.72);

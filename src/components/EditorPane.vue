@@ -67,6 +67,7 @@ import {
   type EditorSearchMatch,
   type EditorSearchScope,
 } from '../editor/search'
+import { selectionMatchHighlighter } from '../editor/selectionMatches'
 import { useWorkspaceStore } from '../stores/workspace'
 
 const store = useWorkspaceStore()
@@ -816,7 +817,12 @@ function mountEditor() {
         '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
           backgroundColor: 'oklch(79% 0.055 252 / 0.52)',
         },
+        '.cm-selectionMatch': {
+          borderRadius: '3px',
+          backgroundColor: 'oklch(74% 0.09 252 / 0.62)',
+        },
       }),
+      selectionMatchHighlighter,
       selectionRightFill,
       editorScrollTail,
       blockField,
