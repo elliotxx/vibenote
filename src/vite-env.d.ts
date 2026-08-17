@@ -19,7 +19,7 @@ type SearchResult = {
 type EditorCommand =
   | 'file:new'
   | 'file:open'
-  | 'settings:open'
+  | 'settings:toggle'
   | 'search:block'
   | 'search:document'
   | 'replace:block'

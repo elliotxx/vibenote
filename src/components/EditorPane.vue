@@ -71,7 +71,7 @@ import { useWorkspaceStore } from '../stores/workspace'
 
 const store = useWorkspaceStore()
 const emit = defineEmits<{
-  (event: 'open-settings'): void
+  (event: 'toggle-settings'): void
 }>()
 const editorHost = ref<HTMLElement | null>(null)
 const editorMount = ref<HTMLElement | null>(null)
@@ -2713,7 +2713,7 @@ function handleEditorShortcut(event: KeyboardEvent, editor: EditorView) {
     void store.openExternalFile()
     handled = true
   } else if (key === ',' && primary && !event.shiftKey && !event.altKey) {
-    emit('open-settings')
+    emit('toggle-settings')
     handled = true
   } else if (key === 'arrowleft' && !primary && !event.altKey && !event.shiftKey) {
     handled = revealCursorAroundActiveImage(editor, 'left')
@@ -2781,8 +2781,8 @@ function runEditorCommand(command: EditorCommand, editor: EditorView) {
     void store.openExternalFile()
     return true
   }
-  if (command === 'settings:open') {
-    emit('open-settings')
+  if (command === 'settings:toggle') {
+    emit('toggle-settings')
     return true
   }
   if (command === 'search:block') return openEditorSearch(editor, false, 'block')
@@ -2822,7 +2822,7 @@ function resetEditorFontSize() {
 
 function onEditorCommand(command: EditorCommand) {
   if (!view) return
-  if (command.startsWith('search:') || command.startsWith('replace:') || command === 'settings:open') {
+  if (command.startsWith('search:') || command.startsWith('replace:') || command === 'settings:toggle') {
     runEditorCommand(command, view)
     return
   }
@@ -2843,7 +2843,7 @@ function onWindowKeydown(event: KeyboardEvent) {
   if (primary && event.key === ',' && !event.shiftKey && !event.altKey) {
     event.preventDefault()
     event.stopPropagation()
-    emit('open-settings')
+    emit('toggle-settings')
     return
   }
   const target = event.target as HTMLElement | null
@@ -3502,7 +3502,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
         <button class="status-icon-button danger" title="删除当前块（Cmd/Ctrl+Shift+D）" @click="removeBlock">
           <Trash2 :size="15" />
         </button>
-        <button class="status-icon-button" title="设置" @click="emit('open-settings')">
+        <button class="status-icon-button" title="设置" @click="emit('toggle-settings')">
           <Settings :size="15" />
         </button>
       </div>

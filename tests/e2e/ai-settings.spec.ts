@@ -57,11 +57,14 @@ async function hasNoVisibleEditorSelection(page: Page) {
 }
 
 test.describe('AI settings', () => {
-  test('opens settings with the preferences shortcut', async ({ page }) => {
+  test('toggles settings with the preferences shortcut', async ({ page }) => {
     await loadFixture(page)
     await page.keyboard.press(`${modifier}+Comma`)
     await expect(page.getByRole('heading', { name: '设置' })).toBeVisible()
     await expect(page.locator('.settings-panel')).toBeVisible()
+
+    await page.keyboard.press(`${modifier}+Comma`)
+    await expect(page.locator('.settings-panel')).toBeHidden()
   })
 
   test('persists image storage preference', async ({ page }) => {

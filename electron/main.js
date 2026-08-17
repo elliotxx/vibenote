@@ -1339,7 +1339,7 @@ function setupApplicationMenu() {
         {
           label: 'Settings...',
           accelerator: 'CommandOrControl+,',
-          click: () => sendEditorCommandWhenFocused('settings:open'),
+          click: () => sendEditorCommandWhenFocused('settings:toggle'),
         },
         { type: 'separator' },
         { role: 'hide' },
@@ -1437,7 +1437,7 @@ function editorCommandForInput(input) {
   const key = input.key.toLowerCase()
   if (primary && key === 'n') return 'file:new'
   if (primary && key === 'o') return 'file:open'
-  if (primary && key === ',' && !input.shift && !input.alt) return 'settings:open'
+  if (primary && key === ',' && !input.shift && !input.alt) return 'settings:toggle'
   if (primary && key === 'f') return input.shift ? 'search:document' : 'search:block'
   if (primary && key === 'r') return input.shift ? 'replace:document' : 'replace:block'
   if (primary && (key === '=' || key === '+')) return 'view:font-increase'

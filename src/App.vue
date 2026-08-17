@@ -196,7 +196,7 @@ async function uninstallAgentCli() {
         <div class="window-title">{{ store.currentPath ? store.bufferTitle(store.currentPath) : 'Vibenote' }}</div>
       </header>
 
-      <EditorPane v-if="store.currentPath" :key="store.currentPath" @open-settings="showSettings = true" />
+      <EditorPane v-if="store.currentPath" :key="store.currentPath" @toggle-settings="showSettings = !showSettings" />
     </main>
 
     <div v-if="showSettings" class="modal-backdrop" @click.self="showSettings = false">

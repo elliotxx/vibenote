@@ -7,7 +7,7 @@ Vibenote opens directly into one continuous note stream. Write in the current bl
 | Action | macOS shortcut |
 | --- | --- |
 | Show or hide app | `Cmd+Shift+Space` |
-| Open Settings | `Cmd+,` |
+| Show or hide Settings | `Cmd+,` |
 | Add block after current block | `Cmd+Enter` |
 | Add block before current block | `Option+Enter` |
 | Add block at end of note stream | `Cmd+Shift+Enter` |
