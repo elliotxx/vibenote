@@ -9,6 +9,7 @@ export type Settings = {
   tabSize: number
   defaultLanguage: string
   imageStorage: ImageStorageMode
+  priorityLineEmphasis: boolean
   ai: AiSettings
 }
 
@@ -62,6 +63,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     tabSize: 4,
     defaultLanguage: 'markdown',
     imageStorage: 'beside-file',
+    priorityLineEmphasis: false,
     ai: { ...defaultAiSettings },
   })
 
@@ -75,6 +77,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const parsed = JSON.parse(stored)
       Object.assign(settings, parsed)
       settings.imageStorage = parsed.imageStorage === 'app-data' ? 'app-data' : 'beside-file'
+      settings.priorityLineEmphasis = parsed.priorityLineEmphasis === true
       settings.ai = { ...defaultAiSettings, ...parsed.ai, hasApiKey: false }
     }
     settings.ai = { ...settings.ai, ...(await window.vibenote.ai.getSettings()) }

@@ -288,6 +288,18 @@ async function uninstallAgentCli() {
                 <option value="app-data">应用数据目录</option>
               </select>
             </label>
+            <label class="settings-toggle-row">
+              <span class="settings-toggle-copy">
+                <span class="settings-toggle-title">优先级行强调</span>
+                <span class="settings-toggle-description">根据行内 P0–P3 添加轻量级提示</span>
+              </span>
+              <input
+                v-model="store.settings.priorityLineEmphasis"
+                type="checkbox"
+                @change="store.saveSettings"
+              />
+              <span class="settings-switch" aria-hidden="true"></span>
+            </label>
           </section>
 
           <section class="settings-section settings-section-wide">

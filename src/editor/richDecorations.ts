@@ -216,6 +216,7 @@ function addPriorityMarks(decorations: any[], state: any, block: ScratchBlock) {
   const content = state.doc.sliceString(block.content.from, block.content.to)
   const excluded = block.language === 'markdown' ? markdownDecorationExclusions(content) : []
   const priorityPattern = /(?<![\p{L}\p{N}_])P[0-3](?![\p{L}\p{N}_])/gu
+  const linePriorities = new Map<number, number>()
 
   for (const match of content.matchAll(priorityPattern)) {
     const from = match.index!
@@ -224,6 +225,17 @@ function addPriorityMarks(decorations: any[], state: any, block: ScratchBlock) {
     decorations.push(Decoration.mark({
       class: `tok-priority tok-priority-${match[0].toLowerCase()}`,
     }).range(block.content.from + from, block.content.from + to))
+
+    const lineFrom = state.doc.lineAt(block.content.from + from).from
+    const priority = Number(match[0][1])
+    const current = linePriorities.get(lineFrom)
+    if (current === undefined || priority < current) linePriorities.set(lineFrom, priority)
+  }
+
+  for (const [lineFrom, priority] of linePriorities) {
+    decorations.push(Decoration.line({
+      attributes: { class: `priority-line priority-line-p${priority}` },
+    }).range(lineFrom))
   }
 }
 

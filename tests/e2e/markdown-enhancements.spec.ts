@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
 const primaryClickModifier = process.platform === 'darwin' ? 'Meta' : 'Control'
@@ -43,6 +43,25 @@ async function savedContent(page: Page) {
 
 async function visibleLineText(page: Page, containing: string) {
   return page.locator('.cm-line').filter({ hasText: containing }).first().innerText()
+}
+
+async function renderedLineBackground(page: Page, line: Locator) {
+  const screenshot = await line.screenshot()
+  return page.evaluate(async source => {
+    const image = new Image()
+    image.src = source
+    await image.decode()
+    const canvas = document.createElement('canvas')
+    canvas.width = image.width
+    canvas.height = image.height
+    const context = canvas.getContext('2d')!
+    context.drawImage(image, 0, 0)
+    return Array.from(context.getImageData(image.width - 8, Math.floor(image.height / 2), 1, 1).data.slice(0, 3))
+  }, `data:image/png;base64,${screenshot.toString('base64')}`)
+}
+
+function colorDistance(left: number[], right: number[]) {
+  return Math.sqrt(left.reduce((sum, channel, index) => sum + (channel - right[index]) ** 2, 0))
 }
 
 test.describe('markdown block writing enhancements', () => {
@@ -147,6 +166,66 @@ test.describe('markdown block writing enhancements', () => {
     expect(new Set(styles.slice(0, 4).map(style => style.color)).size).toBe(4)
     expect(styles.every(style => style.backgroundColor === 'rgba(0, 0, 0, 0)')).toBe(true)
     expect(styles.every(style => style.fontWeight === '600')).toBe(true)
+    await expect.poll(() => savedContent(page)).toBe(fixture)
+  })
+
+  test('optionally emphasizes priority lines without changing note content', async ({ page }) => {
+    const fixture = markdownFixture([
+      'Critical task P0',
+      'Important task P1',
+      'Planned task P2',
+      'Someday task P3',
+      'Mixed task P2 then P0',
+      'Inline `P0` remains ordinary',
+      'Another ordinary line',
+    ])
+    await loadFixture(page, fixture)
+
+    const editor = page.locator('.cm-editor')
+    const criticalLine = page.locator('.cm-line').filter({ hasText: 'Critical task' })
+    await expect(editor).not.toHaveClass(/priority-line-emphasis/)
+    await expect(criticalLine).toHaveCSS('background-image', 'none')
+
+    await page.keyboard.press(`${modifier}+,`)
+    const toggle = page.getByRole('checkbox', { name: '优先级行强调' })
+    await expect(toggle).not.toBeChecked()
+    await toggle.check()
+
+    await expect(editor).toHaveClass(/priority-line-emphasis/)
+    await expect(criticalLine).toHaveClass(/priority-line-p0/)
+    await expect(page.locator('.cm-line').filter({ hasText: 'Important task' })).toHaveClass(/priority-line-p1/)
+    await expect(page.locator('.cm-line').filter({ hasText: 'Planned task' })).toHaveClass(/priority-line-p2/)
+    await expect(page.locator('.cm-line').filter({ hasText: 'Someday task' })).toHaveClass(/priority-line-p3/)
+    await expect(page.locator('.cm-line').filter({ hasText: 'Mixed task' })).toHaveClass(/priority-line-p0/)
+    await expect(page.locator('.cm-line').filter({ hasText: 'remains ordinary' })).not.toHaveClass(/priority-line-p0/)
+    await expect(criticalLine).toHaveCSS('background-image', 'none')
+
+    await page.keyboard.press(`${modifier}+,`)
+    await clickLine(page, 'Another ordinary line')
+    await expect(editor).toHaveClass(/priority-line-emphasis/)
+    const ordinaryColor = await renderedLineBackground(
+      page,
+      page.locator('.cm-line').filter({ hasText: 'remains ordinary' }),
+    )
+    const priorityColors = await Promise.all([
+      renderedLineBackground(page, criticalLine),
+      renderedLineBackground(page, page.locator('.cm-line').filter({ hasText: 'Important task' })),
+      renderedLineBackground(page, page.locator('.cm-line').filter({ hasText: 'Planned task' })),
+      renderedLineBackground(page, page.locator('.cm-line').filter({ hasText: 'Someday task' })),
+    ])
+    const priorityDistances = priorityColors.map(color => colorDistance(color, ordinaryColor))
+    expect(priorityDistances[0]).toBeGreaterThanOrEqual(18)
+    expect(priorityDistances[1]).toBeGreaterThanOrEqual(16)
+    expect(priorityDistances[2]).toBeGreaterThanOrEqual(12)
+    expect(priorityDistances[3]).toBeGreaterThanOrEqual(7)
+    expect(colorDistance(priorityColors[0], priorityColors[1])).toBeGreaterThanOrEqual(12)
+    expect(colorDistance(priorityColors[1], priorityColors[2])).toBeGreaterThanOrEqual(12)
+    expect(colorDistance(priorityColors[2], priorityColors[3])).toBeGreaterThanOrEqual(8)
+
+    await expect.poll(() => page.evaluate(() => {
+      const settings = JSON.parse(localStorage.getItem('vibenote:settings') || '{}')
+      return settings.priorityLineEmphasis
+    })).toBe(true)
     await expect.poll(() => savedContent(page)).toBe(fixture)
   })
 

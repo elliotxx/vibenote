@@ -152,6 +152,7 @@ type AiSuggestionDiff = { sourceLines: AiDiffLine[]; targetLines: AiDiffLine[]; 
 type AiDiffToken = { text: string; changed: boolean }
 let view: EditorView | null = null
 const indentationCompartment = new Compartment()
+const priorityLineEmphasisCompartment = new Compartment()
 let note: LoadedNote | null = null
 let saveTimer: number | null = null
 let cursorSaveTimer: number | null = null
@@ -318,7 +319,12 @@ function toggleAutoMode() {
 }
 
 watch(
-  () => [store.settings.fontSize, store.settings.tabSize, store.settings.theme],
+  () => [
+    store.settings.fontSize,
+    store.settings.tabSize,
+    store.settings.theme,
+    store.settings.priorityLineEmphasis,
+  ],
   () => {
     applyEditorViewSettings(view)
     clampAiSuggestionFrames()
@@ -329,10 +335,17 @@ function applyEditorViewSettings(editor: EditorView | null) {
   if (!editor) return
   const tabSize = Math.min(8, Math.max(2, Math.trunc(store.settings.tabSize || 4)))
   editor.dispatch({
-    effects: indentationCompartment.reconfigure([
-      EditorState.tabSize.of(tabSize),
-      indentUnit.of(' '.repeat(tabSize)),
-    ]),
+    effects: [
+      indentationCompartment.reconfigure([
+        EditorState.tabSize.of(tabSize),
+        indentUnit.of(' '.repeat(tabSize)),
+      ]),
+      priorityLineEmphasisCompartment.reconfigure(
+        EditorView.editorAttributes.of({
+          class: store.settings.priorityLineEmphasis ? 'priority-line-emphasis' : '',
+        }),
+      ),
+    ],
   })
   editor.dom.style.setProperty('--editor-font-size', `${store.settings.fontSize}px`)
   editorHost.value?.style.setProperty('--editor-font-size', `${store.settings.fontSize}px`)
@@ -720,6 +733,11 @@ function mountEditor() {
         EditorState.tabSize.of(store.settings.tabSize),
         indentUnit.of(' '.repeat(store.settings.tabSize)),
       ]),
+      priorityLineEmphasisCompartment.of(
+        EditorView.editorAttributes.of({
+          class: store.settings.priorityLineEmphasis ? 'priority-line-emphasis' : '',
+        }),
+      ),
       EditorState.allowMultipleSelections.of(true),
       drawSelection(),
       rectangularSelection(),

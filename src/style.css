@@ -664,6 +664,42 @@ select:focus {
   color: oklch(72% 0.03 245);
 }
 
+.priority-line-emphasis .cm-line.priority-line-p0 {
+  background-color: oklch(55% 0.2 24 / 0.15) !important;
+}
+
+.priority-line-emphasis .cm-line.priority-line-p1 {
+  background-color: oklch(68% 0.15 78 / 0.13) !important;
+}
+
+.priority-line-emphasis .cm-line.priority-line-p2 {
+  background-color: oklch(55% 0.13 255 / 0.11) !important;
+}
+
+.priority-line-emphasis .cm-line.priority-line-p3 {
+  background-color: oklch(60% 0.02 245 / 0.065) !important;
+}
+
+.dark-editor.priority-line-emphasis .cm-line.priority-line-p0 {
+  background-color: oklch(70% 0.17 24 / 0.17) !important;
+}
+
+.dark-editor.priority-line-emphasis .cm-line.priority-line-p1 {
+  background-color: oklch(76% 0.13 78 / 0.15) !important;
+}
+
+.dark-editor.priority-line-emphasis .cm-line.priority-line-p2 {
+  background-color: oklch(70% 0.11 255 / 0.13) !important;
+}
+
+.dark-editor.priority-line-emphasis .cm-line.priority-line-p3 {
+  background-color: oklch(68% 0.025 245 / 0.07) !important;
+}
+
+.priority-line-emphasis .cm-line.cm-activeLine.priority-line {
+  background-color: var(--active-line-bg) !important;
+}
+
 .tok-image {
   color: var(--ink-soft);
 }
@@ -1858,6 +1894,78 @@ select:focus {
 .checkbox-label input {
   width: 15px;
   height: 15px;
+}
+
+.settings-toggle-row {
+  position: relative;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 12px !important;
+  min-height: 38px;
+  cursor: pointer;
+}
+
+.settings-toggle-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.settings-toggle-title {
+  color: var(--ink-soft);
+  font-weight: 650;
+}
+
+.settings-toggle-description {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 450;
+  line-height: 1.35;
+}
+
+.settings-toggle-row input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+.settings-switch {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.settings-switch::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--surface-control);
+  box-shadow: 0 1px 2px oklch(24% 0.034 250 / 0.18);
+  content: '';
+  transition: transform 140ms ease;
+}
+
+.settings-toggle-row input:checked + .settings-switch {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.settings-toggle-row input:checked + .settings-switch::after {
+  transform: translateX(14px);
+}
+
+.settings-toggle-row input:focus-visible + .settings-switch {
+  outline: 3px solid oklch(52% 0.12 265 / 0.16);
+  outline-offset: 2px;
 }
 
 .settings-actions {
