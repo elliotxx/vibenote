@@ -1,3 +1,4 @@
+import { markdownLanguage } from '@codemirror/lang-markdown'
 import { EditorSelection, StateEffect, StateField } from '@codemirror/state'
 import { Decoration, EditorView, ViewPlugin, WidgetType } from '@codemirror/view'
 import { blockField, type ScratchBlock } from './blocks'
@@ -195,11 +196,47 @@ function buildRichDecorations(view: EditorView) {
   const blocks = state.field(blockField)
   for (const block of blocks) {
     addSyntaxMarks(decorations, state, block)
+    addMentionMarks(decorations, state, block)
     addTaskCheckboxes(decorations, state, block)
     addImageWidgets(decorations, state, block)
     addMathResults(decorations, state, block)
   }
   return Decoration.set(decorations, true)
+}
+
+type TextRange = {
+  from: number
+  to: number
+}
+
+function addMentionMarks(decorations: any[], state: any, block: ScratchBlock) {
+  if (!['markdown', 'text'].includes(block.language)) return
+
+  const content = state.doc.sliceString(block.content.from, block.content.to)
+  const excluded = block.language === 'markdown' ? markdownMentionExclusions(content) : []
+  const mentionPattern = /(?<![\p{L}\p{N}_@./+\\-])@[\p{L}\p{N}_](?:[\p{L}\p{N}_-]{0,30}[\p{L}\p{N}_])?(?![\p{L}\p{N}_-])/gu
+
+  for (const match of content.matchAll(mentionPattern)) {
+    const from = match.index!
+    const to = from + match[0].length
+    if (excluded.some(range => from >= range.from && to <= range.to)) continue
+    decorations.push(Decoration.mark({ class: 'tok-mention' }).range(
+      block.content.from + from,
+      block.content.from + to,
+    ))
+  }
+}
+
+function markdownMentionExclusions(content: string): TextRange[] {
+  const excludedNodes = new Set(['InlineCode', 'FencedCode', 'CodeBlock', 'Link', 'Image', 'Autolink'])
+  const ranges: TextRange[] = []
+  const cursor = markdownLanguage.parser.parse(content).cursor()
+
+  do {
+    if (excludedNodes.has(cursor.name)) ranges.push({ from: cursor.from, to: cursor.to })
+  } while (cursor.next())
+
+  return ranges
 }
 
 function addSyntaxMarks(decorations: any[], state: any, block: ScratchBlock) {

@@ -17,6 +17,7 @@
   --accent: oklch(52% 0.12 265);
   --accent-hover: oklch(47% 0.13 265);
   --accent-tint: oklch(93.5% 0.035 265);
+  --mention-ink: oklch(46% 0.075 272);
   --success: oklch(46% 0.11 158);
   --danger: oklch(54% 0.13 24);
   --status-bg: oklch(94.7% 0.01 238);
@@ -611,6 +612,15 @@ select:focus {
   text-decoration: underline;
   text-decoration-color: oklch(78% 0.05 252);
   text-underline-offset: 3px;
+}
+
+.tok-mention {
+  color: var(--mention-ink);
+  font-weight: 550;
+}
+
+.dark-editor .tok-mention {
+  color: oklch(78% 0.055 272);
 }
 
 .tok-image {

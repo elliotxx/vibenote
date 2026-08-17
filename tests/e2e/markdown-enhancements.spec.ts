@@ -71,6 +71,48 @@ test.describe('markdown block writing enhancements', () => {
     await expect.poll(() => savedContent(page)).toBe(fixture)
   })
 
+  test('highlights responsible-person mentions without styling address or code syntax', async ({ page }) => {
+    const created = '2026-08-17T09:00:00.000Z'
+    const chineseMention = '@\u8d1f\u8d23\u4eba\u7532'
+    const fixture = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
+      `---block:markdown;auto=1;created=${created}`,
+      `Owners ${chineseMention}, @alice-smith, and @user_01`,
+      'Email owner@example.com and URL https://example.com/@route',
+      'Inline `@inline-owner` and escaped \\@escaped-owner',
+      '[profile](@link-owner) and ![avatar](@image-owner)',
+      '```text',
+      '@code-owner',
+      '```',
+      `---block:text;auto=0;created=${created}`,
+      'Plain owner @plain-owner',
+      `---block:javascript;auto=0;created=${created}`,
+      '@decorator',
+    ].join('\n')}`
+    await loadFixture(page, fixture)
+
+    await expect(page.locator('.tok-mention')).toHaveCount(4)
+    await expect(page.locator('.tok-mention').allTextContents()).resolves.toEqual([
+      chineseMention,
+      '@alice-smith',
+      '@user_01',
+      '@plain-owner',
+    ])
+    const mentionStyle = await page.locator('.tok-mention').first().evaluate(element => {
+      const style = window.getComputedStyle(element)
+      return {
+        backgroundColor: style.backgroundColor,
+        fontWeight: style.fontWeight,
+        paddingLeft: style.paddingLeft,
+      }
+    })
+    expect(mentionStyle).toMatchObject({
+      backgroundColor: 'rgba(0, 0, 0, 0)',
+      fontWeight: '550',
+      paddingLeft: '0px',
+    })
+    await expect.poll(() => savedContent(page)).toBe(fixture)
+  })
+
   test('wraps selections and toggles list prefixes with markdown shortcuts', async ({ page }) => {
     await loadFixture(page, markdownFixture(['bold text']))
     await clickLine(page, 'bold text')
