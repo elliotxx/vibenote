@@ -81,187 +81,13 @@ Manual install:
 
 Only share the DMG with people who trust the build source. This release is unsigned and not notarized.
 
-## Keyboard Shortcuts
+## Documentation
 
-| Action | macOS shortcut |
-| --- | --- |
-| Show or hide app | `Cmd+Shift+Space` |
-| Open Settings | `Cmd+,` |
-| Add block after current block | `Cmd+Enter` |
-| Add block before current block | `Option+Enter` |
-| Add block at end of note stream | `Cmd+Shift+Enter` |
-| Add block at start of note stream | `Shift+Option+Enter` |
-| Split block at cursor | `Cmd+Option+Enter` |
-| Delete current block | `Cmd+Shift+D` or `Ctrl+Shift+D` |
-| Select current block, then select all | `Cmd+A` |
-| Move to previous block | `Cmd+Up` |
-| Move to next block | `Cmd+Down` |
-| Add cursor above | `Cmd+Option+Up` |
-| Add cursor below | `Cmd+Option+Down` |
-| Focus language selector | `Cmd+L` |
-| Format current block | `Shift+Option+F` |
-
-## Data Location
-
-Vibenote uses its own Electron `userData` directory:
-
-```sh
-$HOME/Library/Application Support/Vibenote/notes/stream.txt
-$HOME/Library/Application Support/Vibenote/notes/.images/
-```
-
-### Optional Git snapshot backup
-
-Open Settings, choose a dedicated Git repository, then enable Git backup. Vibenote exports a verified snapshot every five minutes and creates commits only for `.vibenote-backup.json` and `vibenote-backup/`. The active `userData/notes` directory remains the single source of truth; the repository is a derived, one-way backup and is never read back into the app.
-
-The storage flow is:
-
-```text
-Editor/autosave
-  -> $HOME/Library/Application Support/Vibenote/notes/  (active files)
-  -> verified staging snapshot
-  -> <selected-repository>/vibenote-backup/             (derived copy)
-  -> local Git commit
-  -> safe push, when a remote is eligible
-```
-
-Vibenote writes normal edits directly to the active files, not to the Git repository. The selected repository contains only the backup ownership marker and exported snapshot:
-
-```text
-<selected-repository>/
-├── .vibenote-backup.json
-└── vibenote-backup/
-    ├── manifest.json
-    ├── notes/
-    └── assets/
-```
-
-Selecting a repository prepares an initial verified snapshot. Enabling backup runs it immediately; afterward, changed notes are exported on the five-minute schedule. Quitting flushes pending note saves and attempts a local backup commit within a short deadline, but does not perform a network push during quit. With no remote, the backup remains committed locally.
-
-An empty selected directory can be initialized automatically. For an existing repository, configure the Git author identity yourself. With no remote, commits stay local. Vibenote pushes only when one unambiguous remote and a safe upstream baseline are available; otherwise it preserves the local commit and asks for manual attention. It never manages branches, remotes, or credentials and never runs history-changing or synchronization commands such as pull, merge, rebase, reset, checkout, or clean.
-
-Using an existing repository does not overwrite unrelated tracked files because commits are scoped to the two managed paths above. It does add automatic commits to the repository's current branch, and an eligible remote may receive those commits, so a dedicated repository is recommended. Do not manually edit the managed snapshot: external changes trigger `mirror-conflict` and pause replacement instead of being imported. Disabling backup leaves the exported files and Git history in place.
-
-The exported `vibenote-backup/manifest.json` records document and asset hashes. For manual recovery, inspect and verify that manifest, then copy the required exported text or images to a separate safe location. Vibenote intentionally has no automatic import or restore UI.
-
-External documents, API keys, app settings, recovery files, and local backup history are excluded. See the [Git auto-backup design](docs/design/2026-08-11-git-auto-backup.md) for the complete safety model.
-
-Uninstall the app:
-
-```sh
-rm -rf "/Applications/Vibenote.app"
-```
-
-Only remove app data after confirming the note stream is no longer needed:
-
-```sh
-rm -rf "$HOME/Library/Application Support/Vibenote"
-```
-
-## Developer Notes
-
-Run the app for development:
-
-```sh
-npm install
-npm run dev
-```
-
-If Electron binary download is blocked, you can still inspect the renderer:
-
-```sh
-npx vite --host 127.0.0.1 --port 3344 --strictPort
-```
-
-The browser renderer uses a localStorage mock when the Electron preload bridge is unavailable, so it does not write real app data.
-
-### Agent CLI alpha
-
-Vibenote includes an Agent-oriented CLI alpha. It can discover capabilities, list and read internal notes, search blocks, and safely append one block with dry-run, optimistic revision checks, idempotency, snapshot, recovery, and atomic replacement.
-
-After moving `Vibenote.app` to `/Applications` or `~/Applications`, open **Settings > Agent CLI** and choose **Install Agent CLI**. Vibenote installs a managed launcher at `~/.local/bin/vibenote` using the app's bundled runtime, so system Node.js is not required. It never edits shell configuration and never overwrites or removes an unowned command. If `~/.local/bin` is not already in the login shell's `PATH`, Settings reports that prerequisite explicitly.
-
-```sh
-vibenote version
-vibenote capabilities
-```
-
-Developers can also run it from a source checkout:
-
-```sh
-node cli/vibenote.mjs capabilities --data-dir /path/to/isolated-user-data --output json
-node cli/vibenote.mjs search --data-dir /path/to/isolated-user-data --query "keyword" --limit 10 --output json
-```
-
-Mutation remains deliberately gated: `blocks append` requires an explicit `--data-dir`, an idempotency key, and either a dry-run revision or `--accept-current`. The CLI does not expose external files, replace, delete, restore, arbitrary paths, HTTP, or MCP. Use an isolated or backed-up data directory while the CLI remains alpha.
-
-Verify the complete CLI contract with synthetic temporary data:
-
-```sh
-npm run verify:cli
-npm run verify:agent-cli-install
-```
-
-Build the macOS release artifacts:
-
-```sh
-npm run release:mac
-```
-
-Expected artifacts:
-
-- `dist/Vibenote-<version>-arm64.dmg`
-- `dist/SHA256SUMS`
-
-The current release mode is **tag-driven macOS release distribution**. The app is unsigned and not notarized, so users must understand the macOS first-launch warning. Broad distribution still requires Developer ID signing and Apple notarization.
-
-Before sharing a build, verify checksums:
-
-```sh
-cd dist
-shasum -a 256 -c SHA256SUMS
-```
-
-### Release
-
-Vibenote releases are tag-driven. Push a version tag that matches `package.json`:
-
-```sh
-git tag v<version>
-git push origin v<version>
-```
-
-GitHub Actions builds the macOS arm64 DMG, verifies `SHA256SUMS`, and creates a formal GitHub Release with the DMG and checksum file. The release is still unsigned and not notarized.
-
-### Tech Stack
-
-- Electron 41
-- Vue 3
-- Pinia
-- CodeMirror 6
-- Prettier
-- ripgrep via `@vscode/ripgrep`
-- electron-builder
-
-### Verification
-
-```sh
-npm run build
-npm run verify:package
-npm run verify:runtime
-npm run verify:cli
-npm run verify:cli-coordination
-npm run verify:git-backup-export
-npm run verify:git-backup-module
-npm run verify:git-backup
-npm run verify:stability
-npm run verify:edges
-npm run verify:install
-```
-
-The verification suite checks package structure, DMG contents, runtime input, quit-time save behavior, block deletion, invalid-format protection, and launching the installed app from `/Applications`.
-
-See [RELEASE.md](./RELEASE.md) for the first-release checklist.
+- [Using Vibenote](docs/guides/using-vibenote.md): blocks, shortcuts, data location, and uninstalling.
+- [Git snapshot backup](docs/guides/git-auto-backup.md): setup, storage behavior, repository safety, and recovery.
+- [Agent CLI](docs/guides/agent-cli.md): installation, command discovery, and mutation safeguards.
+- [Contributing](CONTRIBUTING.md): local development, verification, and public repository safety.
+- [Release checklist](RELEASE.md): packaging, acceptance gates, and tag-driven publishing.
 
 ## Feedback
 
@@ -275,20 +101,11 @@ Include:
 - What actually happened.
 - Steps to reproduce the issue.
 
-For data-related issues, back up `$HOME/Library/Application Support/Vibenote` before trying repairs or reinstalling.
+For data-related issues, follow the backup guidance in [Using Vibenote](docs/guides/using-vibenote.md) before trying repairs or reinstalling.
 
 ## Contributing
 
-Contributions are welcome around the minimal capture experience. First-release priorities:
-
-- Data-save reliability.
-- Block editing ergonomics.
-- macOS packaging and tag-driven release automation.
-- Developer ID signing and notarization before public distribution.
-- Shortcut consistency.
-- Non-destructive AI-native assistance.
-
-Please use Conventional Commits.
+Contributions are welcome around the minimal capture experience. See [CONTRIBUTING.md](CONTRIBUTING.md) before making changes or submitting a pull request.
 
 ## License
 

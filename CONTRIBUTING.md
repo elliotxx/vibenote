@@ -29,3 +29,52 @@ npm run setup:hooks
 The same checker runs in GitHub Actions and before release packaging. If a legitimate public example triggers a rule, rewrite it with placeholders or synthetic values instead of weakening the check around private data.
 
 Project maintainers can keep a private semantic glossary outside tracked files. Configure clone-local regular expressions with repeated `git config --local --add publicSafety.blockedPattern '<pattern>'` entries, and provide the same newline-separated expressions to CI through the `PUBLIC_SAFETY_BLOCKED_PATTERNS` repository secret. Never commit the glossary itself.
+
+## Local development
+
+Install dependencies and start the Electron app:
+
+```sh
+npm install
+npm run dev
+```
+
+If the Electron binary is unavailable, you can inspect the renderer without writing real app data:
+
+```sh
+npx vite --host 127.0.0.1 --port 3344 --strictPort
+```
+
+Without the Electron preload bridge, the browser renderer uses a localStorage mock.
+
+## Technology
+
+Vibenote uses Electron 41, Vue 3, Pinia, CodeMirror 6, Prettier, `@vscode/ripgrep`, and electron-builder.
+
+## Verification
+
+Run checks that match the changed surface. Before a release, run the complete suite:
+
+```sh
+npm run build
+npm run verify:package
+npm run verify:runtime
+npm run verify:cli
+npm run verify:cli-coordination
+npm run verify:agent-cli-install
+npm run verify:git-backup-export
+npm run verify:git-backup-module
+npm run verify:git-backup
+npm run verify:stability
+npm run verify:edges
+npm run verify:install
+npm run verify:public-safety
+```
+
+The verification suite covers package structure, DMG contents, runtime input, quit-time saving, block deletion, formatting failure safety, CLI coordination, Git snapshot export, and launching an installed app from `/Applications`.
+
+## Commits and releases
+
+Use Conventional Commits. Keep unrelated work out of the same commit and review the staged diff before committing.
+
+Packaging, checksum verification, acceptance criteria, and tag publishing are documented in [RELEASE.md](RELEASE.md).

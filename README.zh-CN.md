@@ -81,166 +81,13 @@ Vibenote 当前只支持 macOS arm64。为了保持简单，首发版本不包�
 
 只安装你信任来源的 DMG。当前构建未签名、未公证。
 
-## 快捷键
+## 文档
 
-| 操作 | macOS 快捷键 |
-| --- | --- |
-| 显示或隐藏应用 | `Cmd+Shift+Space` |
-| 打开设置 | `Cmd+,` |
-| 在当前 block 后新增 block | `Cmd+Enter` |
-| 在当前 block 前新增 block | `Option+Enter` |
-| 在 note stream 末尾新增 block | `Cmd+Shift+Enter` |
-| 在 note stream 开头新增 block | `Shift+Option+Enter` |
-| 从光标处拆分 block | `Cmd+Option+Enter` |
-| 删除当前 block | `Cmd+Shift+D` 或 `Ctrl+Shift+D` |
-| 选择当前 block，再按一次全选 | `Cmd+A` |
-| 跳到上一个 block | `Cmd+Up` |
-| 跳到下一个 block | `Cmd+Down` |
-| 在上方添加多光标 | `Cmd+Option+Up` |
-| 在下方添加多光标 | `Cmd+Option+Down` |
-| 聚焦语言选择器 | `Cmd+L` |
-| 格式化当前 block | `Shift+Option+F` |
-
-## 数据位置
-
-Vibenote 使用独立的 Electron `userData` 目录：
-
-```sh
-$HOME/Library/Application Support/Vibenote/notes/stream.txt
-$HOME/Library/Application Support/Vibenote/notes/.images/
-```
-
-### 可选 Git 快照备份
-
-在设置中选择一个专用 Git 仓库，再开启 Git 自动备份。Vibenote 每 5 分钟导出一次经过校验的快照，并且只提交 `.vibenote-backup.json` 和 `vibenote-backup/`。活动数据仍以 `userData/notes` 为唯一事实来源；Git 仓库只是单向派生备份，应用不会从仓库反向读取或导入。
-
-实际存储链路如下：
-
-```text
-编辑器 / 自动保存
-  -> $HOME/Library/Application Support/Vibenote/notes/  （活动文件）
-  -> 经过校验的临时快照
-  -> <所选仓库>/vibenote-backup/                        （派生副本）
-  -> 本地 Git commit
-  -> remote 满足安全条件时自动 push
-```
-
-普通编辑会直接写入活动文件，而不是写入 Git 仓库。所选仓库只包含备份所有权标记和导出的快照：
-
-```text
-<所选仓库>/
-├── .vibenote-backup.json
-└── vibenote-backup/
-    ├── manifest.json
-    ├── notes/
-    └── assets/
-```
-
-选择仓库时会先生成一份经过校验的初始快照；开启备份后会立即执行一次，之后每 5 分钟导出发生变化的笔记。退出应用时会先刷新待保存的笔记，并在较短时限内尝试创建本地备份提交，但退出阶段不会进行网络 push。没有 remote 时，备份会停留在本地 commit 状态。
-
-所选空目录可以由应用初始化。已有仓库需要用户自行配置 Git 作者身份。没有 remote 时提交只保留在本地；只有单一明确 remote 和安全 upstream 基线同时成立时才会自动 push，否则保留本地提交并提示人工处理。Vibenote 不管理分支、remote 或凭据，也不会执行 pull、merge、rebase、reset、checkout、clean 等同步或历史改写命令。
-
-复用已有仓库不会覆盖无关的已跟踪文件，因为提交范围只限于上述两个托管路径；但自动提交会进入该仓库的当前分支，符合安全条件的 remote 也可能收到这些提交，因此仍建议使用专用仓库。不要手动修改托管快照：检测到外部改动后会进入 `mirror-conflict` 并暂停覆盖，不会把修改反向导入应用。关闭备份不会删除已经导出的文件或 Git 历史。
-
-导出的 `vibenote-backup/manifest.json` 记录文档和图片哈希。需要人工恢复时，应先检查并验证 manifest，再把所需文本或图片复制到另一个安全位置。Vibenote 暂不提供自动导入或恢复界面。
-
-外部文档、API key、应用设置、recovery 文件和本地备份历史均不进入仓库。完整安全模型见 [Git 自动备份设计](docs/design/2026-08-11-git-auto-backup.md)。
-
-### Agent CLI
-
-将 `Vibenote.app` 移到系统或用户的“应用程序”目录后，进入“设置 > Agent CLI”，点击“安装 Agent CLI”。应用会把受管启动器安装到 `~/.local/bin/vibenote`，直接使用应用内置运行时，不依赖系统 Node.js。
-
-```sh
-vibenote version
-vibenote capabilities
-```
-
-Vibenote 不会修改 shell 配置，也不会覆盖或删除非本应用管理的同名命令。如果登录 shell 的 `PATH` 尚未包含 `~/.local/bin`，设置页会明确提示；手动配置 PATH 并重开终端后即可使用。应用升级后，设置页会提供 CLI 更新操作。
-
-卸载应用：
-
-```sh
-rm -rf "/Applications/Vibenote.app"
-```
-
-只有在确认不再需要笔记内容时，才删除应用数据：
-
-```sh
-rm -rf "$HOME/Library/Application Support/Vibenote"
-```
-
-## 开发者须知
-
-开发运行：
-
-```sh
-npm install
-npm run dev
-```
-
-如果 Electron 二进制下载受限，可以先只检查浏览器渲染层：
-
-```sh
-npx vite --host 127.0.0.1 --port 3344 --strictPort
-```
-
-浏览器渲染层在没有 Electron preload 时会使用 localStorage mock，不会写入真实应用数据。
-
-构建 macOS 试用安装包：
-
-```sh
-npm run release:mac
-```
-
-构建产物：
-
-- `dist/Vibenote-<version>-arm64.dmg`
-- `dist/SHA256SUMS`
-
-当前发布模式是**通过 tag 触发的 macOS release 分发**。应用未签名、未公证，用户需要理解 macOS 首次启动拦截提示。大范围分发前仍需要 Developer ID 签名和 Apple notarization。
-
-分享前可以校验产物：
-
-```sh
-cd dist
-shasum -a 256 -c SHA256SUMS
-```
-
-### 发布
-
-Vibenote 通过 tag 触发发布。推送与 `package.json` 版本一致的版本 tag：
-
-```sh
-git tag v<version>
-git push origin v<version>
-```
-
-GitHub Actions 会构建 macOS arm64 DMG，校验 `SHA256SUMS`，并创建正式 GitHub Release，上传 DMG 和 checksum 文件。当前构建仍然未签名、未公证。
-
-### 技术栈
-
-- Electron 41
-- Vue 3
-- Pinia
-- CodeMirror 6
-- Prettier
-- ripgrep via `@vscode/ripgrep`
-- electron-builder
-
-### 验证
-
-```sh
-npm run build
-npm run verify:package
-npm run verify:runtime
-npm run verify:stability
-npm run verify:edges
-npm run verify:install
-```
-
-验证脚本覆盖安装包结构、DMG 内容、运行时输入、退出保存、删除 block、格式化异常保护，以及从 `/Applications` 启动安装后的应用。
-
-更多首发候选检查项见 [RELEASE.md](./RELEASE.md)。
+- [使用 Vibenote](docs/guides/using-vibenote.zh-CN.md)：block、快捷键、数据位置和卸载方法。
+- [Git 快照备份](docs/guides/git-auto-backup.zh-CN.md)：配置、存储行为、仓库安全边界和恢复方法。
+- [Agent CLI](docs/guides/agent-cli.zh-CN.md)：安装、命令发现和写入保护。
+- [参与贡献](CONTRIBUTING.md)：本地开发、验证和公开仓库安全要求。
+- [发布检查清单](RELEASE.md)：打包、验收门禁和 tag 发布流程。
 
 ## 反馈
 
@@ -254,20 +101,11 @@ npm run verify:install
 - 实际发生了什么。
 - 可复现步骤。
 
-如果问题和数据有关，请先备份 `$HOME/Library/Application Support/Vibenote`，再尝试修复或重装。
+如果问题和数据有关，请先按照 [使用 Vibenote](docs/guides/using-vibenote.zh-CN.md) 中的说明备份数据，再尝试修复或重装。
 
 ## 贡献
 
-欢迎围绕极简记录体验提交改进。首发阶段优先关注：
-
-- 数据保存可靠性。
-- Block 编辑体验。
-- macOS 打包和小范围试用分发。
-- 公开分发前的 Developer ID 签名和公证。
-- 快捷键一致性。
-- AI Native 的非破坏式辅助能力。
-
-提交信息请使用 Conventional Commits。
+欢迎围绕极简记录体验提交改进。修改代码或提交 PR 前，请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 许可证
 
