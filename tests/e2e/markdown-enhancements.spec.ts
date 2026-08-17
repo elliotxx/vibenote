@@ -113,6 +113,43 @@ test.describe('markdown block writing enhancements', () => {
     await expect.poll(() => savedContent(page)).toBe(fixture)
   })
 
+  test('colors uppercase priority markers without styling code or partial tokens', async ({ page }) => {
+    const created = '2026-08-17T13:00:00.000Z'
+    const fixture = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
+      `---block:markdown;auto=1;created=${created}`,
+      'Priorities P0 P1 P2 P3',
+      'Ignore p0 P4 P01 XP0 P0Task',
+      'Inline `P0` and [linked P1](https://example.com)',
+      '```text',
+      'P2',
+      '```',
+      `---block:text;auto=0;created=${created}`,
+      'Plain priority P3',
+      `---block:javascript;auto=0;created=${created}`,
+      'const priority = "P0"',
+    ].join('\n')}`
+    await loadFixture(page, fixture)
+
+    await expect(page.locator('.tok-priority')).toHaveCount(5)
+    await expect(page.locator('.tok-priority').allTextContents()).resolves.toEqual(['P0', 'P1', 'P2', 'P3', 'P3'])
+    for (const priority of ['p0', 'p1', 'p2', 'p3']) {
+      await expect(page.locator(`.tok-priority-${priority}`)).toHaveCount(priority === 'p3' ? 2 : 1)
+    }
+
+    const styles = await page.locator('.tok-priority').evaluateAll(elements => elements.map((element) => {
+      const style = window.getComputedStyle(element)
+      return {
+        color: style.color,
+        backgroundColor: style.backgroundColor,
+        fontWeight: style.fontWeight,
+      }
+    }))
+    expect(new Set(styles.slice(0, 4).map(style => style.color)).size).toBe(4)
+    expect(styles.every(style => style.backgroundColor === 'rgba(0, 0, 0, 0)')).toBe(true)
+    expect(styles.every(style => style.fontWeight === '600')).toBe(true)
+    await expect.poll(() => savedContent(page)).toBe(fixture)
+  })
+
   test('wraps selections and toggles list prefixes with markdown shortcuts', async ({ page }) => {
     await loadFixture(page, markdownFixture(['bold text']))
     await clickLine(page, 'bold text')

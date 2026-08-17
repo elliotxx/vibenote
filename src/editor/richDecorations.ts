@@ -196,6 +196,7 @@ function buildRichDecorations(view: EditorView) {
   const blocks = state.field(blockField)
   for (const block of blocks) {
     addSyntaxMarks(decorations, state, block)
+    addPriorityMarks(decorations, state, block)
     addMentionMarks(decorations, state, block)
     addTaskCheckboxes(decorations, state, block)
     addImageWidgets(decorations, state, block)
@@ -209,11 +210,28 @@ type TextRange = {
   to: number
 }
 
+function addPriorityMarks(decorations: any[], state: any, block: ScratchBlock) {
+  if (!['markdown', 'text'].includes(block.language)) return
+
+  const content = state.doc.sliceString(block.content.from, block.content.to)
+  const excluded = block.language === 'markdown' ? markdownDecorationExclusions(content) : []
+  const priorityPattern = /(?<![\p{L}\p{N}_])P[0-3](?![\p{L}\p{N}_])/gu
+
+  for (const match of content.matchAll(priorityPattern)) {
+    const from = match.index!
+    const to = from + match[0].length
+    if (excluded.some(range => from >= range.from && to <= range.to)) continue
+    decorations.push(Decoration.mark({
+      class: `tok-priority tok-priority-${match[0].toLowerCase()}`,
+    }).range(block.content.from + from, block.content.from + to))
+  }
+}
+
 function addMentionMarks(decorations: any[], state: any, block: ScratchBlock) {
   if (!['markdown', 'text'].includes(block.language)) return
 
   const content = state.doc.sliceString(block.content.from, block.content.to)
-  const excluded = block.language === 'markdown' ? markdownMentionExclusions(content) : []
+  const excluded = block.language === 'markdown' ? markdownDecorationExclusions(content) : []
   const mentionPattern = /(?<![\p{L}\p{N}_@./+\\-])@[\p{L}\p{N}_](?:[\p{L}\p{N}_-]{0,30}[\p{L}\p{N}_])?(?![\p{L}\p{N}_-])/gu
 
   for (const match of content.matchAll(mentionPattern)) {
@@ -227,7 +245,7 @@ function addMentionMarks(decorations: any[], state: any, block: ScratchBlock) {
   }
 }
 
-function markdownMentionExclusions(content: string): TextRange[] {
+function markdownDecorationExclusions(content: string): TextRange[] {
   const excludedNodes = new Set(['InlineCode', 'FencedCode', 'CodeBlock', 'Link', 'Image', 'Autolink'])
   const ranges: TextRange[] = []
   const cursor = markdownLanguage.parser.parse(content).cursor()
