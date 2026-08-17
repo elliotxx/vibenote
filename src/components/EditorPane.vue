@@ -133,6 +133,7 @@ type AiSuggestionCard = {
   sourceDirty: boolean
   content: string
   message: string
+  startedAt: number
   from: number
   to: number
   scope: 'selection' | 'block'
@@ -145,6 +146,7 @@ type AiSuggestionCard = {
   height: number
 }
 const aiSuggestions = ref<AiSuggestionCard[]>([])
+const aiElapsedNow = ref(0)
 const aiPopoverInteraction = ref<AiPopoverInteraction | null>(null)
 type AiDiffSegment = { text: string; changed: boolean }
 type AiDiffLine = { key: string; segments: AiDiffSegment[]; changed: boolean }
@@ -157,6 +159,7 @@ let note: LoadedNote | null = null
 let saveTimer: number | null = null
 let cursorSaveTimer: number | null = null
 let aiStatusTimer: number | null = null
+let aiElapsedTimer: number | null = null
 let blockToolbarFrame: number | null = null
 let blockToolbarHideTimer: number | null = null
 const blockToolbarPointerActive = ref(false)
@@ -267,6 +270,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   flushSaveSync()
   if (aiStatusTimer) window.clearTimeout(aiStatusTimer)
+  if (aiElapsedTimer !== null) {
+    window.clearInterval(aiElapsedTimer)
+    aiElapsedTimer = null
+  }
   if (blockToolbarFrame) window.cancelAnimationFrame(blockToolbarFrame)
   if (blockToolbarHideTimer) window.clearTimeout(blockToolbarHideTimer)
   if (scrollJumpHideTimer) window.clearTimeout(scrollJumpHideTimer)
@@ -312,6 +319,39 @@ function updateAiSuggestion(id: string, patch: Partial<AiSuggestionCard>) {
   aiSuggestions.value = aiSuggestions.value.map(suggestion => (
     suggestion.id === id ? { ...suggestion, ...patch } : suggestion
   ))
+}
+
+watch(
+  () => aiSuggestions.value.some(suggestion => suggestion.status === 'generating'),
+  (hasGeneratingSuggestion) => {
+    if (hasGeneratingSuggestion && aiElapsedTimer === null) {
+      aiElapsedNow.value = performance.now()
+      aiElapsedTimer = window.setInterval(() => {
+        aiElapsedNow.value = performance.now()
+      }, 100)
+      return
+    }
+    if (!hasGeneratingSuggestion && aiElapsedTimer !== null) {
+      window.clearInterval(aiElapsedTimer)
+      aiElapsedTimer = null
+    }
+  },
+  { flush: 'sync' },
+)
+
+function aiSuggestionElapsed(suggestion: AiSuggestionCard) {
+  const elapsedSeconds = Math.max(0, aiElapsedNow.value - suggestion.startedAt) / 1000
+  return `${elapsedSeconds.toFixed(1)}s`
+}
+
+function sanitizeAiErrorMessage(value: unknown) {
+  const message = typeof value === 'string' && value.trim() ? value.trim() : '请求失败'
+  return message
+    .replace(/\b(?:https?|file):\/\/[^\s)]+/giu, '[地址已隐藏]')
+    .replace(/\/(?:Users|home|private|var|tmp)\/[^\s)]+/gu, '[路径已隐藏]')
+    .replace(/\bsk-[A-Za-z0-9_-]+\b/gu, '[凭据已隐藏]')
+    .replace(/\b((?:authorization|api[-_ ]?key)\s*[:=]\s*)[^\s,;]+/giu, '$1[凭据已隐藏]')
+    .slice(0, 240)
 }
 
 function toggleAutoMode() {
@@ -1455,6 +1495,7 @@ function createAiSuggestionCard(
     sourceDirty: false,
     content: '',
     message: mode === 'extract-todos' ? '提取 Todo 中' : presentation === 'answer' ? '正在回答' : '优化表述中',
+    startedAt: performance.now(),
     from: source.range.from,
     to: source.range.to,
     scope: source.scope,
@@ -1545,6 +1586,7 @@ function resetAiSuggestionForRetry(suggestion: AiSuggestionCard) {
     status: 'generating',
     sourceDirty: false,
     content: '',
+    startedAt: performance.now(),
     message: suggestion.mode === 'extract-todos'
       ? '提取 Todo 中'
       : suggestion.presentation === 'answer'
@@ -2937,8 +2979,9 @@ async function requestAiSuggestion(suggestion: AiSuggestionCard) {
       ...(suggestion.presentation === 'answer' ? { intent: 'answer' as const } : {}),
     })
     if (!result.ok) {
-      setAiStatus(`AI：${result.message}`)
-      failAiSuggestion(suggestion.id, result.message)
+      const message = sanitizeAiErrorMessage(result.message)
+      setAiStatus(`AI：${message}`)
+      failAiSuggestion(suggestion.id, message)
       return
     }
     if (!completeAiSuggestion(suggestion.id, result.content)) {
@@ -2947,7 +2990,7 @@ async function requestAiSuggestion(suggestion: AiSuggestionCard) {
     }
     setAiStatus(suggestion.presentation === 'answer' ? 'AI：已生成回答' : 'AI：已生成建议', true)
   } catch (error) {
-    const message = error instanceof Error ? error.message : '请求失败'
+    const message = sanitizeAiErrorMessage(error instanceof Error ? error.message : error)
     failAiSuggestion(suggestion.id, message)
     setAiStatus(`AI：${message}`)
   } finally {
@@ -3001,7 +3044,7 @@ async function runAiAction(
       ...(instruction ? { instruction } : {}),
     })
     if (!result.ok) {
-      setAiStatus(`AI：${result.message}`)
+      setAiStatus(`AI：${sanitizeAiErrorMessage(result.message)}`)
       return
     }
     if (!snapshotCurrentSync(mode === 'extract-todos' ? 'ai-extract-todos' : 'ai-polish')) return
@@ -3011,7 +3054,7 @@ async function runAiAction(
     }
     setAiStatus(mode === 'extract-todos' ? 'AI：已插入 Todo' : 'AI：已插入优化版本', true)
   } catch (error) {
-    const message = error instanceof Error ? error.message : '请求失败'
+    const message = sanitizeAiErrorMessage(error instanceof Error ? error.message : error)
     setAiStatus(`AI：${message}`)
   } finally {
     aiPendingCount.value = Math.max(0, aiPendingCount.value - 1)
@@ -3033,8 +3076,10 @@ async function openAiQuickEditor() {
   aiQuickEditorInput.value?.focus()
 }
 
-function closeAiQuickEditor() {
+async function closeAiQuickEditor() {
   aiQuickActions.value = { ...aiQuickActions.value, editing: false, instruction: '' }
+  await nextTick()
+  view?.focus()
 }
 
 function customAiPresentation(instruction: string): AiSuggestionPresentation {
@@ -3078,6 +3123,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
     <div
       ref="editorHost"
       class="editor-host"
+      :class="{ 'dark-theme': store.settings.theme === 'dark' }"
       @mousedown.self="focusEditorContent"
       @mousemove.capture="onEditorHostMouseMove"
       @mouseleave="onEditorHostMouseLeave"
@@ -3299,7 +3345,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
           width: `${suggestion.width}px`,
           height: `${suggestion.height}px`,
         }"
-        aria-label="AI 表述优化建议"
+        :aria-label="suggestion.presentation === 'answer' ? 'AI 回复' : 'AI 表述优化建议'"
         @mousedown.stop
       >
         <header class="ai-suggestion-header" title="拖动建议窗口" @pointerdown="startAiPopoverMove($event, suggestion.id)">
@@ -3315,6 +3361,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
             type="button"
             class="ai-suggestion-close"
             title="关闭建议"
+            aria-label="关闭建议"
             @pointerdown.stop
             @click="dismissAiSuggestion(suggestion.id)"
           >
@@ -3322,8 +3369,13 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
           </button>
         </header>
         <div v-if="suggestion.status === 'generating'" class="ai-suggestion-loading" role="status" aria-live="polite">
-          <span class="ai-suggestion-spinner" aria-hidden="true" />
-          <span>{{ suggestion.message || '正在生成建议' }}</span>
+          <span class="ai-loading-pixels" aria-hidden="true">
+            <span v-for="index in 9" :key="index" />
+          </span>
+          <span class="ai-suggestion-loading-copy">
+            <span class="ai-suggestion-loading-label">{{ suggestion.message || '正在生成建议' }}</span>
+            <span class="ai-suggestion-loading-elapsed" aria-hidden="true">{{ aiSuggestionElapsed(suggestion) }}</span>
+          </span>
         </div>
         <template v-else>
           <div v-if="suggestion.status === 'error'" class="ai-suggestion-error-state">
@@ -3381,7 +3433,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
             </div>
             </div>
           </template>
-          <footer class="ai-suggestion-actions">
+          <footer class="ai-suggestion-actions" :class="`is-${suggestion.status}`">
             <span class="ai-suggestion-status">{{ suggestion.message || (suggestion.status === 'ready' ? '已生成建议' : '等待中') }}</span>
             <button
               type="button"
@@ -3401,7 +3453,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
               重试
             </button>
             <button
-              v-else-if="suggestion.presentation === 'diff'"
+              v-else-if="suggestion.presentation === 'diff' && suggestion.status === 'ready'"
               type="button"
               class="primary-button"
               title="用优化后的内容替换原文"
@@ -3411,6 +3463,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
               替换原文
             </button>
             <button
+              v-if="suggestion.status !== 'error'"
               type="button"
               class="secondary-button"
               title="将优化后的内容插入为新块"
@@ -3420,6 +3473,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
               插入新块
             </button>
             <button
+              v-if="suggestion.status !== 'error'"
               type="button"
               class="ghost-button compact"
               title="复制优化后的内容"

@@ -2,230 +2,158 @@
 
 ## 背景与目标
 
-Vibenote 的 AI 能力应延续“沉浸式、顺手、AI Native 的纯文本笔记”定位。AI 不是全局整理器，也不应默认重写用户的 stream。首发目标是先建立可信的 AI 设置入口，再提供围绕当前 block 或选区的低风险辅助。
+Vibenote 的 AI 能力服务于单一 note stream 中的即时写作，不把产品变成聊天工作台或全局整理器。AI 默认只读取当前选区或 block；任何正文替换都必须先展示结果，并由用户明确确认。
 
-第一阶段目标：
+当前设置、OpenAI-compatible 非流式调用、选区快捷操作、Todo 提取和文档锚定的多建议卡片已经落地。本轮只收敛以下连续交互：
 
-- 支持 OpenAI-compatible provider 配置，优先覆盖 OpenAI 与 DeepSeek。
-- 在设置页提供清晰、可测试、可关闭的 AI 配置。
-- 将 API Key 放在 Electron 主进程侧管理，避免进入 localStorage、笔记正文或日志。
-- AI 功能默认只作用于当前 block 或当前选区，结果先以可预览方式呈现，由用户确认插入或替换。
-- AI action 只保留围绕当前 block 或选区的高 ROI 路线，确认类结果必须先预览，由用户决定替换、插入或复制。
+`选择内容 -> 选择动作或输入要求 -> 等待结果 -> 审阅回答或 diff -> 明确处理结果`
 
-相关实施计划见 [AI Native Assistance Implementation Plan](../plans/2026-07-02-ai-native-assistance-plan.md)。
+相关实施步骤见 [AI Native Assistance Implementation Plan](../plans/2026-07-02-ai-native-assistance-plan.md)，已交付基线见 [AI 建议卡片验收记录](../reports/2026-07-09-ai-suggestion-cards-acceptance.md)。
 
 ## 现状与问题
 
-当前应用已经具备适合 AI 的基础边界：
+当前源码已经具备以下边界：
 
-- 单一 stream 与 block 结构清晰，适合把当前 block 作为最小上下文。
-- Markdown block 已有轻量输入增强，但没有 AI provider、API Key、调用链或 AI 操作入口。
-- 设置页目前只包含主题、字号、Tab size、默认语言，缺少分组结构。
-- 文档约定 AI 默认限制在当前 block 或选区，不能做破坏性全局整理。
+- renderer 从可见选区或当前 block 生成 `input`、`language`、`scope` 和来源范围。
+- 主进程保存 provider 配置和本地 API Key 记录，renderer 只持有 `hasApiKey` 与 `keyStorage` 等脱敏状态。
+- 主进程通过 OpenAI-compatible Chat Completions 一次性返回完整 JSON，不提供流式 chunk、工具调用或任务事件。
+- 改写结果使用文档锚定的建议卡片，支持多卡片、拖动、缩放、来源返回、失败重试和 stale 校验。
+- 选区快捷工具条已经提供“编辑、改写、提取 Todo”；自定义输入根据内容进入回答或改写呈现。
 
-主要问题不是模型能力，而是边界和信任：
+剩余问题是同一条交互链缺少一致表达：
 
-- 用户需要知道 API Key 存在哪里、何时会请求模型、发送了哪些文本。
-- AI 不能在无确认情况下改写多个 block。
-- DeepSeek 与 OpenAI 都可通过 OpenAI-compatible 格式接入，但模型、base URL、测试方式需要可配置。
-- 表述优化、Todo 提取等需要确认的 AI 结果如果只用单个跟随选区的弹窗承载，滚动后会打断用户继续浏览，也无法在多个 block 上并发触发后逐个确认。
+- 生成中状态只有旋转图标和动作文字，无法表达已经等待多久。
+- 选区工具条、自定义输入框、加载卡和完成卡的边框、阴影、间距、焦点及动效节奏不统一。
+- 回答、diff、错误和 stale 状态共享一张卡片，但标题、内容和动作层级仍可更清楚。
+- 当前没有结构化 Agent 事件，界面不能用模拟步骤伪装 Thinking、Tool Chips 或 Task Rows。
 
 ## 方案设计
 
-### 设置页
+### 采用原则
 
-将现有 Settings modal 改成分组式设置页，保留轻量 modal，不引入新路由。
+[Beautiful UI](https://www.beautifului.dev/) 只作为交互和视觉参考，不作为运行时依赖。Vibenote 保持 Vue 3、现有 CSS token 与 Lucide 图标体系，不引入 React、Tailwind 或新的 UI 组件库。如果复制了实质性实现代码，必须按其 [MIT License](https://www.beautifului.dev/license) 保留许可声明。
 
-建议分组：
+本轮采用四类原语：
 
-| 分组 | 内容 |
-| --- | --- |
-| Appearance | Theme、Font size |
-| Editor | Tab size、Default language |
-| AI | Enable AI、Provider、Base URL、Model、API Key、Test connection |
+| 原语 | 现有落点 | 采用内容 | 不改变的边界 |
+| --- | --- | --- | --- |
+| Selection Actions | 选区快捷工具条 | 紧凑动作层级、稳定锚定、键盘焦点 | 保留三个现有动作，不增加全局命令面板 |
+| Prompt Bar | 自定义编辑或提问输入框 | composer 外观、焦点、提交与关闭反馈 | 不加入模型选择、语音、`@` 来源或 `/` 命令 |
+| Loading State | 建议卡生成中状态 | 明确动作名称、shimmer、经过时间 | 不展示虚构步骤、思考过程或进度百分比 |
+| Diff | 建议卡完成态 | 清楚的原文/建议层级、变化 token 聚焦、动作主次 | 不修改现有 diff 算法或来源一致性校验 |
 
-AI 分组交互：
+### 交互状态
 
-- `Enable AI` 默认关闭。
-- `Provider` 提供 `OpenAI`、`DeepSeek`、`Custom OpenAI-compatible`。
-- 选择 `OpenAI` 时预填 OpenAI base URL 与推荐模型，但允许修改模型；实现前按官方文档确认默认模型。
-- 选择 `DeepSeek` 时预填 DeepSeek OpenAI-compatible base URL 与推荐模型，但允许修改模型；实现前按官方文档确认默认模型。
-- `Custom` 允许用户输入 base URL 和 model。
-- API Key 输入框只显示空态、已保存态和替换入口，不回显完整 key。
-- `Test connection` 只发送一条极短测试请求，不读取笔记内容。
+一张建议卡只允许以下状态转换：
 
-### Provider 抽象
+```text
+generating -> ready
+generating -> error -> generating
+generating -> closed
+ready -> stale
+ready|error|stale -> closed
+```
 
-首版采用 OpenAI-compatible Chat Completions 作为统一协议。原因：
+- `generating`：显示真实动作名称和经过时间，不显示取消能力，避免暗示当前 IPC 支持中断。
+- `ready + answer`：展示只读回答，不提供“替换原文”。
+- `ready + diff`：展示原文与优化后内容，并提供替换、插入和复制。
+- `error`：展示脱敏错误、安全说明、来源返回和重试；不提供无内容的插入或复制。
+- `stale`：禁止替换，只允许回到原文、插入或复制。
+- `closed`：移除卡片；如果它是最后一张生成卡，同时停止共享计时器。
 
-- DeepSeek 官方支持 OpenAI-compatible API。
-- OpenAI Chat Completions 覆盖文本生成场景，适合与 DeepSeek 共享 adapter。
-- 相比同时支持 OpenAI Responses API，首版实现成本更低，设置项更少。
-- OpenAI Responses API 可作为后续 OpenAI 专用优化，不进入首个 provider 抽象。
+### 数据流与计时
 
-建议 provider 配置结构：
+现有 `AiSuggestionCard` 保持 `mode`、`presentation`、`status`、来源快照、来源范围、锚点偏移和 frame 字段。本轮只增加一个运行时字段：
 
 ```ts
-type AiProviderKind = 'openai' | 'deepseek' | 'custom-openai-compatible'
-
-type AiSettings = {
-  enabled: boolean
-  provider: AiProviderKind
-  baseUrl: string
-  model: string
-  hasApiKey: boolean
+type AiSuggestionCard = ExistingAiSuggestionCard & {
+  startedAt: number
 }
 ```
 
-API Key 不进入 renderer store 的持久化对象。renderer 只知道 `hasApiKey`。
+数据流：
 
-base URL 保存前需要规范化：去掉末尾重复 `/`，请求时统一拼接 `/chat/completions` 或 provider 已声明的等价路径，避免用户输入 `.../v1` 时产生重复路径。
+1. 用户触发动作后，renderer 读取当前选区或 block，并立即创建 `generating` 卡片。
+2. `startedAt` 使用 `performance.now()`，不使用系统墙钟时间，也不持久化。
+3. 只要存在 `generating` 卡片，一个 100ms 共享时钟更新显示时间；多个卡片不得各自创建 interval。
+4. 请求完成、失败或卡片关闭后重新计算生成卡数量；数量为零时立即清理时钟。
+5. 完整响应通过现有 `ai:complete` IPC 返回，更新为 `ready` 或 `error`。
+6. 替换前继续比较当前来源范围和 `sourceText`；不一致时进入 `stale`，不覆盖新内容。
 
-### 密钥存储
+计时信息只存在 renderer 内存，不进入笔记、localStorage、设置、恢复文件或日志。
 
-首版只做 macOS，因此建议使用 Electron 主进程持有 AI 配置与密钥：
+### 视觉与动效
 
-- 非敏感配置存入 app userData 下的 `ai-settings.json`。
-- API Key 存入 userData 下的独立文件，renderer 仍然只拿到脱敏状态，不拿明文 key。
-- 首发候选是未签名小范围试用包，不调用 Electron `safeStorage`，避免触发 macOS Keychain 弹窗；UI 明确显示 `API key saved locally`。
-- 后续如果切到 Developer ID 签名和 notarization，再评估 Keychain 或系统加密存储方案。
-- 日志和错误提示不得输出 API Key、Authorization header 或完整请求体。
+- `src/style.css` 中现有 `--surface-*`、`--ink-*`、`--line-*`、`--accent-*` 仍是唯一主题来源。
+- Selection Actions、Prompt Bar、Loading State 和完成卡使用相同的边框强度、圆角尺度、阴影层级和焦点环。
+- 加载卡保持当前紧凑尺寸，完成后围绕原中心扩展；水平中心偏移不得超过 1px。
+- diff 继续只突出变化 token，不给整行或目标列增加误导性底色。
+- `prefers-reduced-motion: reduce` 下关闭 shimmer、旋转和位移动画，但保留动作名称、静态耗时、状态变化与全部操作。
+- 所有截图只使用合成笔记内容，不包含真实笔记、密钥、机器路径或私人服务地址。
 
-这比引入 `keytar` 更轻，避免新增 native dependency 和打包复杂度。
+### 键盘与可访问性
 
-### IPC 边界
+- Selection Actions 保持 `role="toolbar"` 和可读名称。
+- 打开 Prompt Bar 后焦点进入输入框；Esc 关闭并恢复编辑器焦点，Enter 提交。
+- 打开或关闭 Prompt Bar 不改变原选区对应的请求上下文。
+- 加载状态使用 `role="status"` 与 `aria-live="polite"`；经过时间更新不应每 100ms 重复触发完整播报，动态耗时应对辅助技术隐藏或降低播报频率。
+- 可操作图标必须有可读 `aria-label`，键盘焦点不能被颜色或动效替代。
 
-renderer 不能直接发起带 API Key 的请求。建议新增主进程 IPC：
+### 不采用的原语
 
-| IPC | 作用 |
-| --- | --- |
-| `ai:getSettings` | 读取脱敏设置 |
-| `ai:saveSettings` | 保存 provider/baseUrl/model/enabled |
-| `ai:setApiKey` | 写入加密 API Key |
-| `ai:clearApiKey` | 删除 API Key |
-| `ai:testConnection` | 用当前配置测试模型连接 |
-| `ai:runAction` | 对当前 block 或选区执行 AI 动作 |
+- Approval Card：当前替换已经是显式确认；只有未来 Agent 能主动执行多步或外部操作时才需要独立审批。
+- Chat、Sidebar Nav、Records/Filter Table、Insight Cards：会把单一 note stream 推向工作台。
+- Recommendation Card 置信度：后端没有经过校准的置信度，不展示装饰性百分比。
+- Fine-tune Card：设置页已有直接表单，不增加设计检查器式交互。
 
-所有 AI 请求由主进程完成，renderer 只传递 action 类型、用户确认的上下文和必要参数。
+## 自闭环验证范围
 
-### 高 ROI AI 功能
+本轮可以用本地源码、dev mock、Playwright、构建命令和合成截图完整闭环：
 
-按价值和风险排序，推荐只保留 2 个能力。
+- Selection Actions 和 Prompt Bar 的焦点、选区上下文、键盘操作及请求 payload。
+- Loading State 的动作名称、经过时间、共享计时器启停和 reduced-motion 行为。
+- 回答、diff、error、stale 的 DOM 状态、按钮可用性和写入安全边界。
+- 多卡片、来源锚定、拖动、缩放、窄窗口和主题回归。
+- 公共仓库安全检查与生产构建。
 
-| 优先级 | 功能 | 作用范围 | ROI | 风险控制 |
-| --- | --- | --- | --- | --- |
-| P0 | Explain selection | 当前选区 | 高 | 新建结果 block，不改原文 |
-| P1 | Rewrite selection | 当前选区 | 高 | 先预览 diff，用户确认替换 |
-
-推荐优先保证 `Explain selection` 和 `Rewrite selection` 的确认边界。`Explain selection` 价值清晰、不会改原文，适合验证 provider 调用链；`Rewrite selection` ROI 高，但必须依赖预览确认、来源校验与可回退路径。
-
-不建议首批做：
-
-- 全局整理整个 stream。
-- 自动合并、删除或移动 block。
-- 自动分类、标签系统或知识库索引。
-- 长期记忆、向量库、RAG。
-- 标题生成和续写能力。
-
-这些能力会破坏“无脑记笔记”的低负担体验，也会显著增加隐私和解释成本。
-
-### AI 操作入口
-
-入口要轻，不要让产品变成 AI 控制台。
-
-建议：
-
-- 状态栏增加一个小的 AI 图标按钮，只有启用 AI 后显示为可用。
-- 选中文本时，右键菜单或快捷键打开 AI action menu。
-- 当前 block 无选区时，AI 默认作用于当前 block。
-- 快捷键建议保留给后续，不在首版塞太多。
-
-结果呈现：
-
-- `Explain` 默认插入到当前 block 后的新 block。
-- `Rewrite` 使用预览卡片，用户确认后替换选区或当前 block。
-
-### AI 建议卡片
-
-需要用户确认的 AI 结果不应继续作为“跟随选区滚动的单例弹窗”，而应升级为可停放的 AI 建议卡片。卡片创建时锚定来源文本；编辑器滚动时与来源 block 一起移动，来源离开可视区域后卡片随之隐藏，滚回时恢复到原位置。
-
-核心交互：
-
-- 每次触发 AI action 都创建一张独立卡片，不覆盖已有卡片。
-- 卡片支持生成中、已完成、失败、原文已变化四种状态。
-- 卡片可拖动、可调整大小、可关闭；拖动后保存相对来源文本的偏移，多个卡片互不影响。
-- 卡片保留来源锚点，提供“回到原文”能力，点击后滚动到来源 block 并短暂高亮。
-- 卡片操作保留当前确认动作：替换原文、插入新块、复制。
-
-数据模型从单个 `aiSuggestion` 调整为 `aiSuggestions[]`。每张卡片至少保存：
-
-```ts
-type AiSuggestionCard = {
-  id: string
-  action: 'polish' | 'extract-todo' | 'explain'
-  status: 'generating' | 'ready' | 'error' | 'stale'
-  sourceText: string
-  content: string
-  from: number
-  to: number
-  scope: 'selection' | 'block'
-  frame: { top: number; left: number; width: number; height: number }
-  createdAt: number
-}
-```
-
-安全边界：
-
-- 替换原文前必须重新读取 `from` 到 `to` 的当前内容，确认仍等于 `sourceText`。
-- 如果来源文本已经变化，卡片进入 `stale` 状态，禁止直接替换，只允许复制、插入新块或回到原文重新触发。
-- 卡片位置不写入笔记文件，不跨应用重启恢复；首版只保留在当前运行时，避免把临时 AI 状态混入用户数据。
-- 右下角状态栏只展示最近一次 AI 状态，不承担多卡片列表职责。
+不需要真实 API Key：e2e 使用现有 dev mock 或页面内 stub 返回合成响应。
 
 ## 验收标准
 
-当前设置页交付必须满足：
-
-- 设置页能配置 OpenAI、DeepSeek、Custom OpenAI-compatible provider。
-- API Key 保存后不出现在 localStorage、笔记文件、renderer store 明文状态或日志中。
-- `Test connection` 能在不读取笔记正文的情况下验证 provider 可用性。
-
-后续 `Explain` action 必须满足：
-
-- 未启用 AI 或未保存 API Key 时，AI 入口不可执行并给出明确提示。
-- `Explain` 默认只读取当前选区；无选区时只读取当前 block。
-- `Explain` 结果新建 block，不覆盖原文。
-- e2e 覆盖无 key 禁用、当前选区 explain。
-
-后续改写类 action 必须满足：
-
-- AI 结果不会自动改写多个 block。
-- `Rewrite` 必须有确认步骤，取消后原文不变。
-- e2e 覆盖取消 rewrite 不改文、确认 rewrite 只替换选区。
-
-固定多卡片确认流必须满足：
-
-- 连续在不同 block 或选区触发 AI action，会出现多张独立建议卡片。
-- 滚动编辑器时，建议卡片跟随来源 block 移动；来源文本离开可视区域后卡片隐藏，滚回后恢复。
-- 拖动或缩放某张卡片不会影响其他卡片。
-- 点击“回到原文”能定位到对应来源，并且不改变笔记内容。
-- 来源文本变化后点击替换不会覆盖新内容，必须提示原文已变化。
+| ID | 验收条件 | 权威证据 |
+| --- | --- | --- |
+| AC-01 | 选区工具条保留“编辑、改写、提取 Todo”，Prompt Bar 的打开、Esc、Enter 不丢失请求上下文 | `tests/e2e/ai-settings.spec.ts` 的按钮、焦点、payload 断言 |
+| AC-02 | 生成卡展示真实动作名称和一位小数秒数；可控时钟前进后耗时单调递增 | Playwright 可控时钟和 loading DOM 断言 |
+| AC-03 | 多张生成卡共用一个计时源；最后一张完成、失败或关闭后停止更新 | Playwright 启动前包装 `setInterval`/`clearInterval`，断言活动计时器从 0 到 1 再回到 0 |
+| AC-04 | 加载卡扩展为回答或 diff 时水平中心偏移不超过 1px，卡片仍锚定原来源 | Playwright `boundingBox()` 与滚动恢复断言 |
+| AC-05 | answer 不出现替换按钮；diff 保持 token 级变化；error 只提供来源返回和重试；stale 禁止替换 | 四种合成响应状态的 e2e |
+| AC-06 | 1158px 和 520px 宽度、浅色和深色下，工具条、输入框和卡片均位于 `.editor-host` 内且无裁切 | 几何断言和合成截图 |
+| AC-07 | reduced-motion 下没有 shimmer、旋转或位移动画，文本与操作完整 | `page.emulateMedia({ reducedMotion: 'reduce' })` 后的 computed-style 与行为断言 |
+| AC-08 | 现有多卡片、拖动、缩放、来源返回、stale 校验、替换、插入和复制测试不回退 | AI focused e2e 与全量 e2e |
+| AC-09 | 没有新增 React、Tailwind 或 UI runtime；没有公共仓库敏感内容 | `package.json` diff、`npm run verify:public-safety`、`git diff --check` |
 
 ## 风险与边界
 
-- 首版不承诺支持所有 OpenAI-compatible provider 的非标准字段。
-- 首版不做 streaming UI，先用非流式响应降低状态复杂度。
-- 首版不做 token 估算和历史上下文裁剪，只发送当前选区或当前 block。
-- 首版不上传图片内容，只处理文本。
-- AI 输出必须走用户确认，不做后台自动整理。
-- 多张 AI 建议卡片可能遮挡编辑区；首版先依赖拖动、缩放和关闭解决，不引入侧边栏或卡片管理中心。
+- 100ms 时钟只更新生成卡的显示值；不得触发 CodeMirror transaction、笔记保存或卡片重新定位。
+- 多卡片可能遮挡编辑区；继续依靠拖动、缩放、关闭和来源离开时隐藏，不增加侧栏管理中心。
+- 视觉验收不能只看 computed style；必须检查标准和窄窗口的实际截图。
+- 本轮不修改 provider、API Key 存储、请求 prompt、response 解析、diff 算法或笔记写入逻辑。
+- 本轮不承诺改进真实网络延迟，也不把耗时显示解释为模型进度。
+
+## 非自闭环 Blocker
+
+| 能力 | 阻塞原因 | 本轮可继续内容 | 解锁条件 |
+| --- | --- | --- | --- |
+| Streaming Text | `ai:complete` 只返回完整结果，没有 chunk、done、error、cancel 事件 | 完成非流式 Loading State 与回答卡 | 定义并实现可测试的流式 IPC，并明确取消语义 |
+| Thinking、Tool Chips、Task Rows | 没有可信的结构化 Agent 事件 | 只显示真实动作名称和请求状态 | Agent runtime 输出带 ID、顺序、状态和错误的事件流 |
+| Context Cards | 没有稳定、可跳转的 note/block/line 来源契约 | 继续只发送当前选区或 block | 完成来源契约、跳转行为和隐私评审 |
 
 ## 待确认点
 
-- OpenAI 默认模型使用哪个名称需要在实现前按最新官方可用模型确认。
-- DeepSeek 默认模型使用哪个名称需要在实现前按最新官方可用模型确认。
+本轮没有阻塞实施的待确认点。Provider 默认模型、流式协议和跨笔记检索均在范围外，不能在本轮顺带调整。
 
 ## 参考资料
 
-- [DeepSeek API Docs](https://api-docs.deepseek.com/)
-- [OpenAI API Reference](https://developers.openai.com/api/reference/overview/)
-- [OpenAI Chat Completions API Reference](https://developers.openai.com/api/reference/chat-completions/overview/)
+- [Beautiful UI](https://www.beautifului.dev/)
+- [Beautiful UI MIT License](https://www.beautifului.dev/license)
+- [AI 建议卡片验收记录](../reports/2026-07-09-ai-suggestion-cards-acceptance.md)

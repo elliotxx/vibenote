@@ -56,6 +56,19 @@ async function hasNoVisibleEditorSelection(page: Page) {
   })
 }
 
+async function expectInsideEditor(page: Page, selector: string) {
+  const [elementBox, editorBox] = await Promise.all([
+    page.locator(selector).boundingBox(),
+    page.locator('.editor-host').boundingBox(),
+  ])
+  expect(elementBox).not.toBeNull()
+  expect(editorBox).not.toBeNull()
+  expect(elementBox!.x).toBeGreaterThanOrEqual(editorBox!.x - 1)
+  expect(elementBox!.y).toBeGreaterThanOrEqual(editorBox!.y - 1)
+  expect(elementBox!.x + elementBox!.width).toBeLessThanOrEqual(editorBox!.x + editorBox!.width + 1)
+  expect(elementBox!.y + elementBox!.height).toBeLessThanOrEqual(editorBox!.y + editorBox!.height + 1)
+}
+
 test.describe('AI settings', () => {
   test('toggles settings with the preferences shortcut', async ({ page }) => {
     await loadFixture(page)
@@ -298,6 +311,7 @@ test.describe('AI settings', () => {
   })
 
   test('keeps an AI suggestion compact while generation is pending', async ({ page }) => {
+    await page.clock.install()
     await loadFixture(page, ['rough sentence'])
     await openSettings(page)
 
@@ -311,11 +325,24 @@ test.describe('AI settings', () => {
     })
 
     await page.getByText('rough sentence').click()
-    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
+    const hostBox = await page.locator('.editor-host').boundingBox()
+    if (!hostBox) throw new Error('Editor host not found')
+    await page.mouse.move(hostBox.x + hostBox.width - 24, hostBox.y + 24)
+    const polishAction = page.getByTitle('AI 优化选区或此块表述')
+    await expect(polishAction).toBeVisible()
+    await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1_000)
+    await polishAction.click()
 
     const popover = page.getByLabel('AI 表述优化建议')
     await expect(popover).toHaveClass(/loading/)
-    await expect(popover.getByRole('status')).toHaveText('优化表述中')
+    await expect(popover.getByRole('status')).toContainText('优化表述中')
+    await expect(popover.locator('.ai-loading-pixels > span')).toHaveCount(9)
+    const elapsed = popover.locator('.ai-suggestion-loading-elapsed')
+    await expect(elapsed).toHaveText('0.0s')
+    await page.clock.fastForward(100)
+    await expect(elapsed).toHaveText('0.1s')
+    await page.clock.fastForward(900)
+    await expect(elapsed).toHaveText('1.0s')
     await expect(popover.locator('.ai-suggestion-body')).toHaveCount(0)
     await expect(popover.locator('.ai-suggestion-actions')).toHaveCount(0)
 
@@ -342,6 +369,115 @@ test.describe('AI settings', () => {
     })
     expect(loadingLayout.scrollHeight).toBeLessThanOrEqual(loadingLayout.clientHeight)
     expect(loadingLayout.statusBottom).toBeLessThanOrEqual(loadingLayout.popoverBottom + 1)
+  })
+
+  test('uses one shared elapsed timer for concurrent AI suggestions', async ({ page }) => {
+    await page.addInitScript(() => {
+      const activeIntervals = new Set<number>()
+      const nativeSetInterval = window.setInterval.bind(window)
+      const nativeClearInterval = window.clearInterval.bind(window)
+      window.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+        const intervalId = nativeSetInterval(handler, timeout, ...args)
+        activeIntervals.add(intervalId)
+        return intervalId
+      }) as typeof window.setInterval
+      window.clearInterval = ((intervalId?: number) => {
+        if (typeof intervalId === 'number') activeIntervals.delete(intervalId)
+        nativeClearInterval(intervalId)
+      }) as typeof window.clearInterval
+      Object.defineProperty(window, '__activeAiTestIntervals', {
+        configurable: true,
+        value: activeIntervals,
+      })
+    })
+    await loadFixture(page, ['first rough sentence', 'second rough sentence'])
+    const intervalCount = () => page.evaluate(() => (
+      (window as unknown as { __activeAiTestIntervals: Set<number> }).__activeAiTestIntervals.size
+    ))
+    const baseline = await intervalCount()
+
+    await openSettings(page)
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await page.getByTitle('关闭设置').click()
+    await page.evaluate(() => {
+      window.vibenote.ai.complete = async () => new Promise(() => {})
+    })
+
+    await page.getByText('first rough sentence', { exact: true }).click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
+    await expect.poll(intervalCount).toBe(baseline + 1)
+
+    await page.getByText('second rough sentence', { exact: true }).click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
+    const popovers = page.getByLabel('AI 表述优化建议')
+    await expect(popovers).toHaveCount(2)
+    await expect.poll(intervalCount).toBe(baseline + 1)
+
+    await page.locator('.ai-suggestion-close').evaluateAll(buttons => buttons[0]?.click())
+    await expect.poll(intervalCount).toBe(baseline + 1)
+    await page.locator('.ai-suggestion-close').evaluateAll(buttons => buttons[0]?.click())
+    await expect.poll(intervalCount).toBe(baseline)
+
+    await page.evaluate(() => {
+      window.vibenote.ai.complete = async () => ({ ok: false, message: 'Synthetic failure', content: '' })
+    })
+    await page.getByText('first rough sentence', { exact: true }).click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
+    await expect(page.getByRole('button', { name: '重试' })).toBeVisible()
+    await expect.poll(intervalCount).toBe(baseline)
+    await page.getByTitle('关闭建议').click()
+
+    await page.evaluate(() => {
+      window.vibenote.ai.complete = async () => ({ ok: true, message: 'Synthetic success', content: 'completed suggestion' })
+    })
+    await page.getByText('second rough sentence', { exact: true }).click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
+    await expect(page.getByText('completed suggestion')).toBeVisible()
+    await expect.poll(intervalCount).toBe(baseline)
+  })
+
+  test('keeps loading status readable with reduced motion', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await loadFixture(page, ['reduced motion draft'])
+    await openSettings(page)
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await page.getByTitle('关闭设置').click()
+    await page.evaluate(() => {
+      ;(window as any).__resolveReducedMotionSuggestion = null
+      window.vibenote.ai.complete = async () => new Promise(resolve => {
+        ;(window as any).__resolveReducedMotionSuggestion = resolve
+      })
+    })
+
+    await page.getByText('reduced motion draft', { exact: true }).click()
+    await clickBlockToolbarAction(page, 'AI 优化选区或此块表述')
+
+    const popover = page.getByLabel('AI 表述优化建议')
+    await expect(popover.getByRole('status')).toContainText('优化表述中')
+    await expect(popover.locator('.ai-suggestion-loading-elapsed')).toHaveText(/^\d+\.\ds$/)
+    await expect(popover.getByTitle('关闭建议')).toBeVisible()
+    const motionStyles = await popover.evaluate((element) => ({
+      label: getComputedStyle(element.querySelector('.ai-suggestion-loading-label')!).animationName,
+      pixel: getComputedStyle(element.querySelector('.ai-loading-pixels > span')!).animationName,
+    }))
+    expect(motionStyles).toEqual({ label: 'none', pixel: 'none' })
+
+    await page.evaluate(() => {
+      ;(window as any).__resolveReducedMotionSuggestion?.({
+        ok: true,
+        message: 'Reduced motion suggestion ready',
+        content: 'accessible completed suggestion',
+      })
+    })
+    await expect(popover).not.toHaveClass(/loading/)
+    await expect(popover.getByRole('button', { name: '回到原文' })).toBeVisible()
+    await expect(popover.getByRole('button', { name: '替换原文' })).toBeVisible()
+    await expect(popover.getByRole('button', { name: '插入新块' })).toBeVisible()
+    await expect(popover.getByRole('button', { name: '复制' })).toBeVisible()
   })
 
   test('expands an AI suggestion from the loading card without a horizontal jump', async ({ page }) => {
@@ -398,7 +534,11 @@ test.describe('AI settings', () => {
       window.vibenote.ai.complete = async (request) => {
         ;(window as any).__aiInputs.push(request.input)
         if ((window as any).__aiInputs.length === 1) {
-          return { ok: false, message: 'fetch failed', content: '' }
+          return {
+            ok: false,
+            message: 'fetch failed at https://private.example.test/v1 from /tmp/synthetic-private-note with sk-secret-value',
+            content: '',
+          }
         }
         return new Promise((resolve) => {
           ;(window as any).__resolveRetryAiSuggestion = resolve
@@ -411,7 +551,12 @@ test.describe('AI settings', () => {
 
     const popover = page.getByLabel('AI 表述优化建议')
     await expect(popover.locator('.ai-suggestion-error-state')).toContainText('fetch failed')
+    await expect(popover).not.toContainText('private.example.test')
+    await expect(popover).not.toContainText('/tmp/synthetic-private-note')
+    await expect(popover).not.toContainText('sk-secret-value')
     await expect(popover.getByRole('button', { name: '重试' })).toBeVisible()
+    await expect(popover.getByRole('button', { name: '插入新块' })).toHaveCount(0)
+    await expect(popover.getByRole('button', { name: '复制' })).toHaveCount(0)
     await expect(popover.locator('.ai-suggestion-body')).toHaveCount(0)
 
     await popover.getByRole('button', { name: '重试' }).click()
@@ -526,14 +671,20 @@ test.describe('AI settings', () => {
     await page.getByTitle('关闭设置').click()
 
     await page.evaluate(() => {
-      window.vibenote.ai.complete = async payload => ({
-        ok: true,
-        message: 'Polished selection',
-        content: payload.instruction ? `custom: ${payload.instruction}` : 'polished selection',
-      })
+      ;(window as any).__selectionAiPayloads = []
+      window.vibenote.ai.complete = async payload => {
+        ;(window as any).__selectionAiPayloads.push(payload)
+        return {
+          ok: true,
+          message: 'Polished selection',
+          content: payload.instruction ? `custom: ${payload.instruction}` : 'polished selection',
+        }
+      }
     })
 
     await page.getByText('quick action draft', { exact: true }).dblclick()
+    const selectedText = await page.evaluate(() => window.getSelection()?.toString().trim() || '')
+    expect(selectedText).not.toBe('')
     const actions = page.getByRole('toolbar', { name: 'AI 快捷操作' })
     await expect(actions).toBeVisible()
     const [actionsBox, editorBox] = await Promise.all([
@@ -550,25 +701,36 @@ test.describe('AI settings', () => {
     await expect(actions.getByRole('button', { name: '提取 Todo' })).toBeVisible()
 
     await actions.getByRole('button', { name: '编辑', exact: true }).click()
-    await expect(actions.getByRole('textbox', { name: '自定义修改或提问' })).toBeVisible()
+    const promptInput = actions.getByRole('textbox', { name: '自定义修改或提问' })
+    await expect(promptInput).toBeFocused()
+    await promptInput.press('Escape')
+    await expect(promptInput).toHaveCount(0)
+    await expect(page.locator('.cm-content')).toBeFocused()
+
+    await actions.getByRole('button', { name: '编辑', exact: true }).click()
     await actions.getByRole('textbox', { name: '自定义修改或提问' }).fill('改得更简洁')
     await actions.getByRole('textbox', { name: '自定义修改或提问' }).press('Enter')
     await expect(actions).toBeHidden()
     await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
     await expect(page.getByText('custom: 改得更简洁')).toBeVisible()
+    await expect.poll(() => page.evaluate(() => (window as any).__selectionAiPayloads[0])).toMatchObject({
+      input: selectedText,
+      instruction: '改得更简洁',
+      scope: 'selection',
+    })
 
     await page.getByTitle('关闭建议').click()
     await page.getByText('quick action draft', { exact: true }).dblclick()
     await actions.getByRole('button', { name: '编辑', exact: true }).click()
     await actions.getByRole('textbox', { name: '自定义修改或提问' }).fill('你觉得这一段写得怎么样？')
     await actions.getByRole('textbox', { name: '自定义修改或提问' }).press('Enter')
-    const answerPopover = page.getByLabel('AI 表述优化建议')
+    const answerPopover = page.getByLabel('AI 回复')
     await expect(answerPopover.getByText('AI 回复')).toBeVisible()
     await expect(answerPopover.getByText('custom: 你觉得这一段写得怎么样？')).toBeVisible()
     await expect(answerPopover.getByRole('button', { name: '替换原文' })).toHaveCount(0)
 
     await page.getByTitle('关闭建议').click()
-    await expect(page.getByLabel('AI 表述优化建议')).toHaveCount(0)
+    await expect(page.getByLabel('AI 回复')).toHaveCount(0)
     await page.getByText('quick action draft', { exact: true }).dblclick()
     await expect(actions).toBeVisible()
     await actions.getByRole('button', { name: '改写' }).click()
@@ -576,6 +738,48 @@ test.describe('AI settings', () => {
     await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
     await expect(page.getByText('polished selection')).toBeVisible()
   })
+
+  for (const scenario of [
+    { width: 1158, theme: 'light' },
+    { width: 1158, theme: 'dark' },
+    { width: 520, theme: 'light' },
+    { width: 520, theme: 'dark' },
+  ] as const) {
+    test(`keeps the AI interaction inside a ${scenario.width}px ${scenario.theme} editor`, async ({ page }) => {
+      await page.setViewportSize({ width: scenario.width, height: 720 })
+      await loadFixture(page, ['synthetic visual draft'], { theme: scenario.theme })
+      if (scenario.theme === 'dark') {
+        await expect(page.locator('.editor-host')).toHaveCSS('color-scheme', 'dark')
+      }
+      await openSettings(page)
+      await page.getByLabel('启用 AI').check()
+      await page.getByLabel('API 密钥').fill('test-api-key-value')
+      await page.getByRole('button', { name: '保存 API 密钥' }).click()
+      await page.getByTitle('关闭设置').click()
+      await page.evaluate(() => {
+        window.vibenote.ai.complete = async payload => ({
+          ok: true,
+          message: 'Synthetic suggestion ready',
+          content: payload.instruction ? 'concise synthetic draft' : 'rewritten synthetic draft',
+        })
+      })
+
+      await page.getByText('synthetic visual draft', { exact: true }).dblclick()
+      const actions = page.getByRole('toolbar', { name: 'AI 快捷操作' })
+      await expect(actions).toBeVisible()
+      await expectInsideEditor(page, '.ai-quick-actions')
+
+      await actions.getByRole('button', { name: '编辑', exact: true }).click()
+      const promptInput = page.getByRole('textbox', { name: '自定义修改或提问' })
+      await expect(promptInput).toBeFocused()
+      await expectInsideEditor(page, '.ai-quick-editor')
+
+      await promptInput.fill('改得简洁')
+      await promptInput.press('Enter')
+      await expect(page.getByLabel('AI 表述优化建议')).toBeVisible()
+      await expectInsideEditor(page, '.ai-suggestion-popover')
+    })
+  }
 
   test('allows moving and resizing the AI suggestion popover inside the editor', async ({ page }) => {
     await loadFixture(page, ['rough sentence', 'second line'])
@@ -713,6 +917,7 @@ test.describe('AI settings', () => {
 
     await page.getByRole('button', { name: '替换原文' }).click()
     await expect(page.locator('.ai-suggestion-message.stale')).toHaveText('原文已变化，请复制、插入新块或回到原文后重新生成')
+    await expect(page.getByRole('button', { name: '替换原文' })).toHaveCount(0)
     await expect(page.getByText('rough sentence changed')).toBeVisible()
     await expect(page.getByText('polished sentence')).toBeVisible()
   })
@@ -888,6 +1093,31 @@ test.describe('AI settings', () => {
         scope: 'block',
       },
     ])
+  })
+
+  test('redacts private details from Todo extraction errors', async ({ page }) => {
+    await loadFixture(page, ['synthetic todo source'])
+    await openSettings(page)
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await page.getByTitle('关闭设置').click()
+    await page.evaluate(() => {
+      window.vibenote.ai.complete = async () => ({
+        ok: false,
+        message: 'request failed at https://private.example.test from /tmp/synthetic-todo.txt with sk-secret-value',
+        content: '',
+      })
+    })
+
+    await page.getByText('synthetic todo source', { exact: true }).click()
+    await clickBlockToolbarAction(page, 'AI 提取选区或此块 Todo')
+
+    const status = page.locator('.statusbar-center')
+    await expect(status).toContainText('request failed')
+    await expect(status).not.toContainText('private.example.test')
+    await expect(status).not.toContainText('/tmp/synthetic-todo.txt')
+    await expect(status).not.toContainText('sk-secret-value')
   })
 
   test('shows readable connection errors without exposing request secrets', async ({ page }) => {

@@ -2,162 +2,140 @@
 
 ## 背景与范围
 
-本计划实现 Vibenote 的第一阶段 AI Native 能力。设计说明见 [AI Native Assistance](../design/2026-07-02-ai-native-assistance.md)。
+本计划只实施 AI 交互视觉收敛。设计与验收条件见 [AI Native Assistance](../design/2026-07-02-ai-native-assistance.md)。设置、OpenAI-compatible 调用、Todo 提取和多建议卡片属于已交付基线，不在本轮重复实现；历史证据见 [AI 建议卡片验收记录](../reports/2026-07-09-ai-suggestion-cards-acceptance.md)。
 
-范围包括：
+本轮修改范围：
 
-- AI 设置页分组。
-- OpenAI、DeepSeek、Custom OpenAI-compatible provider 配置。
-- API Key 安全保存与脱敏读取。
-- provider 连接测试。
-- Explain、Rewrite、Todo 提取等已有高 ROI AI action 的确认流。
-- 需要用户确认的 AI 结果以文档锚定的建议卡片呈现，支持多卡片并发生成和逐个确认。
+- `src/components/EditorPane.vue`：建议卡运行时计时、Selection Actions、Prompt Bar 和卡片状态呈现。
+- `src/style.css`：统一视觉 token 使用、loading mark、shimmer、焦点和 reduced-motion。
+- `tests/e2e/ai-settings.spec.ts`：状态、键盘、几何、主题、动效和安全边界回归。
+- `docs/reports/`：实现完成后新增使用合成内容的验收记录。
 
-不包括：
-
-- 全局 stream 自动整理。
-- 向量库、RAG、长期记忆。
-- 图片上传给模型。
-- 多 provider 并发、成本统计、账户额度查询。
-- 本阶段不新增标题生成或续写，不扩展为全局整理器。
-- 跨应用重启恢复未处理 AI 建议卡片。
+不修改 provider、API Key 存储、IPC payload、prompt、response 解析、diff 算法、笔记格式和写入逻辑；不增加 React、Tailwind 或其他 UI runtime。
 
 ## 阶段计划
 
-### 阶段 1：设置页结构
+### 阶段 1：建立计时与状态契约
 
-- 将现有 Settings modal 拆成 Appearance、Editor、AI 三组。
-- 在 store 中增加脱敏 AI 设置状态。
-- 增加 provider、base URL、model、enabled、has API key 的表单。
-- API Key 输入只支持写入、替换、清除，不回显。
+先补测试，再改生成中 UI：
 
-验收：
+1. 为建议卡增加运行时 `startedAt`，使用 `performance.now()`。
+2. 实现一个 100ms 共享时钟；仅在存在 `generating` 卡时运行。
+3. 最后一张生成卡完成、失败、关闭或组件卸载时清理时钟。
+4. 将耗时格式固定为一位小数秒数，例如 `2.4s`。
+5. 把动态耗时从高频 `aria-live` 播报中隔离，动作名称仍由 `role="status"` 表达。
+6. 用 Vue/CSS loading mark、shimmer 动作名称和耗时替换旋转圈。
 
-- 设置页在小窗口下不重叠。
-- 非 AI 设置行为不回退。
-- AI disabled 时不会显示可执行 AI action。
+交付证据：
 
-### 阶段 2：主进程 AI 配置与密钥存储
+- Playwright 在应用脚本运行前包装 `window.setInterval` 和 `window.clearInterval`；两张 pending 卡仍只有一个活动计时器，全部进入终态或关闭后活动数回到零。
+- pending e2e 证明 `0.0s -> 0.1s -> 1.0s` 单调递增。
+- 完成、失败和关闭 e2e 证明耗时节点消失且卡片状态不再变化。
+- loading 卡高度小于 120px、无内部滚动、位于 `.editor-host` 内。
 
-- 新增 `electron/aiSettings.js` 或同等主进程模块。
-- 非敏感配置写入 userData。
-- API Key 由主进程保存到 userData 下的独立文件；首发候选不调用 Electron `safeStorage`，避免未签名包触发 macOS Keychain 弹窗。
-- UI 明示 `API key saved locally`。
-- preload 暴露脱敏 IPC。
-- dev mock 提供同形状 API，便于 e2e。
+### 阶段 2：统一选区操作与 Prompt Bar
 
-验收：
+1. 统一工具条和输入框的间距、边框、圆角、阴影、焦点及按压反馈。
+2. 保留“编辑、改写、提取 Todo”三个动作、名称和 payload。
+3. 打开输入框时保存当前请求上下文；Esc 关闭并恢复编辑器焦点，Enter 提交。
+4. 不增加模型选择、语音、`@` 来源、`/` 命令或新的快捷键。
 
-- localStorage 中没有 API Key。
-- 读取设置只返回 `hasApiKey` 和脱敏存储状态，不返回明文 key。
-- 清除 API Key 后 `hasApiKey=false`。
+交付证据：
 
-### 阶段 3：OpenAI-compatible adapter
+- e2e 断言三个按钮、输入框焦点、Esc、Enter、关闭后的编辑器焦点和最终 payload。
+- 1158px 与 520px 宽度下，工具条和输入框边界都在 `.editor-host` 内。
+- 浅色和深色截图仅包含合成笔记，显示焦点环且没有遮挡或裁切。
 
-- 新增主进程 `aiClient`，统一构造 Chat Completions 请求。
-- 支持 OpenAI、DeepSeek、Custom 三类 provider。
-- 实现 `ai:testConnection`。
-- 规范化 base URL，避免重复拼接 `/v1` 或 `/chat/completions`。
-- 所有错误信息脱敏。
+### 阶段 3：统一建议卡终态
 
-验收：
+1. 统一 answer、diff、error、stale 的标题区、内容区和动作区。
+2. answer 只提供插入、复制和来源返回，不出现替换原文。
+3. diff 保持现有 token 算法；替换原文为主操作，插入、复制和来源返回为次操作。
+4. error 只提供脱敏错误、安全说明、来源返回和重试。
+5. stale 禁止替换，保留来源返回、插入和复制。
+6. 保持多卡片、来源锚定、拖动、缩放和滚动隐藏/恢复逻辑不变。
 
-- mock server 返回成功时，设置页显示 connected。
-- 401/403/网络错误能显示可读错误。
-- 请求 header 不进入日志。
+交付证据：
 
-### 阶段 4：AI action 边界
+- answer、diff、error、stale 四种合成状态的按钮和 DOM 断言。
+- token diff、多卡片、stale、移动缩放和来源滚动测试继续通过。
+- 加载卡到完成卡的水平中心偏移不超过 1px。
+- 1158px 与 520px、浅色与深色截图覆盖四种终态。
 
-- 增加 `ai:runAction` IPC。
-- 支持围绕当前选区或当前 block 的低风险 action。
-- renderer 侧根据当前选区或当前 block 构造上下文。
-- `explain-selection` 默认新建 block。
-- 改写类 action 必须进入确认流，避免无确认覆盖。
+### 阶段 4：可访问性与闭环验证
 
-验收：
-
-- 无选区时只发送当前 block。
-- 有选区时只发送选区。
-- explain 结果插入为新 block，不覆盖原文。
-- 关闭 AI 后 action 入口不可执行。
-
-### 阶段 5：文档锚定的多建议卡片确认流
-
-- 将 renderer 中单个 `aiSuggestion` 状态替换为 `aiSuggestions[]`。
-- 每次触发 AI action 立即创建独立卡片，卡片先进入 `generating` 状态，模型返回后更新为 `ready` 或 `error`。
-- 卡片位置锚定来源文本，创建后保存相对来源的偏移；编辑器滚动时重新投影位置。
-- 来源文本离开可视区域后隐藏对应卡片，滚回时恢复；窗口 resize、缩放变化和拖拽结束时仅裁剪卡片边界。
-- 保留现有拖动、缩放、关闭、替换原文、插入新块、复制能力，并让每张卡片独立操作。
-- 为卡片增加“回到原文”入口，滚动到来源 block 并短暂高亮，但不修改正文。
-- 替换原文前重新读取来源范围；如果当前文本不等于卡片保存的 `sourceText`，将卡片标记为 `stale`，禁止直接替换。
-
-验收：
-
-- 连续触发两次 AI action 会出现两张建议卡片，后一张不会覆盖前一张。
-- 滚动编辑器时，已生成卡片跟随来源 block 移动；来源离开可视区域后隐藏，滚回后恢复。
-- 拖动或缩放一张卡片不会改变其他卡片的位置和尺寸。
-- 点击“回到原文”只定位来源，不插入、不替换、不删除内容。
-- 来源文本被编辑后，点击替换会提示原文已变化，不覆盖用户的新内容。
-
-### 阶段 6：保留的 AI action
-
-- `rewrite-selection` 必须带预览确认、来源校验和取消不改文测试。
-- Todo 提取必须只提取明确行动项，不把普通标题当成任务。
-- 不做 `make-title` 和 `continue-writing`，避免产品偏向整理器或代写器。
-
-### 阶段 7：验证与打包
-
-- 增加 e2e 覆盖设置页、mock AI 请求、无 key 禁用和 action 插入。
-- 增加 e2e 覆盖文档锚定的多建议卡片：多卡片生成、滚动隐藏与恢复、拖动缩放隔离、来源变化后禁止替换。
-- 运行全量 e2e。
-- 运行生产构建和 macOS 打包。
-- 打开构建后的 `dist/mac-arm64/Vibenote.app` 手动验证设置页。
+1. 用 `page.emulateMedia({ reducedMotion: 'reduce' })` 验证 shimmer、旋转和位移动画关闭。
+2. 验证 reduced-motion 下动作名称、耗时、状态变化和全部操作仍可用。
+3. 运行 focused e2e、全量 e2e、生产构建、AI runtime、公共仓库安全检查和 diff 检查。
+4. 使用合成内容生成临时截图并逐张检查像素连续性、边界、裁切、主题和焦点。
+5. 构建 macOS 应用，验证真实 Electron 窗口中的编辑器焦点、选区工具条和建议卡定位。
+6. 将命令结果、截图矩阵和未验证项写入新的验收报告；临时截图不进入 Git。
 
 ## 交付内容
 
-- AI 设置页 UI。
-- AI 设置 store 与类型。
-- 主进程 AI 设置与密钥存储。
-- OpenAI-compatible chat adapter。
-- provider 连接测试。
-- Explain、Rewrite、Todo 提取 action 的确认流记录。
-- 文档锚定的多建议卡片确认流。
-- e2e 测试与验证报告。
+- Vue/CSS 实现的 Loading State、Selection Actions、Prompt Bar 和建议卡视觉收敛。
+- 可测试的共享计时控制与清理逻辑。
+- AI focused e2e 和视觉矩阵证据。
+- 不含真实用户内容的验收报告。
 
 ## 验证方式
 
-建议命令：
+实现完成后依次运行：
 
 ```sh
+npm run test:e2e -- tests/e2e/ai-settings.spec.ts
 npm run test:e2e
 npm run build
+npm run verify:ai-runtime
 npm run build:mac
+npm run verify:package
+npm run verify:public-safety
+git diff --check
 open -n dist/mac-arm64/Vibenote.app
 ```
 
-需要额外验证：
+自动化矩阵：
 
-- 检查 localStorage 不包含 API Key。
-- 检查保存文件不包含 API Key。
-- 检查 Electron 日志不包含 Authorization header。
-- 在无网络或错误 key 下确认 UI 可恢复。
-- 在一个窗口内触发两张以上 AI 建议卡片，滚动编辑器后确认卡片随来源离开和恢复。
-- 修改来源文本后再执行卡片的替换动作，确认不会覆盖新内容。
+| 维度 | 覆盖值 |
+| --- | --- |
+| 窗口宽度 | 1158px、520px |
+| 主题 | light、dark |
+| 动效 | normal、reduced-motion |
+| 状态 | selection actions、prompt、loading、answer、diff、error、stale |
+
+自动断言覆盖上述维度的有效组合，负责 DOM 状态、几何和 computed style。截图只保留以下 8 个代表性场景，避免重复证据：
+
+| 宽度/主题 | 场景 |
+| --- | --- |
+| 1158px/light | loading、diff |
+| 1158px/dark | answer、error |
+| 520px/light | selection actions、prompt |
+| 520px/dark | stale、diff |
+
+reduced-motion 由 normal/reduce 两组 computed-style 与行为断言覆盖，不额外复制全部截图。所有测试使用合成笔记数据。截图负责像素连续性、视觉层级、裁切和遮挡。打包后的 Electron 窗口至少复核 normal/light 与 normal/dark 两组，不能用浏览器页面代替这一层证据。
 
 ## 完成标准
 
-- 用户可以在设置页配置 DeepSeek 或 OpenAI-compatible provider。
-- 连接测试可用。
-- API Key 不以明文暴露给 renderer 持久状态。
-- AI action 只作用于当前 block 或选区。
-- AI 建议卡片支持多张并发生成，滚动时与来源 block 一起移动。
-- 改写类确认动作在来源变化后不会直接覆盖用户新内容。
-- 未支持的 AI 操作不出现在可点击入口里。
-- 全量 e2e、生产构建、macOS 打包通过。
+- AC-01 至 AC-09 均有测试输出、截图、构建结果或依赖 diff 作为证据。
+- focused 与全量 e2e、生产构建、AI runtime、macOS 打包、包验证和公共仓库安全检查全部通过。
+- 标准/窄窗口、浅色/深色、normal/reduced-motion 没有超界、裁切、焦点丢失或不可操作状态。
+- 现有 AI payload、回答/改写判定、diff、来源一致性校验和笔记写入语义不变。
+- `package.json` 未增加 React、Tailwind 或其他 UI runtime。
+- 验收报告明确区分自动化通过、Electron 实机截图通过和未验证项。
+
+## Blocker 汇总
+
+| 能力 | 当前阻塞 | 本轮处理 | 解锁方 |
+| --- | --- | --- | --- |
+| Streaming Text | 缺少 chunk、done、error、cancel IPC 和取消语义 | 不实现；使用非流式 Loading State | 后续流式协议设计与主进程实现 |
+| Thinking、Tool Chips、Task Rows | 缺少可信结构化 Agent 事件 | 不模拟；只显示真实动作和请求状态 | 后续 Agent runtime |
+| Context Cards | 缺少稳定的 note/block/line 来源契约与隐私边界 | 不实现；上下文仍限当前选区或 block | 后续检索与隐私设计 |
+
+这些 Blocker 不阻塞阶段 1 至阶段 4。
 
 ## 回退策略
 
-- 如果 provider 请求不稳定，保留设置页和密钥存储，只隐藏 AI action 入口。
-- 如果后续引入系统加密存储导致兼容性问题，保留本机 fallback，并通过设置页状态提示用户。
-- 如果 AI action 影响编辑器稳定性，先保留 `Test connection` 和设置页，回退 action IPC 与 UI 入口。
-- 如果多卡片确认流影响编辑器稳定性，临时回退到单张建议卡片，但保留替换前来源校验。
+- 每个阶段保持独立 diff，按阶段 3、2、1 的逆序回退；阶段 4 只增加验证与报告，不改变运行时。
+- 如果共享计时器影响性能，回退经过时间与 shimmer，恢复静态动作文字；不得保留每卡一个 interval 的降级实现。
+- 如果视觉样式造成窄窗口或可访问性回退，回退本轮 CSS 与模板结构，保留现有卡片状态和业务逻辑。
+- 不得回退来源一致性校验、用户确认、原文保护或密钥脱敏边界。

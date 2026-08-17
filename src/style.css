@@ -148,6 +148,27 @@ select:focus {
   cursor: text;
 }
 
+.editor-host.dark-theme {
+  --surface-editor: oklch(20.5% 0.018 250);
+  --surface-control: oklch(24% 0.02 250);
+  --surface-block-alt: oklch(22.5% 0.019 235);
+  --surface-gutter-even: oklch(18.5% 0.016 250);
+  --surface-gutter-odd: oklch(20% 0.018 235);
+  --active-line-bg: oklch(29% 0.035 245);
+  --ink: oklch(92% 0.012 245);
+  --ink-soft: oklch(79% 0.018 245);
+  --muted: oklch(68% 0.02 245);
+  --faint: oklch(52% 0.02 245);
+  --line: oklch(35% 0.02 245);
+  --line-soft: oklch(29% 0.018 245);
+  --accent: oklch(68% 0.13 265);
+  --accent-hover: oklch(73% 0.12 265);
+  --accent-tint: oklch(31% 0.055 265);
+  color-scheme: dark;
+  color: var(--ink);
+  background: var(--surface-editor);
+}
+
 .editor-mount {
   height: 100%;
 }
@@ -619,6 +640,27 @@ select:focus {
   text-underline-offset: 3px;
 }
 
+.dark-editor .tok-key {
+  color: oklch(78% 0.1 252);
+}
+
+.dark-editor .tok-keyword {
+  color: oklch(80% 0.11 292);
+}
+
+.dark-editor .tok-string {
+  color: oklch(78% 0.09 164);
+}
+
+.dark-editor .tok-number {
+  color: oklch(80% 0.1 70);
+}
+
+.dark-editor .tok-link {
+  color: oklch(80% 0.075 252);
+  text-decoration-color: oklch(58% 0.055 252);
+}
+
 .tok-mention {
   color: var(--mention-ink);
   font-weight: 550;
@@ -958,12 +1000,15 @@ select:focus {
   z-index: 11;
   display: inline-flex;
   align-items: center;
-  height: 36px;
-  padding: 3px;
+  height: 38px;
+  padding: 4px;
   border: 1px solid color-mix(in srgb, var(--line) 88%, var(--ink) 12%);
-  border-radius: 7px;
-  background: var(--surface-control);
-  box-shadow: 0 7px 18px oklch(24% 0.034 250 / 0.12);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-control) 94%, transparent);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, white 62%, transparent) inset,
+    0 8px 24px oklch(24% 0.034 250 / 0.14);
+  backdrop-filter: blur(12px);
 }
 
 .ai-quick-actions > span {
@@ -979,20 +1024,26 @@ select:focus {
   gap: 6px;
   height: 28px;
   padding: 0 8px;
-  border-radius: 5px;
+  border-radius: 7px;
   color: var(--ink-soft);
   background: transparent;
   cursor: pointer;
   font-size: 12px;
   font-weight: 650;
   white-space: nowrap;
+  transition: color 120ms ease, background 120ms ease, transform 120ms ease;
 }
 
 .ai-quick-actions button:hover,
 .ai-quick-actions button:focus-visible {
   color: var(--accent);
   background: var(--accent-tint);
-  outline: none;
+  outline: 2px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  outline-offset: -1px;
+}
+
+.ai-quick-actions button:active {
+  transform: translateY(1px);
 }
 
 .ai-quick-editor {
@@ -1001,14 +1052,24 @@ select:focus {
   left: 50%;
   display: flex;
   align-items: center;
-  width: 282px;
-  height: 42px;
+  width: min(300px, calc(100vw - 36px));
+  height: 44px;
   padding: 4px;
   border: 1px solid color-mix(in srgb, var(--line) 82%, var(--ink) 18%);
-  border-radius: 7px;
+  border-radius: 10px;
   background: var(--surface-control);
-  box-shadow: 0 9px 22px oklch(24% 0.034 250 / 0.14);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, white 62%, transparent) inset,
+    0 12px 30px oklch(24% 0.034 250 / 0.16);
   transform: translateX(-50%);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.ai-quick-editor:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent),
+    0 12px 30px oklch(24% 0.034 250 / 0.16);
 }
 
 .ai-quick-actions.is-below .ai-quick-editor {
@@ -1058,9 +1119,11 @@ select:focus {
   display: flex;
   flex-direction: column;
   border: 1px solid color-mix(in srgb, var(--line) 90%, var(--ink) 10%);
-  border-radius: 4px;
+  border-radius: 10px;
   background: var(--surface-editor);
-  box-shadow: 0 10px 26px oklch(24% 0.034 250 / 0.08);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, white 55%, transparent) inset,
+    0 14px 38px oklch(24% 0.034 250 / 0.12);
   color: var(--ink);
   overflow: hidden;
   min-width: 320px;
@@ -1144,15 +1207,18 @@ select:focus {
   flex: 0 0 auto;
   width: clamp(24px, calc(var(--editor-font-size, 13px) * 1.45), 32px);
   height: clamp(24px, calc(var(--editor-font-size, 13px) * 1.45), 32px);
-  border-radius: 3px;
+  border-radius: 6px;
   color: var(--muted);
   background: transparent;
   cursor: pointer;
 }
 
-.ai-suggestion-close:hover {
+.ai-suggestion-close:hover,
+.ai-suggestion-close:focus-visible {
   color: var(--ink);
   background: var(--accent-tint);
+  outline: 2px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  outline-offset: -1px;
 }
 
 .ai-suggestion-loading {
@@ -1168,23 +1234,72 @@ select:focus {
   font-weight: 650;
 }
 
-.ai-suggestion-spinner {
-  width: 1em;
-  height: 1em;
+.ai-loading-pixels {
+  display: grid;
+  grid-template-columns: repeat(3, 3px);
+  gap: 2px;
   flex: 0 0 auto;
-  border: 2px solid color-mix(in srgb, var(--accent) 20%, var(--line));
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: ai-suggestion-spin 0.8s linear infinite;
+  width: 13px;
+  height: 13px;
 }
 
-@keyframes ai-suggestion-spin {
-  to { transform: rotate(360deg); }
+.ai-loading-pixels > span {
+  width: 3px;
+  height: 3px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--accent) 38%, var(--line));
+  animation: ai-loading-pixel 900ms ease-in-out infinite alternate;
+}
+
+.ai-loading-pixels > span:nth-child(2n) { animation-delay: 120ms; }
+.ai-loading-pixels > span:nth-child(3n) { animation-delay: 240ms; }
+
+.ai-suggestion-loading-copy {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.ai-suggestion-loading-label {
+  color: transparent;
+  background: linear-gradient(100deg, var(--muted) 28%, var(--ink) 48%, var(--muted) 68%);
+  background-size: 220% 100%;
+  background-clip: text;
+  animation: ai-loading-shimmer 1.8s ease-in-out infinite;
+}
+
+.ai-suggestion-loading-elapsed {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@keyframes ai-loading-pixel {
+  to { background: var(--accent); }
+}
+
+@keyframes ai-loading-shimmer {
+  to { background-position: -120% 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ai-suggestion-spinner {
+  .ai-loading-pixels > span,
+  .ai-suggestion-loading-label {
     animation: none;
+  }
+
+  .ai-suggestion-loading-label {
+    color: var(--muted);
+    background: none;
+  }
+
+  .ai-quick-actions button,
+  .ai-quick-editor {
+    transition: none;
   }
 
   .scroll-jump-button,
@@ -1332,6 +1447,14 @@ select:focus {
   grid-template-columns: minmax(0, 1fr) auto auto auto;
 }
 
+.ai-suggestion-actions.is-error {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.ai-suggestion-actions.is-stale {
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+}
+
 .ai-suggestion-status {
   min-width: 0;
   overflow: hidden;
@@ -1384,7 +1507,7 @@ select:focus {
 .ai-suggestion-actions .primary-button,
 .ai-suggestion-actions .secondary-button,
 .ai-suggestion-actions .ghost-button {
-  border-radius: 3px;
+  border-radius: 6px;
 }
 
 .ai-suggestion-actions .primary-button {
@@ -1424,8 +1547,17 @@ select:focus {
   }
 
   .ai-suggestion-actions {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     justify-items: stretch;
+  }
+
+  .ai-suggestion-actions.is-ready .primary-button {
+    grid-row: 1;
+    grid-column: 1 / -1;
+  }
+
+  .ai-suggestion-actions button {
+    width: 100%;
   }
 
   .ai-suggestion-status {
