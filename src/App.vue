@@ -1,17 +1,39 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { X } from 'lucide-vue-next'
 import EditorPane from './components/EditorPane.vue'
+import ShortcutPanel from './components/ShortcutPanel.vue'
 import { useWorkspaceStore } from './stores/workspace'
 
 const store = useWorkspaceStore()
 const showSettings = ref(false)
+const showShortcuts = ref(false)
 const apiKeyDraft = ref('')
 const apiKeyStatus = ref('')
 const connectionStatus = ref('')
 const gitBackupMessage = ref('')
 const agentCliMessage = ref('')
 const agentCliBusy = ref(false)
+
+function toggleSettings() {
+  showShortcuts.value = false
+  showSettings.value = !showSettings.value
+}
+
+function toggleShortcuts() {
+  showSettings.value = false
+  showShortcuts.value = !showShortcuts.value
+  if (!showShortcuts.value) restoreEditorFocus()
+}
+
+function closeShortcuts() {
+  showShortcuts.value = false
+  restoreEditorFocus()
+}
+
+function restoreEditorFocus() {
+  void nextTick(() => document.querySelector<HTMLElement>('.cm-content')?.focus())
+}
 
 const aiProviderDefaults = {
   openai: {
@@ -196,7 +218,12 @@ async function uninstallAgentCli() {
         <div class="window-title">{{ store.currentPath ? store.bufferTitle(store.currentPath) : 'Vibenote' }}</div>
       </header>
 
-      <EditorPane v-if="store.currentPath" :key="store.currentPath" @toggle-settings="showSettings = !showSettings" />
+      <EditorPane
+        v-if="store.currentPath"
+        :key="store.currentPath"
+        @toggle-settings="toggleSettings"
+        @toggle-shortcuts="toggleShortcuts"
+      />
     </main>
 
     <div v-if="showSettings" class="modal-backdrop" @click.self="showSettings = false">
@@ -377,6 +404,10 @@ async function uninstallAgentCli() {
           </section>
         </div>
       </section>
+    </div>
+
+    <div v-if="showShortcuts" class="modal-backdrop" @click.self="closeShortcuts">
+      <ShortcutPanel @close="closeShortcuts" />
     </div>
   </div>
 </template>

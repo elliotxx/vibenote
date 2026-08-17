@@ -25,6 +25,7 @@ import {
   ChevronUp,
   Copy,
   FilePlus2,
+  Keyboard,
   ListTodo,
   Pencil,
   Replace,
@@ -73,6 +74,7 @@ import { useWorkspaceStore } from '../stores/workspace'
 const store = useWorkspaceStore()
 const emit = defineEmits<{
   (event: 'toggle-settings'): void
+  (event: 'toggle-shortcuts'): void
 }>()
 const editorHost = ref<HTMLElement | null>(null)
 const editorMount = ref<HTMLElement | null>(null)
@@ -2791,6 +2793,10 @@ function runEditorCommand(command: EditorCommand, editor: EditorView) {
     emit('toggle-settings')
     return true
   }
+  if (command === 'shortcuts:toggle') {
+    emit('toggle-shortcuts')
+    return true
+  }
   if (command === 'search:block') return openEditorSearch(editor, false, 'block')
   if (command === 'search:document') return openEditorSearch(editor, false, 'document')
   if (command === 'replace:block') return openEditorSearch(editor, true, 'block')
@@ -2828,7 +2834,7 @@ function resetEditorFontSize() {
 
 function onEditorCommand(command: EditorCommand) {
   if (!view) return
-  if (command.startsWith('search:') || command.startsWith('replace:') || command === 'settings:toggle') {
+  if (command.startsWith('search:') || command.startsWith('replace:') || command === 'settings:toggle' || command === 'shortcuts:toggle') {
     runEditorCommand(command, view)
     return
   }
@@ -2850,6 +2856,12 @@ function onWindowKeydown(event: KeyboardEvent) {
     event.preventDefault()
     event.stopPropagation()
     emit('toggle-settings')
+    return
+  }
+  if (primary && event.key === '/' && !event.shiftKey && !event.altKey) {
+    event.preventDefault()
+    event.stopPropagation()
+    emit('toggle-shortcuts')
     return
   }
   const target = event.target as HTMLElement | null
@@ -3507,6 +3519,9 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
       <div class="statusbar-actions">
         <button class="status-icon-button danger" title="删除当前块（Cmd/Ctrl+Shift+D）" @click="removeBlock">
           <Trash2 :size="15" />
+        </button>
+        <button class="status-icon-button" title="快捷键" aria-label="快捷键" @click="emit('toggle-shortcuts')">
+          <Keyboard :size="15" />
         </button>
         <button class="status-icon-button" title="设置" @click="emit('toggle-settings')">
           <Settings :size="15" />

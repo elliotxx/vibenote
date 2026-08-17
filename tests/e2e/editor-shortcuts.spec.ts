@@ -629,8 +629,10 @@ test.describe('editor text selection shortcuts', () => {
     await loadFixture(page)
 
     const actions = page.locator('.statusbar-actions .status-icon-button')
-    await expect(actions).toHaveCount(2)
-    await expect(actions.nth(1)).toBeVisible()
+    await expect(actions).toHaveCount(3)
+    for (let index = 0; index < 3; index += 1) {
+      await expect(actions.nth(index)).toBeVisible()
+    }
 
     const layout = await page.evaluate(() => {
       const viewportWidth = window.innerWidth

@@ -20,6 +20,7 @@ type EditorCommand =
   | 'file:new'
   | 'file:open'
   | 'settings:toggle'
+  | 'shortcuts:toggle'
   | 'search:block'
   | 'search:document'
   | 'replace:block'

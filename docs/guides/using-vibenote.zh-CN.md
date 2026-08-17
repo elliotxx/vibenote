@@ -8,6 +8,7 @@ Vibenote 启动后直接进入一个持续增长的 note stream。在当前 bloc
 | --- | --- |
 | 显示或隐藏应用 | `Cmd+Shift+Space` |
 | 打开或关闭设置 | `Cmd+,` |
+| 打开或关闭快捷键面板 | `Cmd+/` |
 | 在当前 block 后新增 block | `Cmd+Enter` |
 | 在当前 block 前新增 block | `Option+Enter` |
 | 在 note stream 末尾新增 block | `Cmd+Shift+Enter` |

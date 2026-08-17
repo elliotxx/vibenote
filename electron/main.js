@@ -1427,6 +1427,16 @@ function setupApplicationMenu() {
         { role: 'front' },
       ],
     },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'Keyboard Shortcuts',
+          accelerator: 'CommandOrControl+/',
+          click: () => sendEditorCommandWhenFocused('shortcuts:toggle'),
+        },
+      ],
+    },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
@@ -1438,6 +1448,7 @@ function editorCommandForInput(input) {
   if (primary && key === 'n') return 'file:new'
   if (primary && key === 'o') return 'file:open'
   if (primary && key === ',' && !input.shift && !input.alt) return 'settings:toggle'
+  if (primary && key === '/' && !input.shift && !input.alt) return 'shortcuts:toggle'
   if (primary && key === 'f') return input.shift ? 'search:document' : 'search:block'
   if (primary && key === 'r') return input.shift ? 'replace:document' : 'replace:block'
   if (primary && (key === '=' || key === '+')) return 'view:font-increase'

@@ -1623,6 +1623,147 @@ select:focus {
   padding: 16px;
 }
 
+.shortcut-panel {
+  display: grid;
+  gap: 14px;
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(680px, calc(100vh - 48px));
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-editor);
+  box-shadow: 0 24px 80px var(--shadow-modal);
+  padding: 16px;
+}
+
+.shortcut-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.shortcut-panel h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.shortcut-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 10px;
+  color: var(--muted);
+  background: var(--surface-control);
+}
+
+.shortcut-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.shortcut-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+}
+
+.shortcut-search input::placeholder {
+  color: var(--muted);
+}
+
+.shortcut-sections,
+.shortcut-section,
+.shortcut-list {
+  display: grid;
+}
+
+.shortcut-sections {
+  gap: 18px;
+  overflow: auto;
+}
+
+.shortcut-section {
+  gap: 7px;
+}
+
+.shortcut-section h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+}
+
+.shortcut-list {
+  gap: 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.shortcut-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 16px;
+  min-height: 39px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.shortcut-keys {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.shortcut-keys kbd {
+  min-width: 31px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 3px 7px;
+  color: var(--ink-soft);
+  background: var(--surface-control);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.shortcut-empty {
+  margin: 16px 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 520px) {
+  .shortcut-panel {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 24px);
+    padding: 14px;
+  }
+
+  .shortcut-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+    padding: 8px 0;
+  }
+
+  .shortcut-keys {
+    justify-content: flex-start;
+  }
+}
+
 .settings-panel header {
   display: flex;
   align-items: center;
