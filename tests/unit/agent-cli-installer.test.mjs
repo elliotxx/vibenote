@@ -8,6 +8,7 @@ import test from 'node:test'
 import { AgentCliInstaller } from '../../electron/agentCliInstaller.js'
 
 const cliEntry = path.resolve('cli/vibenote.mjs')
+const appVersion = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8')).version
 
 test('one-click install creates a managed command that runs the packaged CLI', async t => {
   const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'vibenote-agent-cli-'))
@@ -16,7 +17,7 @@ test('one-click install creates a managed command that runs the packaged CLI', a
     binDirectory: path.join(root, 'bin'),
     runtimePath: process.execPath,
     cliEntry,
-    appVersion: '0.1.11',
+    appVersion,
     pathValue: path.join(root, 'bin'),
   })
 
@@ -26,7 +27,7 @@ test('one-click install creates a managed command that runs the packaged CLI', a
 
   const result = spawnSync(installed.commandPath, ['version', '--output', 'json'], { encoding: 'utf8' })
   assert.equal(result.status, 0, result.stderr)
-  assert.equal(JSON.parse(result.stdout).data.version, '0.1.11')
+  assert.equal(JSON.parse(result.stdout).data.version, appVersion)
 })
 
 test('managed command can be updated and uninstalled without leaving files behind', async t => {

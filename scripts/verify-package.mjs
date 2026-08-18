@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { extractFile } from '@electron/asar'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
@@ -51,6 +52,11 @@ check(asarList.includes('/electron/preload.cjs'), 'asar contains preload.cjs')
 check(asarList.includes(`/node_modules/@vscode/ripgrep-darwin-${arch}/bin/rg`), 'asar contains ripgrep runtime')
 check(/\/dist\/assets\/index-.*\.js/.test(asarList), 'asar contains renderer JavaScript')
 check(/\/dist\/assets\/index-.*\.css/.test(asarList), 'asar contains renderer CSS')
+check(asarList.includes('/dist/build-info.json'), 'asar contains Git build information')
+
+const buildInfo = JSON.parse(extractFile(asarPath, 'dist/build-info.json').toString('utf8'))
+check(buildInfo.appVersion === version, `build information version is ${version}`)
+check(typeof buildInfo.gitDescribe === 'string' && buildInfo.gitDescribe.length > 0, 'build information contains a Git description')
 
 const identityOutput = spawnSync('security', ['find-identity', '-v', '-p', 'codesigning'], { encoding: 'utf8' }).stdout || ''
 if (identityOutput.includes('Developer ID Application')) {

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { rgPath } from '@vscode/ripgrep'
 import { GitBackupManager } from './gitBackup.js'
 import { AgentCliInstaller } from './agentCliInstaller.js'
+import { aboutPanelOptions, loadBuildInfo } from './buildInfo.js'
 import { storageRevision } from '../core/noteFormat.js'
 import { NoteStore } from '../core/noteStore.js'
 
@@ -1566,6 +1567,12 @@ app.whenReady().then(async () => {
     const filePath = safeJoin(library.legacyImagesPath, fileName)
     return new Response(await fs.promises.readFile(filePath))
   })
+  const buildInfo = loadBuildInfo(app.getVersion(), {
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    repositoryRoot: path.join(__dirname, '..'),
+  })
+  app.setAboutPanelOptions(aboutPanelOptions(buildInfo))
   setupApplicationMenu()
   createWindow()
   if (!isHeadlessVerification) {

@@ -20,7 +20,7 @@
     "test:e2e": "playwright test",
     "preview": "vite preview",
     "electron": "electron .",
-    "build:mac": "set -e; export VIBENOTE_RELEASE_ARCH=${VIBENOTE_RELEASE_ARCH:-arm64}; rm -f dist/*.zip dist/*.zip.blockmap; npm run build; electron_dist_arg=\"\"; if [ -d .electron-dist ]; then electron_dist_arg=\"-c.electronDist=.electron-dist\"; fi; CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir --${VIBENOTE_RELEASE_ARCH} --publish never $electron_dist_arg; node scripts/create-dmg.mjs",
+    "build:mac": "set -e; export VIBENOTE_RELEASE_ARCH=${VIBENOTE_RELEASE_ARCH:-arm64}; rm -f dist/*.zip dist/*.zip.blockmap; npm run build; node scripts/create-build-info.mjs; electron_dist_arg=\"\"; if [ -d .electron-dist ]; then electron_dist_arg=\"-c.electronDist=.electron-dist\"; fi; CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir --${VIBENOTE_RELEASE_ARCH} --publish never $electron_dist_arg; node scripts/create-dmg.mjs",
     "release:mac": "npm run build:mac && npm run verify:package && node scripts/create-checksums.mjs",
     "release:trial": "npm run release:mac",
     "verify:package": "node scripts/verify-package.mjs",
