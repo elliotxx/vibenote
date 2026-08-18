@@ -7,8 +7,7 @@
   --surface-gutter-even: oklch(96.8% 0.008 232);
   --surface-gutter-odd: oklch(94.8% 0.01 162);
   --active-line-bg: oklch(91.8% 0.025 222);
-  --selection-bg: oklch(79% 0.055 252 / 0.52);
-  --selection-active-line-bg: oklch(85.5% 0.045 245 / 0.52);
+  --selection-bg: oklch(70% 0.075 252 / 0.35);
   --surface-control: oklch(98.6% 0.005 246);
   --ink: oklch(24% 0.034 250);
   --ink-soft: oklch(38% 0.032 250);
@@ -157,8 +156,7 @@ select:focus {
   --surface-gutter-even: oklch(18.5% 0.016 250);
   --surface-gutter-odd: oklch(20% 0.018 235);
   --active-line-bg: oklch(29% 0.035 245);
-  --selection-bg: oklch(65% 0.07 252 / 0.46);
-  --selection-active-line-bg: oklch(55% 0.06 248 / 0.46);
+  --selection-bg: oklch(84% 0.08 252 / 0.32);
   --ink: oklch(92% 0.012 245);
   --ink-soft: oklch(79% 0.018 245);
   --muted: oklch(68% 0.02 245);
@@ -519,10 +517,6 @@ select:focus {
   box-shadow: none;
 }
 
-.cm-editor .cm-selectionBackground.selection-active-line {
-  background-color: var(--selection-active-line-bg) !important;
-}
-
 .selection-right-fill-layer {
   position: absolute;
   inset: 0;
@@ -534,10 +528,6 @@ select:focus {
 .selection-right-fill {
   position: absolute;
   background-color: var(--selection-bg);
-}
-
-.selection-right-fill.selection-active-line {
-  background-color: var(--selection-active-line-bg);
 }
 
 .block-even {
@@ -776,6 +766,31 @@ select:focus {
   .cm-gutterElement.cm-activeLineGutter.block-gutter-odd {
   color: var(--ink-soft) !important;
   background-color: var(--surface-gutter-odd) !important;
+}
+
+.cm-editor.has-text-selection .cm-line.cm-activeLine:not(.priority-line) {
+  background-color: var(--surface-editor) !important;
+  box-shadow: none !important;
+}
+
+.cm-editor.has-text-selection .cm-line.cm-activeLine.block-odd:not(.priority-line) {
+  background-color: var(--surface-block-alt) !important;
+}
+
+.cm-editor.has-text-selection .cm-line.cm-activeLine.priority-line {
+  box-shadow: none !important;
+}
+
+.cm-editor.has-text-selection .cm-gutterElement.cm-activeLineGutter.block-gutter-even {
+  color: var(--faint) !important;
+  background-color: var(--surface-gutter-even) !important;
+  font-weight: 400 !important;
+}
+
+.cm-editor.has-text-selection .cm-gutterElement.cm-activeLineGutter.block-gutter-odd {
+  color: var(--faint) !important;
+  background-color: var(--surface-gutter-odd) !important;
+  font-weight: 400 !important;
 }
 
 .tok-image {

@@ -418,10 +418,12 @@ const selectionRightFill = ViewPlugin.fromClass(class {
     this.view.dom.appendChild(this.layer)
     this.scroller = this.view.dom.querySelector<HTMLElement>('.cm-scroller')
     this.scroller?.addEventListener('scroll', this.onScroll, { passive: true })
+    this.syncSelectionState()
     this.schedule()
   }
 
   update(update: ViewUpdate) {
+    if (update.selectionSet || update.docChanged) this.syncSelectionState()
     if (
       update.selectionSet ||
       update.docChanged ||
@@ -435,7 +437,13 @@ const selectionRightFill = ViewPlugin.fromClass(class {
   destroy() {
     if (this.frame) window.cancelAnimationFrame(this.frame)
     this.scroller?.removeEventListener('scroll', this.onScroll)
+    this.view.dom.classList.remove('has-text-selection')
     this.layer.remove()
+  }
+
+  private syncSelectionState() {
+    const hasSelection = this.view.state.selection.ranges.some(range => !range.empty)
+    this.view.dom.classList.toggle('has-text-selection', hasSelection)
   }
 
   private schedule() {
@@ -451,7 +459,6 @@ const selectionRightFill = ViewPlugin.fromClass(class {
     const backgrounds = Array.from(
       this.view.dom.querySelectorAll<HTMLElement>('.cm-selectionBackground'),
     )
-    const headCoords = this.view.coordsAtPos(this.view.state.selection.main.head)
     const terminalCoords = this.view.state.selection.ranges
       .filter(range => !range.empty)
       .map(range => this.view.coordsAtPos(range.to))
@@ -459,12 +466,6 @@ const selectionRightFill = ViewPlugin.fromClass(class {
 
     for (const background of backgrounds) {
       const rect = background.getBoundingClientRect()
-      const isActiveLine = Boolean(
-        headCoords &&
-        rect.bottom > headCoords.top + 1 &&
-        rect.top < headCoords.bottom - 1,
-      )
-      background.classList.toggle('selection-active-line', isActiveLine)
       background.classList.toggle(
         'selection-terminal-line',
         terminalCoords.some(coords => (
@@ -489,10 +490,6 @@ const selectionRightFill = ViewPlugin.fromClass(class {
 
       const fill = document.createElement('div')
       fill.className = 'selection-right-fill'
-      fill.classList.toggle(
-        'selection-active-line',
-        background.classList.contains('selection-active-line'),
-      )
       fill.style.left = `${rect.right - editorRect.left}px`
       fill.style.top = `${rect.top - editorRect.top}px`
       fill.style.width = `${Math.max(0, rightEdge - rect.right)}px`

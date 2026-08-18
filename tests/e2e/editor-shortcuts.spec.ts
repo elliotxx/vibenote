@@ -91,8 +91,7 @@ async function lineColumnPoint(page: Page, text: string, column: number) {
         range.setStart(node, remaining)
         range.collapse(true)
         const rect = range.getBoundingClientRect()
-        const lineRect = line.getBoundingClientRect()
-        return { x: rect.left, y: lineRect.top + lineRect.height / 2 }
+        return { x: rect.left, y: rect.top + rect.height / 2 }
       }
       remaining -= length
       node = walker.nextNode()
@@ -190,24 +189,22 @@ async function multilineSelectionReachesRightEdge(page: Page) {
   })
 }
 
-async function selectionHasCompensatedActiveLineAndVisibleEndpoint(page: Page) {
+async function selectionHasUniformColorAndVisibleEndpoint(page: Page) {
   return page.evaluate(() => {
     const scroller = document.querySelector<HTMLElement>('.cm-scroller')
-    const activeBackground = document.querySelector<HTMLElement>(
-      '.cm-selectionBackground.selection-active-line',
-    )
-    const otherBackground = document.querySelector<HTMLElement>(
-      '.cm-selectionBackground:not(.selection-active-line)',
+    const selectionBackgrounds = Array.from(
+      document.querySelectorAll<HTMLElement>('.cm-selectionBackground, .selection-right-fill'),
     )
     const terminalBackground = document.querySelector<HTMLElement>(
       '.cm-selectionBackground.selection-terminal-line',
     )
-    if (!scroller || !terminalBackground || !activeBackground || !otherBackground) {
+    if (!scroller || !terminalBackground || selectionBackgrounds.length < 2) {
       return false
     }
 
-    const activeOverlayColor = getComputedStyle(activeBackground).backgroundColor
-    const otherOverlayColor = getComputedStyle(otherBackground).backgroundColor
+    const selectionColors = new Set(
+      selectionBackgrounds.map(background => getComputedStyle(background).backgroundColor),
+    )
     const terminalRect = terminalBackground.getBoundingClientRect()
     const overlappingFill = Array.from(
       document.querySelectorAll<HTMLElement>('.selection-right-fill'),
@@ -217,9 +214,55 @@ async function selectionHasCompensatedActiveLineAndVisibleEndpoint(page: Page) {
     })
 
     const rightEdge = scroller.getBoundingClientRect().left + scroller.clientWidth
-    return activeOverlayColor !== otherOverlayColor &&
+    return selectionColors.size === 1 &&
       terminalRect.right < rightEdge - 20 &&
       !overlappingFill
+  })
+}
+
+async function wrappedSelectionUsesUniformActiveOverlay(page: Page) {
+  return page.evaluate(() => {
+    const editor = document.querySelector<HTMLElement>('.cm-editor')
+    const activeLine = document.querySelector<HTMLElement>('.cm-line.cm-activeLine')
+    const backgrounds = Array.from(
+      document.querySelectorAll<HTMLElement>('.cm-selectionBackground'),
+    )
+    if (!editor || !activeLine || backgrounds.length < 2) return false
+
+    const lineRect = activeLine.getBoundingClientRect()
+    const lineHeight = Number.parseFloat(getComputedStyle(activeLine).lineHeight)
+    const probe = document.createElement('div')
+    document.body.append(probe)
+    probe.style.background = activeLine.classList.contains('block-odd')
+      ? 'var(--surface-block-alt)'
+      : 'var(--surface-editor)'
+    const expectedLineBackground = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    const colors = new Set(backgrounds.map(background => (
+      getComputedStyle(background).backgroundColor
+    )))
+
+    return editor.classList.contains('has-text-selection') &&
+      getComputedStyle(activeLine).backgroundColor === expectedLineBackground &&
+      lineRect.height > lineHeight * 2 &&
+      colors.size === 1
+  })
+}
+
+async function activeLineHighlightIsRestored(page: Page) {
+  return page.evaluate(() => {
+    const editor = document.querySelector<HTMLElement>('.cm-editor')
+    const activeLine = document.querySelector<HTMLElement>('.cm-line.cm-activeLine')
+    if (!editor || !activeLine) return false
+
+    const probe = document.createElement('div')
+    document.body.append(probe)
+    probe.style.background = 'var(--active-line-bg)'
+    const expectedBackground = getComputedStyle(probe).backgroundColor
+    probe.remove()
+
+    return !editor.classList.contains('has-text-selection') &&
+      getComputedStyle(activeLine).backgroundColor === expectedBackground
   })
 }
 
@@ -274,7 +317,7 @@ test.describe('editor text selection shortcuts', () => {
     await expect.poll(() => hasVisibleSelectionHighlight(page)).toBe(true)
     await expect.poll(() => hasNaturalSelectionStyling(page)).toBe(true)
     await expect.poll(() => multilineSelectionReachesRightEdge(page)).toBe(true)
-    await expect.poll(() => selectionHasCompensatedActiveLineAndVisibleEndpoint(page)).toBe(true)
+    await expect.poll(() => selectionHasUniformColorAndVisibleEndpoint(page)).toBe(true)
     await expect.poll(() => copySelection(page)).toBe('# Stream\n\nDrop plain text notes here.')
 
     await page.keyboard.press(`${modifier}+A`)
@@ -368,6 +411,30 @@ test.describe('editor text selection shortcuts', () => {
     await expect.poll(() => hasVisibleSelectionHighlight(page)).toBe(true)
     await expect.poll(() => hasNaturalSelectionStyling(page)).toBe(true)
     await expect.poll(() => copySelection(page)).toBe('plain')
+  })
+
+  test('keeps selection color uniform across a wrapped active line', async ({ page }) => {
+    const created = '2026-07-01T10:38:41.565Z'
+    const longLine = 'Wrapped selection text stays readable and visually consistent. '.repeat(8)
+    const content = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
+      `---block:markdown;auto=1;created=${created}`,
+      longLine,
+    ].join('\n')}`
+
+    await page.setViewportSize({ width: 640, height: 600 })
+    await page.goto('about:blank')
+    await loadFixture(page, content)
+
+    const start = await lineColumnPoint(page, 'Wrapped selection text', 4)
+    const end = await lineColumnPoint(page, 'Wrapped selection text', 220)
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(end.x, end.y, { steps: 12 })
+    await page.mouse.up()
+
+    await expect.poll(() => wrappedSelectionUsesUniformActiveOverlay(page)).toBe(true)
+    await page.keyboard.press('ArrowRight')
+    await expect.poll(() => activeLineHighlightIsRestored(page)).toBe(true)
   })
 
   test('highlights other occurrences of the selected word', async ({ page }) => {
