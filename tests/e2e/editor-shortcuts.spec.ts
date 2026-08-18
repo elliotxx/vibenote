@@ -190,6 +190,39 @@ async function multilineSelectionReachesRightEdge(page: Page) {
   })
 }
 
+async function selectionHasCompensatedActiveLineAndVisibleEndpoint(page: Page) {
+  return page.evaluate(() => {
+    const scroller = document.querySelector<HTMLElement>('.cm-scroller')
+    const activeBackground = document.querySelector<HTMLElement>(
+      '.cm-selectionBackground.selection-active-line',
+    )
+    const otherBackground = document.querySelector<HTMLElement>(
+      '.cm-selectionBackground:not(.selection-active-line)',
+    )
+    const terminalBackground = document.querySelector<HTMLElement>(
+      '.cm-selectionBackground.selection-terminal-line',
+    )
+    if (!scroller || !terminalBackground || !activeBackground || !otherBackground) {
+      return false
+    }
+
+    const activeOverlayColor = getComputedStyle(activeBackground).backgroundColor
+    const otherOverlayColor = getComputedStyle(otherBackground).backgroundColor
+    const terminalRect = terminalBackground.getBoundingClientRect()
+    const overlappingFill = Array.from(
+      document.querySelectorAll<HTMLElement>('.selection-right-fill'),
+    ).some((fill) => {
+      const rect = fill.getBoundingClientRect()
+      return rect.bottom > terminalRect.top + 1 && rect.top < terminalRect.bottom - 1
+    })
+
+    const rightEdge = scroller.getBoundingClientRect().left + scroller.clientWidth
+    return activeOverlayColor !== otherOverlayColor &&
+      terminalRect.right < rightEdge - 20 &&
+      !overlappingFill
+  })
+}
+
 async function hasNoVisibleSelectionHighlight(page: Page) {
   return page.evaluate(() => {
     return !Array.from(document.querySelectorAll<HTMLElement>('.cm-selectionBackground'))
@@ -241,6 +274,7 @@ test.describe('editor text selection shortcuts', () => {
     await expect.poll(() => hasVisibleSelectionHighlight(page)).toBe(true)
     await expect.poll(() => hasNaturalSelectionStyling(page)).toBe(true)
     await expect.poll(() => multilineSelectionReachesRightEdge(page)).toBe(true)
+    await expect.poll(() => selectionHasCompensatedActiveLineAndVisibleEndpoint(page)).toBe(true)
     await expect.poll(() => copySelection(page)).toBe('# Stream\n\nDrop plain text notes here.')
 
     await page.keyboard.press(`${modifier}+A`)

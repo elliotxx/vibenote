@@ -448,6 +448,31 @@ const selectionRightFill = ViewPlugin.fromClass(class {
 
   private render() {
     this.layer.replaceChildren()
+    const backgrounds = Array.from(
+      this.view.dom.querySelectorAll<HTMLElement>('.cm-selectionBackground'),
+    )
+    const headCoords = this.view.coordsAtPos(this.view.state.selection.main.head)
+    const terminalCoords = this.view.state.selection.ranges
+      .filter(range => !range.empty)
+      .map(range => this.view.coordsAtPos(range.to))
+      .filter(coords => coords !== null)
+
+    for (const background of backgrounds) {
+      const rect = background.getBoundingClientRect()
+      const isActiveLine = Boolean(
+        headCoords &&
+        rect.bottom > headCoords.top + 1 &&
+        rect.top < headCoords.bottom - 1,
+      )
+      background.classList.toggle('selection-active-line', isActiveLine)
+      background.classList.toggle(
+        'selection-terminal-line',
+        terminalCoords.some(coords => (
+          rect.bottom > coords.top + 1 && rect.top < coords.bottom - 1
+        )),
+      )
+    }
+
     if (!this.hasMultilineSelection()) return
 
     const scroller = this.view.dom.querySelector<HTMLElement>('.cm-scroller')
@@ -456,15 +481,18 @@ const selectionRightFill = ViewPlugin.fromClass(class {
     const editorRect = this.view.dom.getBoundingClientRect()
     const scrollerRect = scroller.getBoundingClientRect()
     const rightEdge = scrollerRect.left + scroller.clientWidth
-    const backgrounds = Array.from(this.view.dom.querySelectorAll<HTMLElement>('.cm-selectionBackground'))
-
     for (const background of backgrounds) {
       const rect = background.getBoundingClientRect()
+      if (background.classList.contains('selection-terminal-line')) continue
       if (rect.width <= 0 || rect.height <= 0 || rect.right >= rightEdge - 1) continue
       if (rect.bottom <= scrollerRect.top || rect.top >= scrollerRect.bottom) continue
 
       const fill = document.createElement('div')
       fill.className = 'selection-right-fill'
+      fill.classList.toggle(
+        'selection-active-line',
+        background.classList.contains('selection-active-line'),
+      )
       fill.style.left = `${rect.right - editorRect.left}px`
       fill.style.top = `${rect.top - editorRect.top}px`
       fill.style.width = `${Math.max(0, rightEdge - rect.right)}px`
@@ -881,7 +909,7 @@ function mountEditor() {
           opacity: '0',
         },
         '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
-          backgroundColor: 'oklch(79% 0.055 252 / 0.52)',
+          backgroundColor: 'var(--selection-bg)',
         },
         '.cm-selectionMatch': {
           borderRadius: '3px',
