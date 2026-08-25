@@ -1,7 +1,8 @@
 import { markdownLanguage } from '@codemirror/lang-markdown'
 import { EditorSelection, StateEffect, StateField } from '@codemirror/state'
 import { Decoration, EditorView, ViewPlugin, WidgetType } from '@codemirror/view'
-import { blockField, type ScratchBlock } from './blocks'
+import { blockField, isMarkdownBlockPreviewed, type ScratchBlock } from './blocks'
+import { imagePreviewSource } from './imagePreview'
 
 export type ActiveImageLine = {
   from: number
@@ -195,6 +196,7 @@ function buildRichDecorations(view: EditorView) {
   const { state } = view
   const blocks = state.field(blockField)
   for (const block of blocks) {
+    if (isMarkdownBlockPreviewed(state, block)) continue
     addSyntaxMarks(decorations, state, block)
     addPriorityMarks(decorations, state, block)
     addMentionMarks(decorations, state, block)
@@ -372,16 +374,6 @@ function activeImageCursor(state: any, from: number, to: number) {
   const active = state.field(activeImageLineField, false)
   if (!active?.cursor || active.edit) return null
   return active.from <= from && active.to >= to ? active.cursor : null
-}
-
-function imagePreviewSource(url: string) {
-  if (url.startsWith('vibenote-image://') || url.startsWith('file://') || /^https?:\/\//i.test(url)) {
-    return url
-  }
-  if (url.startsWith('/')) {
-    return `file://${encodeURI(url)}`
-  }
-  return ''
 }
 
 function addMathResults(decorations: any[], state: any, block: ScratchBlock) {

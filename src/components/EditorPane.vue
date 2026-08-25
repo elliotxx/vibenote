@@ -25,6 +25,8 @@ import {
   ChevronRight,
   ChevronUp,
   Copy,
+  Eye,
+  EyeOff,
   FilePlus2,
   Keyboard,
   ListTodo,
@@ -54,12 +56,18 @@ import {
   insertBlockAfterCurrent,
   insertBlockBeforeCurrent,
   internalBlockEdit,
+  isMarkdownBlockPreviewed,
+  markdownBlockPreviewChangeProtection,
+  markdownBlockPreviewField,
   protectDelimiters,
   replaceBlockLanguage,
+  setMarkdownBlockPreview,
   splitCurrentBlock,
   type ScratchBlock,
 } from '../editor/blocks'
 import { activeImageLineField, richDecorations, setActiveImageLine } from '../editor/richDecorations'
+import { isPreviewableImageUrl } from '../editor/imagePreview'
+import { markdownBlockPreview } from '../editor/markdownBlockPreview'
 import { markdownStrongPreview } from '../editor/markdownStrongPreview'
 import { readCursorAnchor, validateCursorAnchor, writeCursorAnchor } from '../editor/cursorSession'
 import {
@@ -81,6 +89,7 @@ const editorHost = ref<HTMLElement | null>(null)
 const editorMount = ref<HTMLElement | null>(null)
 const languageSelect = ref<HTMLSelectElement | null>(null)
 const currentBlock = ref<ScratchBlock | null>(null)
+const currentBlockPreviewed = ref(false)
 const cursorLabel = ref('1:1')
 const searchInput = ref<HTMLInputElement | null>(null)
 const replaceInput = ref<HTMLInputElement | null>(null)
@@ -917,6 +926,7 @@ function mountEditor() {
       selectionRightFill,
       editorScrollTail,
       blockField,
+      markdownBlockPreviewField,
       searchDecorationField,
       blockDecorations,
       blockGutterDecorations,
@@ -929,8 +939,10 @@ function mountEditor() {
       activeImageLineField,
       richDecorations,
       markdownStrongPreview,
+      markdownBlockPreview,
       protectDelimiters,
       delimiterChangeProtection,
+      markdownBlockPreviewChangeProtection,
       autoDetectPlugin,
       EditorView.domEventHandlers({
         keydown(event, view) {
@@ -990,12 +1002,15 @@ function mountEditor() {
         },
       }),
       EditorView.updateListener.of(update => {
+        const previewChanged = update.transactions.some(transaction =>
+          transaction.effects.some(effect => effect.is(setMarkdownBlockPreview)),
+        )
         if (update.docChanged) {
           mapAiSuggestionRanges(update)
           if (!applyingExternalReload) scheduleSave()
           scheduleSearchRefresh()
         }
-        if (update.docChanged || update.selectionSet || update.focusChanged || update.viewportChanged) {
+        if (update.docChanged || update.selectionSet || update.focusChanged || update.viewportChanged || previewChanged) {
           clearImageEditWhenSelectionLeaves(update.view)
           updateImageFocusClass(update.view)
           if (normalizeSelectionToBlockContent(update.view)) return
@@ -1864,13 +1879,6 @@ function imageLinesInBlock(editor: EditorView, block: ScratchBlock) {
   return lines
 }
 
-function isPreviewableImageUrl(url: string) {
-  return url.startsWith('vibenote-image://') ||
-    url.startsWith('file://') ||
-    url.startsWith('/') ||
-    /^https?:\/\//i.test(url)
-}
-
 function adjacentVisibleLinePosition(editor: EditorView, activeImageLine: { from: number, to: number }, direction: 'left' | 'right') {
   const lines = visibleContentLines(editor)
   const index = lines.findIndex(line => line.from <= activeImageLine.from && line.to >= activeImageLine.from)
@@ -1895,7 +1903,24 @@ function clearImageEditWhenSelectionLeaves(editor: EditorView) {
   editor.dispatch({ effects: setActiveImageLine.of(null) })
 }
 
+function markdownPreviewSelectionText() {
+  const selection = window.getSelection()
+  if (!selection || selection.isCollapsed || !selection.anchorNode || !selection.focusNode) return null
+  const anchorElement = selection.anchorNode instanceof Element
+    ? selection.anchorNode
+    : selection.anchorNode.parentElement
+  const preview = anchorElement?.closest('.markdown-preview')
+  if (!(preview instanceof HTMLElement) || !preview.contains(selection.focusNode)) return null
+  return selection.toString()
+}
+
 function copyVisibleSelection(event: ClipboardEvent, editor: EditorView) {
+  const previewText = markdownPreviewSelectionText()
+  if (previewText !== null) {
+    event.clipboardData?.setData('text/plain', previewText)
+    event.preventDefault()
+    return true
+  }
   const activeImageLine = activeImageLineRange(editor)
   const text = activeImageLine
     ? editor.state.doc.sliceString(activeImageLine.from, activeImageLine.to)
@@ -1933,6 +1958,12 @@ function selectedContentSegments(editor: EditorView) {
 }
 
 function cutVisibleSelection(event: ClipboardEvent, editor: EditorView) {
+  const previewText = markdownPreviewSelectionText()
+  if (previewText !== null) {
+    event.clipboardData?.setData('text/plain', previewText)
+    event.preventDefault()
+    return true
+  }
   const activeImageLine = activeImageLineRange(editor)
   const text = activeImageLine
     ? editor.state.doc.sliceString(activeImageLine.from, activeImageLine.to)
@@ -1973,7 +2004,7 @@ function normalizeSelectionToBlockContent(editor: EditorView) {
   const selection = editor.state.selection.main
   if (!selection.empty) return false
 
-  const block = activeBlock(editor.state)
+  const block = blockForToolbar(editor)
   if (!block || selection.head >= block.content.from) return false
 
   editor.dispatch({
@@ -1985,6 +2016,7 @@ function normalizeSelectionToBlockContent(editor: EditorView) {
 function updateStatus(editor: EditorView) {
   const block = activeBlock(editor.state)
   currentBlock.value = block || null
+  currentBlockPreviewed.value = Boolean(block && isMarkdownBlockPreviewed(editor.state, block))
   const line = editor.state.doc.lineAt(editor.state.selection.main.head)
   const blockStartLine = block ? contentStartLineNumber(editor.state, block) : 1
   cursorLabel.value = `${line.number - blockStartLine + 1}:${editor.state.selection.main.head - line.from + 1}`
@@ -2117,13 +2149,35 @@ function revealBlockToolbarForScroll() {
 }
 
 function onEditorHostMouseMove(event: MouseEvent) {
+  activatePreviewBlockAtY(event.clientY)
   setBlockToolbarPointerActive(isBlockToolbarRevealArea(event.clientX, event.clientY))
+}
+
+function activatePreviewBlockAtY(clientY: number) {
+  if (!view) return
+  const preview = Array.from(view.dom.querySelectorAll<HTMLElement>('.markdown-preview'))
+    .find(element => {
+      const rect = element.getBoundingClientRect()
+      return clientY >= rect.top && clientY <= rect.bottom
+    })
+  const anchor = Number(preview?.dataset.contentAnchor)
+  if (!Number.isInteger(anchor)) return
+  const block = view.state.field(blockField).find(item => item.content.from === anchor)
+  if (!block) return
+  currentBlock.value = block
+  currentBlockPreviewed.value = true
+}
+
+function blockForToolbar(editor: EditorView) {
+  const tracked = currentBlock.value
+  if (tracked && isMarkdownBlockPreviewed(editor.state, tracked)) return tracked
+  return activeBlock(editor.state)
 }
 
 function isBlockToolbarHotZone(clientX: number, clientY: number) {
   if (!editorHost.value || !view) return false
   const rect = editorHost.value.getBoundingClientRect()
-  const block = activeBlock(view.state)
+  const block = blockForToolbar(view)
   if (!block) return false
   const top = rect.top + blockToolbarTop(view, block, rect)
   return clientX >= rect.right - BLOCK_TOOLBAR_HOT_ZONE_WIDTH
@@ -2133,6 +2187,12 @@ function isBlockToolbarHotZone(clientX: number, clientY: number) {
 }
 
 function blockToolbarTop(editor: EditorView, block: ScratchBlock, hostRect: DOMRect) {
+  const preview = editor.dom.querySelector<HTMLElement>(
+    `.markdown-preview[data-content-anchor="${block.content.from}"]`,
+  )
+  if (preview) {
+    return Math.max(8, preview.getBoundingClientRect().top - hostRect.top + 4)
+  }
   const line = editor.state.doc.lineAt(block.content.from)
   const coords = editor.coordsAtPos(line.from)
   const stickyTop = 8
@@ -2399,7 +2459,7 @@ function snapshotCurrentSync(reason: string) {
 
 function addBlockAfterActive() {
   if (!view) return
-  insertBlockAfterCurrent(view, store.settings.defaultLanguage, true)
+  insertBlockAfterCurrent(view, store.settings.defaultLanguage, true, currentBlock.value || undefined)
   updateStatus(view)
   scheduleBlockToolbarUpdate(view)
   scheduleSave()
@@ -2439,12 +2499,32 @@ async function restoreRecoveryDraft() {
 
 function removeBlock() {
   if (!view) return
-  removeBlockFromKeymap(view)
+  removeBlockFromKeymap(view, currentBlock.value || undefined)
 }
 
-function removeBlockFromKeymap(editor: EditorView) {
+function toggleCurrentMarkdownPreview() {
+  if (!view || currentBlock.value?.language !== 'markdown') return
+  const block = currentBlock.value
+  const enabled = !isMarkdownBlockPreviewed(view.state, block)
+  view.dispatch({
+    effects: setMarkdownBlockPreview.of({
+      anchor: block.content.from,
+      enabled,
+    }),
+    selection: EditorSelection.cursor(
+      enabled && block.content.to > block.content.from
+        ? block.content.from + 1
+        : block.content.from,
+    ),
+    scrollIntoView: true,
+  })
+  updateStatus(view)
+  scheduleBlockToolbarUpdate(view)
+}
+
+function removeBlockFromKeymap(editor: EditorView, target?: ScratchBlock) {
   if (!snapshotCurrentSync('delete-block')) return true
-  if (deleteCurrentBlock(editor)) {
+  if (deleteCurrentBlock(editor, target)) {
     updateStatus(editor)
     scheduleSave()
   }
@@ -2976,7 +3056,7 @@ async function formatBlock() {
   if (!view || !currentBlock.value) return
   const block = currentBlock.value
   const language = getLanguage(block.language)
-  const content = currentBlockText(view)
+  const content = currentBlockText(view, block)
   if (block.language === 'math' || !language.prettier) return
   try {
     const formatted = await prettier.format(content, {
@@ -3606,6 +3686,18 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
           @click="formatBlock"
         >
           <AlignLeft :size="14" />
+        </button>
+        <button
+          v-if="currentBlock?.language === 'markdown'"
+          class="block-action-button"
+          :title="currentBlockPreviewed ? '回到源码' : '渲染此块'"
+          :aria-label="currentBlockPreviewed ? '回到源码' : '渲染此块'"
+          :data-tooltip="currentBlockPreviewed ? '回到源码' : '渲染此块'"
+          @mousedown.prevent
+          @click="toggleCurrentMarkdownPreview"
+        >
+          <EyeOff v-if="currentBlockPreviewed" :size="14" />
+          <Eye v-else :size="14" />
         </button>
         <button
           class="block-action-button danger"

@@ -773,7 +773,7 @@ test.describe('editor text selection shortcuts', () => {
 
     await hoverEditorTopRight(page)
     await expect(toolbar).toBeVisible()
-    await expect(toolbar.locator('.block-action-button')).toHaveCount(5)
+    await expect(toolbar.locator('.block-action-button')).toHaveCount(6)
     await page.waitForTimeout(500)
     await expect(toolbar).toBeVisible()
 

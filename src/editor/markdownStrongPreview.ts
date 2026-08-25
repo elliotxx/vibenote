@@ -7,7 +7,7 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from '@codemirror/view'
-import { blockField } from './blocks'
+import { blockField, isMarkdownBlockPreviewed } from './blocks'
 
 type StrongRange = {
   from: number
@@ -59,7 +59,7 @@ function parseStrongRanges(view: EditorView): StrongRange[] {
   const ranges: StrongRange[] = []
 
   for (const block of view.state.field(blockField)) {
-    if (block.language !== 'markdown') continue
+    if (block.language !== 'markdown' || isMarkdownBlockPreviewed(view.state, block)) continue
 
     const content = view.state.doc.sliceString(
       block.content.from,

@@ -1,4 +1,4 @@
-import { Annotation, EditorState, RangeSetBuilder, StateField, Transaction } from '@codemirror/state'
+import { Annotation, EditorState, RangeSetBuilder, StateEffect, StateField, Transaction } from '@codemirror/state'
 import { Decoration, EditorView, GutterMarker, ViewPlugin, gutterLineClass } from '@codemirror/view'
 import { blockDelimiter } from '../common/noteFormat'
 import { detectLanguage } from '../common/languages'
@@ -16,6 +16,11 @@ export type ScratchBlock = {
 
 export const delimiterPattern = /(^|\n)---block:([^\n]+)\n/g
 export const internalBlockEdit = Annotation.define<boolean>()
+export const setMarkdownBlockPreview = StateEffect.define<{ anchor: number, enabled: boolean }>({
+  map(value, changes) {
+    return { ...value, anchor: changes.mapPos(value.anchor, 1) }
+  },
+})
 
 export function parseBlocks(doc: { length: number; sliceString(from: number, to?: number): string }): ScratchBlock[] {
   const text = doc.sliceString(0, doc.length)
@@ -64,6 +69,47 @@ export const blockField = StateField.define<ScratchBlock[]>({
     return blocks
   },
 })
+
+export const markdownBlockPreviewField = StateField.define<readonly number[]>({
+  create() {
+    return []
+  },
+  update(anchors, transaction) {
+    const previewEffects = transaction.effects.filter(effect => effect.is(setMarkdownBlockPreview))
+    if (!transaction.docChanged && previewEffects.length === 0) return anchors
+    const candidates = new Map<number, number[]>()
+    for (const anchor of anchors) {
+      candidates.set(anchor, transaction.docChanged
+        ? [transaction.changes.mapPos(anchor, -1), transaction.changes.mapPos(anchor, 1)]
+        : [anchor])
+    }
+
+    const requested = new Map<number, boolean>()
+    for (const effect of previewEffects) {
+      requested.set(effect.value.anchor, effect.value.enabled)
+    }
+
+    const markdownStarts = new Set(
+      parseBlocks(transaction.newDoc)
+        .filter(block => block.language === 'markdown')
+        .map(block => block.content.from),
+    )
+    const next = new Set<number>()
+    for (const positions of candidates.values()) {
+      const match = positions.find(position => markdownStarts.has(position))
+      if (match !== undefined) next.add(match)
+    }
+    for (const [anchor, enabled] of requested) {
+      if (enabled && markdownStarts.has(anchor)) next.add(anchor)
+      else next.delete(anchor)
+    }
+    return [...next].sort((left, right) => left - right)
+  },
+})
+
+export function isMarkdownBlockPreviewed(state: any, block: ScratchBlock) {
+  return state.field(markdownBlockPreviewField, false)?.includes(block.content.from) ?? false
+}
 
 export const blockDecorations = StateField.define({
   create(state) {
@@ -186,12 +232,36 @@ export const delimiterChangeProtection = EditorState.changeFilter.of((transactio
     return protectedRanges
   })
 
+export const markdownBlockPreviewChangeProtection = EditorState.changeFilter.of((transaction: Transaction) => {
+  if (transaction.annotation(internalBlockEdit) || !transaction.docChanged) return true
+  const protectedBlocks = transaction.startState.field(blockField)
+    .filter(block => isMarkdownBlockPreviewed(transaction.startState, block))
+  if (protectedBlocks.length === 0) return true
+  const startsInsidePreview = transaction.startState.selection.ranges.some(range =>
+    protectedBlocks.some(block =>
+      range.from >= block.content.from && range.to <= block.content.to,
+    ),
+  )
+  if (startsInsidePreview) return false
+
+  let intersectsPreview = false
+  transaction.changes.iterChanges((fromA, toA) => {
+    if (intersectsPreview) return
+    intersectsPreview = protectedBlocks.some(block => (
+      fromA === toA
+        ? fromA >= block.content.from && fromA <= block.content.to
+        : fromA < block.content.to && toA > block.content.from
+    ))
+  })
+  return !intersectsPreview
+})
+
 export const autoDetectPlugin = ViewPlugin.fromClass(
   class {
     update(update: any) {
       if (!update.docChanged) return
       const block = activeBlock(update.state)
-      if (!block || !block.auto) return
+      if (!block || !block.auto || isMarkdownBlockPreviewed(update.state, block)) return
       const content = update.state.doc.sliceString(block.content.from, block.content.to)
       const detected = detectLanguage(content)
       if (detected !== block.language && detected !== 'text') {
@@ -231,9 +301,9 @@ export function insertBlockBeforeCurrent(view: EditorView, language: string, aut
   insertBlockAt(view, block?.range.from ?? 0, language, auto, true)
 }
 
-export function insertBlockAfterCurrent(view: EditorView, language: string, auto = false) {
+export function insertBlockAfterCurrent(view: EditorView, language: string, auto = false, target?: ScratchBlock) {
   const blocks = view.state.field(blockField)
-  const block = activeBlock(view.state) || blocks[blocks.length - 1]
+  const block = target || activeBlock(view.state) || blocks[blocks.length - 1]
   insertBlockAt(view, block?.range.to ?? view.state.doc.length, language, auto)
 }
 
@@ -270,8 +340,8 @@ export function replaceBlockLanguage(view: EditorView, block: ScratchBlock, lang
   })
 }
 
-export function deleteCurrentBlock(view: EditorView) {
-  const block = activeBlock(view.state)
+export function deleteCurrentBlock(view: EditorView, target?: ScratchBlock) {
+  const block = target || activeBlock(view.state)
   const blocks = view.state.field(blockField)
   if (!block || blocks.length <= 1) return false
   const index = blocks.indexOf(block)
@@ -293,8 +363,8 @@ export function deleteCurrentBlock(view: EditorView) {
   return true
 }
 
-export function currentBlockText(view: EditorView) {
-  const block = activeBlock(view.state)
+export function currentBlockText(view: EditorView, target?: ScratchBlock) {
+  const block = target || activeBlock(view.state)
   if (!block) return ''
   return view.state.doc.sliceString(block.content.from, block.content.to)
 }
