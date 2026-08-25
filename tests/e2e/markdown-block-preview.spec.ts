@@ -248,6 +248,33 @@ test.describe("markdown block session preview", () => {
     ).toHaveCount(0);
   });
 
+  test("task writeback ignores task-like text rendered inside fenced code", async ({
+    page,
+  }) => {
+    const markdown = [
+      "```text",
+      "- [ ] not a task",
+      "```",
+      "- [ ] real task",
+    ].join("\n");
+    const fixture = note([block("markdown", markdown)]);
+    await loadFixture(page, fixture);
+    await renderCurrentBlock(page, "not a task");
+
+    await expect(page.locator(".markdown-preview-task")).toHaveCount(1);
+    await page.locator(".markdown-preview-task").check();
+    await expect.poll(() => savedContent(page)).toBe(
+      note([
+        block(
+          "markdown",
+          ["```text", "- [ ] not a task", "```", "- [x] real task"].join(
+            "\n",
+          ),
+        ),
+      ]),
+    );
+  });
+
   test("double-click exits preview and restores the cursor to block content", async ({
     page,
   }) => {

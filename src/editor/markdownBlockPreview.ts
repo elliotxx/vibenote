@@ -28,7 +28,25 @@ function taskListPlugin(markdown: InstanceType<typeof MarkdownIt>) {
     "vibenote-preview-tasks",
     (state: any) => {
       const listItems: any[] = [];
-      let taskIndex = 0;
+      const taskIndexByLine = new Map<number, number>();
+      const lineStarts = [0];
+      for (let index = 0; index < state.src.length; index += 1) {
+        if (state.src[index] === "\n") lineStarts.push(index + 1);
+      }
+      const lineAt = (offset: number) => {
+        let low = 0;
+        let high = lineStarts.length;
+        while (low + 1 < high) {
+          const middle = Math.floor((low + high) / 2);
+          if (lineStarts[middle] <= offset) low = middle;
+          else high = middle;
+        }
+        return low;
+      };
+      [...state.src.matchAll(taskPattern)].forEach((match, index) => {
+        const marker = match.index + match[1].length;
+        taskIndexByLine.set(lineAt(marker), index);
+      });
       for (const token of state.tokens) {
         if (token.type === "list_item_open") {
           listItems.push(token);
@@ -47,6 +65,8 @@ function taskListPlugin(markdown: InstanceType<typeof MarkdownIt>) {
 
         const match = token.content.match(/^\[([ xX])]\s+/);
         if (!match) continue;
+        const taskIndex = taskIndexByLine.get(token.map?.[0]);
+        if (taskIndex === undefined) continue;
         let remaining = match[0].length;
         for (const child of token.children) {
           if (remaining === 0 || child.type !== "text") continue;
@@ -64,7 +84,6 @@ function taskListPlugin(markdown: InstanceType<typeof MarkdownIt>) {
           "class",
           "markdown-preview-task-item",
         );
-        taskIndex += 1;
       }
     },
   );
