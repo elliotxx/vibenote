@@ -21,6 +21,17 @@ export const setMarkdownBlockPreview = StateEffect.define<{ anchor: number, enab
     return { ...value, anchor: changes.mapPos(value.anchor, 1) }
   },
 })
+export type FoldedBlockState = { anchor: number, resumeOffset: number }
+export const setBlockFold = StateEffect.define<{ anchor: number, folded: boolean, resumeOffset?: number }>({
+  map(value, changes) {
+    return { ...value, anchor: changes.mapPos(value.anchor, 1) }
+  },
+})
+export const replaceBlockFolds = StateEffect.define<readonly FoldedBlockState[]>({
+  map(value, changes) {
+    return value.map(entry => ({ ...entry, anchor: changes.mapPos(entry.anchor, 1) }))
+  },
+})
 
 export function parseBlocks(doc: { length: number; sliceString(from: number, to?: number): string }): ScratchBlock[] {
   const text = doc.sliceString(0, doc.length)
@@ -70,6 +81,60 @@ export const blockField = StateField.define<ScratchBlock[]>({
   },
 })
 
+export const foldedBlockField = StateField.define<readonly FoldedBlockState[]>({
+  create() {
+    return []
+  },
+  update(entries, transaction) {
+    const hasFoldEffect = transaction.effects.some(effect =>
+      effect.is(setBlockFold) || effect.is(replaceBlockFolds) || effect.is(setMarkdownBlockPreview),
+    )
+    if (!transaction.docChanged && !hasFoldEffect) return entries
+
+    const replacement = transaction.effects.find(effect => effect.is(replaceBlockFolds))
+    const mapped = replacement
+      ? [...replacement.value]
+      : entries.map(entry => ({
+          ...entry,
+          anchor: transaction.docChanged ? transaction.changes.mapPos(entry.anchor, 1) : entry.anchor,
+        }))
+    const blockStarts = new Set(parseBlocks(transaction.newDoc).map(block => block.content.from))
+    const next = new Map(
+      mapped
+        .filter(entry => blockStarts.has(entry.anchor))
+        .map(entry => [entry.anchor, entry]),
+    )
+
+    for (const effect of transaction.effects) {
+      if (effect.is(setBlockFold)) {
+        if (effect.value.folded && blockStarts.has(effect.value.anchor)) {
+          next.set(effect.value.anchor, {
+            anchor: effect.value.anchor,
+            resumeOffset: Math.max(0, effect.value.resumeOffset ?? 0),
+          })
+        } else {
+          next.delete(effect.value.anchor)
+        }
+      }
+      if (effect.is(setMarkdownBlockPreview) && effect.value.enabled) {
+        next.delete(effect.value.anchor)
+      }
+    }
+
+    return [...next.values()].sort((left, right) => left.anchor - right.anchor)
+  },
+})
+
+export function isBlockFolded(state: any, block: ScratchBlock) {
+  return state.field(foldedBlockField, false)?.some((entry: FoldedBlockState) => entry.anchor === block.content.from) ?? false
+}
+
+export function foldedBlockResumeOffset(state: any, block: ScratchBlock) {
+  return state.field(foldedBlockField, false)
+    ?.find((entry: FoldedBlockState) => entry.anchor === block.content.from)
+    ?.resumeOffset ?? 0
+}
+
 export const markdownBlockPreviewField = StateField.define<readonly number[]>({
   create() {
     return []
@@ -102,6 +167,12 @@ export const markdownBlockPreviewField = StateField.define<readonly number[]>({
     for (const [anchor, enabled] of requested) {
       if (enabled && markdownStarts.has(anchor)) next.add(anchor)
       else next.delete(anchor)
+    }
+    for (const effect of transaction.effects) {
+      if (effect.is(setBlockFold) && effect.value.folded) next.delete(effect.value.anchor)
+      if (effect.is(replaceBlockFolds)) {
+        for (const entry of effect.value) next.delete(entry.anchor)
+      }
     }
     return [...next].sort((left, right) => left - right)
   },
@@ -256,12 +327,30 @@ export const markdownBlockPreviewChangeProtection = EditorState.changeFilter.of(
   return !intersectsPreview
 })
 
+export const foldedBlockChangeProtection = EditorState.changeFilter.of((transaction: Transaction) => {
+  if (transaction.annotation(internalBlockEdit) || !transaction.docChanged) return true
+  const protectedBlocks = transaction.startState.field(blockField)
+    .filter(block => isBlockFolded(transaction.startState, block))
+  if (protectedBlocks.length === 0) return true
+
+  let intersectsFold = false
+  transaction.changes.iterChanges((fromA, toA) => {
+    if (intersectsFold) return
+    intersectsFold = protectedBlocks.some(block => (
+      fromA === toA
+        ? fromA >= block.content.from && fromA <= block.content.to
+        : fromA < block.content.to && toA > block.content.from
+    ))
+  })
+  return !intersectsFold
+})
+
 export const autoDetectPlugin = ViewPlugin.fromClass(
   class {
     update(update: any) {
       if (!update.docChanged) return
       const block = activeBlock(update.state)
-      if (!block || !block.auto || isMarkdownBlockPreviewed(update.state, block)) return
+      if (!block || !block.auto || isMarkdownBlockPreviewed(update.state, block) || isBlockFolded(update.state, block)) return
       const content = update.state.doc.sliceString(block.content.from, block.content.to)
       const detected = detectLanguage(content)
       if (detected !== block.language && detected !== 'text') {

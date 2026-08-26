@@ -595,6 +595,97 @@ select:focus {
   box-shadow: inset 1px 0 0 var(--line);
 }
 
+.cm-lineNumbers .cm-gutterElement.block-fold-gutter {
+  padding: 0 !important;
+}
+
+.block-fold-toggle {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-width: inherit;
+  height: 100%;
+  min-height: calc(var(--editor-font-size) * 1.36 + 2px);
+  padding: 0;
+  place-items: center;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.block-fold-line-number,
+.block-fold-chevron {
+  grid-area: 1 / 1;
+  transition: color 120ms ease, opacity 120ms ease;
+}
+
+.block-fold-chevron {
+  display: inline-flex;
+  color: var(--muted);
+  opacity: 0;
+}
+
+.block-fold-toggle:hover .block-fold-line-number,
+.block-fold-toggle:focus-visible .block-fold-line-number,
+.block-fold-toggle.is-folded .block-fold-line-number {
+  opacity: 0;
+}
+
+.block-fold-toggle:hover .block-fold-chevron,
+.block-fold-toggle:focus-visible .block-fold-chevron,
+.block-fold-toggle.is-folded .block-fold-chevron {
+  opacity: 1;
+}
+
+.block-fold-toggle:hover .block-fold-chevron,
+.block-fold-toggle:focus-visible .block-fold-chevron {
+  color: var(--accent);
+}
+
+.block-fold-toggle:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: -3px;
+}
+
+.block-fold-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: calc(var(--editor-font-size) * 1.36 + 12px);
+  padding: 5px 10px;
+  color: var(--ink-soft);
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.block-fold-summary-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.block-fold-summary-meta {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--muted);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 0.88em;
+  white-space: nowrap;
+}
+
+.block-fold-summary:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--active-line-bg) 42%, transparent) !important;
+}
+
+.block-fold-summary:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: -2px;
+}
+
 .tok-key {
   color: oklch(45% 0.11 252);
 }
@@ -1464,6 +1555,11 @@ select:focus {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .block-fold-line-number,
+  .block-fold-chevron {
+    transition: none;
+  }
+
   .ai-loading-pixels > span,
   .ai-suggestion-loading-label {
     animation: none;

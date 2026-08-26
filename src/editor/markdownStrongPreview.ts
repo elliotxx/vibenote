@@ -7,7 +7,13 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from '@codemirror/view'
-import { blockField, isMarkdownBlockPreviewed } from './blocks'
+import {
+  blockField,
+  foldedBlockField,
+  isBlockFolded,
+  isMarkdownBlockPreviewed,
+  markdownBlockPreviewField,
+} from './blocks'
 
 type StrongRange = {
   from: number
@@ -33,10 +39,15 @@ class MarkdownStrongPreviewPlugin {
   }
 
   update(update: ViewUpdate) {
-    if (update.docChanged) {
+    const presentationChanged =
+      update.startState.field(blockField) !== update.state.field(blockField) ||
+      update.startState.field(foldedBlockField) !== update.state.field(foldedBlockField) ||
+      update.startState.field(markdownBlockPreviewField) !== update.state.field(markdownBlockPreviewField)
+
+    if (update.docChanged || presentationChanged) {
       this.ranges = parseStrongRanges(update.view)
     }
-    if (update.docChanged || update.selectionSet) {
+    if (update.docChanged || update.selectionSet || presentationChanged) {
       const presentation = buildPresentation(update.view, this.ranges)
       this.decorations = presentation.decorations
       this.atomicRanges = presentation.atomicRanges
@@ -59,7 +70,7 @@ function parseStrongRanges(view: EditorView): StrongRange[] {
   const ranges: StrongRange[] = []
 
   for (const block of view.state.field(blockField)) {
-    if (block.language !== 'markdown' || isMarkdownBlockPreviewed(view.state, block)) continue
+    if (block.language !== 'markdown' || isMarkdownBlockPreviewed(view.state, block) || isBlockFolded(view.state, block)) continue
 
     const content = view.state.doc.sliceString(
       block.content.from,

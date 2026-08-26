@@ -2,6 +2,8 @@
 
 Vibenote opens directly into one continuous note stream. Write in the current block, create another block when the thought or language changes, and let autosave persist the stream locally.
 
+Fold a long block from its first line number, the current-block toolbar, or `Command-Option-[`. The first line number turns into a disclosure control only while you interact with it; a folded block keeps the control visible and shows one compact source-derived summary row. Folding changes only the local view state, not the block source, and valid folds are restored when the note is reopened.
+
 ## Keyboard shortcuts
 
 | Action | macOS shortcut |

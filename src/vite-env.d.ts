@@ -34,6 +34,7 @@ type EditorCommand =
   | 'block:select'
   | 'block:previous'
   | 'block:next'
+  | 'block:fold-toggle'
   | 'block:format'
   | 'cursor:add-above'
   | 'cursor:add-below'

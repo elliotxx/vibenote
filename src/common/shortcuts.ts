@@ -24,6 +24,7 @@ export const shortcuts: ShortcutDefinition[] = [
   { id: 'block:select', group: 'Block', label: '选择当前 Block，再按一次全选', keys: ['⌘ A'] },
   { id: 'block:previous', group: 'Block', label: '跳到上一个 Block', keys: ['⌘ ↑'] },
   { id: 'block:next', group: 'Block', label: '跳到下一个 Block', keys: ['⌘ ↓'] },
+  { id: 'block:fold-toggle', group: 'Block', label: '折叠或展开当前 Block', keys: ['⌘ ⌥ ['] },
   { id: 'cursor:add-above', group: '编辑', label: '在上方添加多光标', keys: ['⌘ ⌥ ↑'] },
   { id: 'cursor:add-below', group: '编辑', label: '在下方添加多光标', keys: ['⌘ ⌥ ↓'] },
   { id: 'language:focus', group: '编辑', label: '聚焦语言选择器', keys: ['⌘ L'] },

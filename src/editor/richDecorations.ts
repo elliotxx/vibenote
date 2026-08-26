@@ -1,7 +1,14 @@
 import { markdownLanguage } from '@codemirror/lang-markdown'
 import { EditorSelection, StateEffect, StateField } from '@codemirror/state'
 import { Decoration, EditorView, ViewPlugin, WidgetType } from '@codemirror/view'
-import { blockField, isMarkdownBlockPreviewed, type ScratchBlock } from './blocks'
+import {
+  blockField,
+  foldedBlockField,
+  isBlockFolded,
+  isMarkdownBlockPreviewed,
+  markdownBlockPreviewField,
+  type ScratchBlock,
+} from './blocks'
 import { imagePreviewSource } from './imagePreview'
 
 export type ActiveImageLine = {
@@ -175,7 +182,7 @@ export const richDecorations = ViewPlugin.fromClass(
     }
 
     update(update: any) {
-      if (update.docChanged || hasActiveImageLineEffect(update)) {
+      if (update.docChanged || presentationStateChanged(update) || hasActiveImageLineEffect(update)) {
         this.decorations = buildRichDecorations(update.view)
       }
     }
@@ -184,6 +191,12 @@ export const richDecorations = ViewPlugin.fromClass(
     decorations: plugin => plugin.decorations,
   },
 )
+
+function presentationStateChanged(update: any) {
+  return update.startState.field(blockField) !== update.state.field(blockField) ||
+    update.startState.field(foldedBlockField) !== update.state.field(foldedBlockField) ||
+    update.startState.field(markdownBlockPreviewField) !== update.state.field(markdownBlockPreviewField)
+}
 
 function hasActiveImageLineEffect(update: any) {
   return update.transactions.some((transaction: any) =>
@@ -196,7 +209,7 @@ function buildRichDecorations(view: EditorView) {
   const { state } = view
   const blocks = state.field(blockField)
   for (const block of blocks) {
-    if (isMarkdownBlockPreviewed(state, block)) continue
+    if (isMarkdownBlockPreviewed(state, block) || isBlockFolded(state, block)) continue
     addSyntaxMarks(decorations, state, block)
     addPriorityMarks(decorations, state, block)
     addMentionMarks(decorations, state, block)

@@ -37,7 +37,7 @@ The first release focuses on a minimal capture loop: one window, one buffer, pla
 ## Features
 
 - One persistent note stream.
-- Block-level editing, creation, deletion, splitting, navigation, and selection.
+- Block-level editing, creation, deletion, splitting, navigation, selection, and folding.
 - Block-level language selection and auto-detection.
 - Current-block formatting.
 - Local image storage for pasted images, referenced from the text stream.
@@ -48,7 +48,7 @@ The first release focuses on a minimal capture loop: one window, one buffer, pla
 
 ## First Release Scope
 
-Vibenote currently targets macOS arm64 only. To keep the experience minimal, the first release intentionally does not include multiple buffers, tabs, a sidebar tree, full-text search, a command palette, block folding, cloud sync, or Heynote data migration.
+Vibenote currently targets macOS arm64 only. To keep the experience minimal, the first release intentionally does not include multiple buffers, tabs, a sidebar tree, full-text search, a command palette, nested heading folding, cloud sync, or Heynote data migration.
 
 ## Quick Start
 

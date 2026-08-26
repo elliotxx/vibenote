@@ -51,20 +51,32 @@ import {
   currentBlockText,
   deleteCurrentBlock,
   delimiterChangeProtection,
+  foldedBlockChangeProtection,
+  foldedBlockField,
   insertBlockAtEnd,
   insertBlockAtStart,
   insertBlockAfterCurrent,
   insertBlockBeforeCurrent,
   internalBlockEdit,
+  isBlockFolded,
   isMarkdownBlockPreviewed,
   markdownBlockPreviewChangeProtection,
   markdownBlockPreviewField,
   protectDelimiters,
+  replaceBlockFolds,
   replaceBlockLanguage,
+  setBlockFold,
   setMarkdownBlockPreview,
   splitCurrentBlock,
   type ScratchBlock,
 } from '../editor/blocks'
+import {
+  blockFoldDecorations,
+  blockFoldLineNumberMarkers,
+  blockFoldWidgetLineNumberMarker,
+  expandBlock,
+  toggleBlockFold,
+} from '../editor/blockFold'
 import { activeImageLineField, richDecorations, setActiveImageLine } from '../editor/richDecorations'
 import { isPreviewableImageUrl } from '../editor/imagePreview'
 import { markdownBlockPreview } from '../editor/markdownBlockPreview'
@@ -90,6 +102,7 @@ const editorMount = ref<HTMLElement | null>(null)
 const languageSelect = ref<HTMLSelectElement | null>(null)
 const currentBlock = ref<ScratchBlock | null>(null)
 const currentBlockPreviewed = ref(false)
+const currentBlockFolded = ref(false)
 const cursorLabel = ref('1:1')
 const searchInput = ref<HTMLInputElement | null>(null)
 const replaceInput = ref<HTMLInputElement | null>(null)
@@ -217,6 +230,7 @@ const activeLanguage = computed({
   get: () => currentBlock.value?.language || store.settings.defaultLanguage,
   set: value => {
     if (view && currentBlock.value) {
+      expandBlock(view, currentBlock.value)
       replaceBlockLanguage(view, currentBlock.value, value, currentBlock.value.auto)
       updateStatus(view)
       scheduleSave()
@@ -228,6 +242,7 @@ const autoMode = computed({
   get: () => Boolean(currentBlock.value?.auto),
   set: value => {
     if (view && currentBlock.value) {
+      expandBlock(view, currentBlock.value)
       replaceBlockLanguage(view, currentBlock.value, currentBlock.value.language, value)
       updateStatus(view)
       scheduleSave()
@@ -236,7 +251,7 @@ const autoMode = computed({
 })
 
 const canFormatCurrentBlock = computed(() => {
-  if (!currentBlock.value || currentBlock.value.language === 'math') return false
+  if (!currentBlock.value || currentBlock.value.language === 'math' || currentBlockFolded.value) return false
   return Boolean(getLanguage(currentBlock.value.language).prettier)
 })
 
@@ -630,10 +645,16 @@ function activateSearchMatch(index: number) {
   if (!view || searchMatches.value.length === 0) return
   const normalized = (index + searchMatches.value.length) % searchMatches.value.length
   const match = searchMatches.value[normalized]
+  const block = view.state.field(blockField).find(candidate => candidate.content.from <= match.from && candidate.content.to >= match.to)
   searchActiveIndex.value = normalized
   view.dispatch({
     selection: EditorSelection.range(match.from, match.to),
-    effects: EditorView.scrollIntoView(match.from, { y: 'center' }),
+    effects: [
+      ...(block && isBlockFolded(view.state, block)
+        ? [setBlockFold.of({ anchor: block.content.from, folded: false })]
+        : []),
+      EditorView.scrollIntoView(match.from, { y: 'center' }),
+    ],
   })
   updateStatus(view)
   syncSearchDecorations()
@@ -669,10 +690,14 @@ function toggleEditorSearchReplace() {
 function replaceCurrentSearchMatch() {
   if (!view || searchMatches.value.length === 0) return
   const match = searchMatches.value[Math.max(searchActiveIndex.value, 0)]
+  const block = view.state.field(blockField).find(candidate => candidate.content.from <= match.from && candidate.content.to >= match.to)
   if (!snapshotCurrentSync('search-replace')) return
   view.dispatch({
     changes: { from: match.from, to: match.to, insert: searchReplacement.value },
     selection: EditorSelection.cursor(match.from + searchReplacement.value.length),
+    effects: block && isBlockFolded(view.state, block)
+      ? setBlockFold.of({ anchor: block.content.from, folded: false })
+      : undefined,
     annotations: internalBlockEdit.of(true),
     userEvent: 'input.replace',
   })
@@ -682,16 +707,23 @@ function replaceCurrentSearchMatch() {
 
 function replaceAllSearchMatches() {
   if (!view || searchMatches.value.length === 0) return
+  const editor = view
   if (!snapshotCurrentSync(searchScope.value === 'block' ? 'search-replace-block' : 'search-replace-document')) return
   const matches = searchMatches.value
   const firstFrom = matches[0].from
-  view.dispatch({
+  const foldedAnchors = new Set(
+    editor.state.field(blockField)
+      .filter(block => isBlockFolded(editor.state, block) && matches.some(match => match.from < block.content.to && match.to > block.content.from))
+      .map(block => block.content.from),
+  )
+  editor.dispatch({
     changes: matches.map(match => ({
       from: match.from,
       to: match.to,
       insert: searchReplacement.value,
     })),
     selection: EditorSelection.cursor(firstFrom + searchReplacement.value.length),
+    effects: [...foldedAnchors].map(anchor => setBlockFold.of({ anchor, folded: false })),
     annotations: internalBlockEdit.of(true),
     userEvent: 'input.replace.all',
   })
@@ -771,6 +803,7 @@ async function onExternalBufferChanged(event: Event) {
       annotations: internalBlockEdit.of(true),
     })
     note = refreshed
+    restorePersistedBlockFolds(view)
     setAiStatus('已加载外部更新', true)
   } catch (error) {
     setAiStatus(`外部更新加载失败：${error instanceof Error ? error.message : '无法读取文件'}`)
@@ -825,6 +858,7 @@ function mountEditor() {
       EditorView.clickAddsSelectionRange.of(event => event.altKey && event.button === 0),
       highlightActiveLine(),
       keymap.of([
+        { key: 'Mod-Alt-[', run: toggleCurrentBlockFoldFromKeymap },
         { key: 'Mod-Alt-Enter', run: splitBlockFromKeymap },
         { key: 'Mod-Shift-Enter', run: addBlockAtEnd },
         { key: 'Shift-Alt-Enter', run: addBlockAtStart },
@@ -927,9 +961,12 @@ function mountEditor() {
       editorScrollTail,
       blockField,
       markdownBlockPreviewField,
+      foldedBlockField,
       searchDecorationField,
       blockDecorations,
       blockGutterDecorations,
+      blockFoldLineNumberMarkers,
+      blockFoldWidgetLineNumberMarker,
       EditorView.editorAttributes.compute([blockField], state => {
         const blocks = state.field(blockField)
         const lastIndex = blocks.length - 1
@@ -940,9 +977,11 @@ function mountEditor() {
       richDecorations,
       markdownStrongPreview,
       markdownBlockPreview,
+      blockFoldDecorations,
       protectDelimiters,
       delimiterChangeProtection,
       markdownBlockPreviewChangeProtection,
+      foldedBlockChangeProtection,
       autoDetectPlugin,
       EditorView.domEventHandlers({
         keydown(event, view) {
@@ -1005,12 +1044,17 @@ function mountEditor() {
         const previewChanged = update.transactions.some(transaction =>
           transaction.effects.some(effect => effect.is(setMarkdownBlockPreview)),
         )
+        const foldChanged = update.transactions.some(transaction =>
+          transaction.effects.some(effect => effect.is(setBlockFold) || effect.is(replaceBlockFolds)),
+        )
+        if (update.docChanged || foldChanged) syncFoldMetadata(update.view)
         if (update.docChanged) {
           mapAiSuggestionRanges(update)
           if (!applyingExternalReload) scheduleSave()
           scheduleSearchRefresh()
         }
-        if (update.docChanged || update.selectionSet || update.focusChanged || update.viewportChanged || previewChanged) {
+        if (foldChanged && !applyingExternalReload) scheduleSave()
+        if (update.docChanged || update.selectionSet || update.focusChanged || update.viewportChanged || previewChanged || foldChanged) {
           clearImageEditWhenSelectionLeaves(update.view)
           updateImageFocusClass(update.view)
           if (normalizeSelectionToBlockContent(update.view)) return
@@ -1034,6 +1078,7 @@ function mountEditor() {
   editorScrollElement.addEventListener('scroll', onEditorScroll, { passive: true })
   applyEditorViewSettings(view)
   restoreCursorOrMoveToEditableContent(view)
+  restorePersistedBlockFolds(view)
   updateImageFocusClass(view)
   updateStatus(view)
   scheduleBlockToolbarUpdate(view)
@@ -1074,6 +1119,32 @@ function restoreCursorOrMoveToEditableContent(editor: EditorView) {
     selection: EditorSelection.cursor(anchor),
     effects: EditorView.scrollIntoView(anchor, { y: 'center' }),
   })
+}
+
+function restorePersistedBlockFolds(editor: EditorView) {
+  const ranges = note?.metadata.foldedRanges || []
+  const selectionHead = editor.state.selection.main.head
+  const entries = editor.state.field(blockField)
+    .filter(block => ranges.some(range => range.from === block.content.from && range.to === block.content.to))
+    .map(block => ({
+      anchor: block.content.from,
+      resumeOffset: selectionHead >= block.content.from && selectionHead <= block.content.to
+        ? selectionHead - block.content.from
+        : 0,
+    }))
+  editor.dispatch({ effects: replaceBlockFolds.of(entries) })
+}
+
+function syncFoldMetadata(editor: EditorView) {
+  if (!note) return
+  const entries = editor.state.field(foldedBlockField)
+  const blocks = editor.state.field(blockField)
+  const ranges = entries.flatMap(entry => {
+    const block = blocks.find(candidate => candidate.content.from === entry.anchor)
+    return block ? [{ from: block.content.from, to: block.content.to }] : []
+  })
+  if (ranges.length > 0) note.metadata.foldedRanges = ranges
+  else delete note.metadata.foldedRanges
 }
 
 function scheduleCursorSave(editor: EditorView) {
@@ -2017,6 +2088,7 @@ function updateStatus(editor: EditorView) {
   const block = activeBlock(editor.state)
   currentBlock.value = block || null
   currentBlockPreviewed.value = Boolean(block && isMarkdownBlockPreviewed(editor.state, block))
+  currentBlockFolded.value = Boolean(block && isBlockFolded(editor.state, block))
   const line = editor.state.doc.lineAt(editor.state.selection.main.head)
   const blockStartLine = block ? contentStartLineNumber(editor.state, block) : 1
   cursorLabel.value = `${line.number - blockStartLine + 1}:${editor.state.selection.main.head - line.from + 1}`
@@ -2149,28 +2221,29 @@ function revealBlockToolbarForScroll() {
 }
 
 function onEditorHostMouseMove(event: MouseEvent) {
-  activatePreviewBlockAtY(event.clientY)
+  activatePresentedBlockAtY(event.clientY)
   setBlockToolbarPointerActive(isBlockToolbarRevealArea(event.clientX, event.clientY))
 }
 
-function activatePreviewBlockAtY(clientY: number) {
+function activatePresentedBlockAtY(clientY: number) {
   if (!view) return
-  const preview = Array.from(view.dom.querySelectorAll<HTMLElement>('.markdown-preview'))
+  const presentation = Array.from(view.dom.querySelectorAll<HTMLElement>('.markdown-preview, .block-fold-summary'))
     .find(element => {
       const rect = element.getBoundingClientRect()
       return clientY >= rect.top && clientY <= rect.bottom
     })
-  const anchor = Number(preview?.dataset.contentAnchor)
+  const anchor = Number(presentation?.dataset.contentAnchor)
   if (!Number.isInteger(anchor)) return
   const block = view.state.field(blockField).find(item => item.content.from === anchor)
   if (!block) return
   currentBlock.value = block
-  currentBlockPreviewed.value = true
+  currentBlockPreviewed.value = isMarkdownBlockPreviewed(view.state, block)
+  currentBlockFolded.value = isBlockFolded(view.state, block)
 }
 
 function blockForToolbar(editor: EditorView) {
   const tracked = currentBlock.value
-  if (tracked && isMarkdownBlockPreviewed(editor.state, tracked)) return tracked
+  if (tracked && (isMarkdownBlockPreviewed(editor.state, tracked) || isBlockFolded(editor.state, tracked))) return tracked
   return activeBlock(editor.state)
 }
 
@@ -2187,11 +2260,11 @@ function isBlockToolbarHotZone(clientX: number, clientY: number) {
 }
 
 function blockToolbarTop(editor: EditorView, block: ScratchBlock, hostRect: DOMRect) {
-  const preview = editor.dom.querySelector<HTMLElement>(
-    `.markdown-preview[data-content-anchor="${block.content.from}"]`,
+  const presentation = editor.dom.querySelector<HTMLElement>(
+    `.markdown-preview[data-content-anchor="${block.content.from}"], .block-fold-summary[data-content-anchor="${block.content.from}"]`,
   )
-  if (preview) {
-    return Math.max(8, preview.getBoundingClientRect().top - hostRect.top + 4)
+  if (presentation) {
+    return Math.max(8, presentation.getBoundingClientRect().top - hostRect.top + 4)
   }
   const line = editor.state.doc.lineAt(block.content.from)
   const coords = editor.coordsAtPos(line.from)
@@ -2419,6 +2492,7 @@ function flushSave() {
     window.clearTimeout(saveTimer)
     saveTimer = null
   }
+  syncFoldMetadata(view)
   note.content = view.state.doc.toString()
   const raw = serializeNote(note)
   store.saveBuffer(editorBufferPath, raw)
@@ -2435,6 +2509,7 @@ function flushSaveSync() {
     window.clearTimeout(saveTimer)
     saveTimer = null
   }
+  syncFoldMetadata(view)
   note.content = view.state.doc.toString()
   try {
     store.saveBufferSync(editorBufferPath, serializeNote(note))
@@ -2446,6 +2521,7 @@ function flushSaveSync() {
 
 function snapshotCurrentSync(reason: string) {
   if (!view || !note) return false
+  syncFoldMetadata(view)
   note.content = view.state.doc.toString()
   try {
     store.snapshotBufferSync(editorBufferPath, serializeNote(note), reason)
@@ -2502,15 +2578,36 @@ function removeBlock() {
   removeBlockFromKeymap(view, currentBlock.value || undefined)
 }
 
+function toggleCurrentBlockFold() {
+  if (!view || !currentBlock.value) return
+  toggleBlockFold(view, currentBlock.value)
+  updateStatus(view)
+  scheduleBlockToolbarUpdate(view)
+}
+
+function toggleCurrentBlockFoldFromKeymap(editor: EditorView) {
+  const block = activeBlock(editor.state)
+  if (!block) return false
+  const toggled = toggleBlockFold(editor, block)
+  if (toggled) {
+    updateStatus(editor)
+    scheduleBlockToolbarUpdate(editor)
+  }
+  return toggled
+}
+
 function toggleCurrentMarkdownPreview() {
   if (!view || currentBlock.value?.language !== 'markdown') return
   const block = currentBlock.value
   const enabled = !isMarkdownBlockPreviewed(view.state, block)
   view.dispatch({
-    effects: setMarkdownBlockPreview.of({
-      anchor: block.content.from,
-      enabled,
-    }),
+    effects: [
+      setBlockFold.of({ anchor: block.content.from, folded: false }),
+      setMarkdownBlockPreview.of({
+        anchor: block.content.from,
+        enabled,
+      }),
+    ],
     selection: EditorSelection.cursor(
       enabled && block.content.to > block.content.from
         ? block.content.from + 1
@@ -2629,6 +2726,8 @@ function addBlockAtEnd(editor: EditorView) {
 }
 
 function splitBlockFromKeymap(editor: EditorView) {
+  const block = activeBlock(editor.state)
+  if (block) expandBlock(editor, block)
   splitCurrentBlock(editor, currentBlock.value?.language || store.settings.defaultLanguage, currentBlock.value?.auto ?? true)
   scheduleSave()
   return true
@@ -2922,6 +3021,8 @@ function handleEditorShortcut(event: KeyboardEvent, editor: EditorView) {
     handled = moveToPreviousBlock(editor)
   } else if (key === 'arrowdown' && primary) {
     handled = moveToNextBlock(editor)
+  } else if (key === '[' && primary && event.altKey) {
+    handled = toggleCurrentBlockFoldFromKeymap(editor)
   } else if (key === 'l' && primary) {
     handled = focusLanguageSelector()
   } else if ((key === '=' || key === '+') && primary) {
@@ -2981,6 +3082,7 @@ function runEditorCommand(command: EditorCommand, editor: EditorView) {
   if (command === 'block:select') return selectCurrentBlockOrAll(editor)
   if (command === 'block:previous') return moveToPreviousBlock(editor)
   if (command === 'block:next') return moveToNextBlock(editor)
+  if (command === 'block:fold-toggle') return toggleCurrentBlockFoldFromKeymap(editor)
   if (command === 'block:format') return formatBlockFromKeymap()
   if (command === 'cursor:add-above') return addCursorAbove(editor)
   if (command === 'cursor:add-below') return addCursorBelow(editor)
@@ -3055,6 +3157,7 @@ function onWindowFocus() {
 async function formatBlock() {
   if (!view || !currentBlock.value) return
   const block = currentBlock.value
+  expandBlock(view, block)
   const language = getLanguage(block.language)
   const content = currentBlockText(view, block)
   if (block.language === 'math' || !language.prettier) return
@@ -3123,6 +3226,9 @@ async function runAiAction(
   presentation: AiSuggestionPresentation = 'diff',
 ) {
   if (!view) return
+
+  const block = blockForToolbar(view)
+  if (block) expandBlock(view, block)
 
   setAiStatus('')
   const source = aiSourceForEditor(view)
@@ -3221,9 +3327,15 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
   const line = Math.min(detail.line, view.state.doc.lines)
   const docLine = view.state.doc.line(line)
   const pos = Math.min(docLine.from + detail.column, docLine.to)
+  const block = view.state.field(blockField).find(candidate => candidate.content.from <= pos && candidate.content.to >= pos)
   view.dispatch({
     selection: EditorSelection.cursor(pos),
-    effects: EditorView.scrollIntoView(pos, { y: 'center' }),
+    effects: [
+      ...(block && isBlockFolded(view.state, block)
+        ? [setBlockFold.of({ anchor: block.content.from, folded: false })]
+        : []),
+      EditorView.scrollIntoView(pos, { y: 'center' }),
+    ],
   })
   view.focus()
 }
@@ -3686,6 +3798,17 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
           @click="formatBlock"
         >
           <AlignLeft :size="14" />
+        </button>
+        <button
+          class="block-action-button"
+          :title="currentBlockFolded ? '展开此块（Cmd/Ctrl+Option+[）' : '折叠此块（Cmd/Ctrl+Option+[）'"
+          :aria-label="currentBlockFolded ? '展开此块' : '折叠此块'"
+          :data-tooltip="currentBlockFolded ? '展开此块' : '折叠此块'"
+          @mousedown.prevent
+          @click="toggleCurrentBlockFold"
+        >
+          <ChevronDown v-if="currentBlockFolded" :size="14" />
+          <ChevronRight v-else :size="14" />
         </button>
         <button
           v-if="currentBlock?.language === 'markdown'"
