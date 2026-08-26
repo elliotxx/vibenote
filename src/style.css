@@ -951,15 +951,34 @@ select:focus {
   transform: rotate(45deg) scale(1);
 }
 
+.cm-line:has(> .markdown-preview) {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
 .markdown-preview {
+  position: relative;
   box-sizing: border-box;
   width: 100%;
-  min-height: calc(var(--editor-font-size) * 1.6);
-  padding: 10px 14px 12px;
+  min-height: calc(var(--editor-font-size) * 1.4);
+  padding: 4px 10px 6px;
   color: var(--ink);
   cursor: text;
-  line-height: 1.62;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-size: inherit;
+  line-height: 1.4;
+  white-space: normal;
   user-select: text;
+}
+
+.markdown-preview.block-even {
+  background-color: var(--surface-editor) !important;
+}
+
+.markdown-preview.block-odd {
+  background-color: var(--surface-block-alt) !important;
 }
 
 .markdown-preview > :first-child {
@@ -970,46 +989,101 @@ select:focus {
   margin-bottom: 0;
 }
 
+.markdown-preview :where(h1, h2, h3, h4, h5, h6, p, ul, ol, li, hr, blockquote, pre, table, dl, dt, dd, figure) {
+  margin: 0;
+}
+
+.markdown-preview p:empty {
+  display: none;
+}
+
 .markdown-preview h1,
 .markdown-preview h2,
 .markdown-preview h3,
 .markdown-preview h4,
 .markdown-preview h5,
 .markdown-preview h6 {
-  margin: 0.8em 0 0.35em;
+  margin: 0.7em 0 0.25em;
   color: var(--ink);
+  font-weight: 700;
   line-height: 1.25;
 }
 
-.markdown-preview p,
+.markdown-preview h1 {
+  font-size: 1.15em;
+}
+
+.markdown-preview h2 {
+  font-size: 1.1em;
+}
+
+.markdown-preview h3 {
+  font-size: 1.05em;
+}
+
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 {
+  font-size: 1em;
+}
+
+.markdown-preview p + p {
+  margin-top: 0.45em;
+}
+
 .markdown-preview ul,
-.markdown-preview ol,
-.markdown-preview blockquote,
-.markdown-preview pre,
-.markdown-preview table {
-  margin: 0.5em 0;
+.markdown-preview ol {
+  margin: 0.35em 0;
+  padding-left: 1.15em;
+}
+
+.markdown-preview li + li {
+  margin-top: 0.28em;
+}
+
+.markdown-preview li p,
+.markdown-preview li pre,
+.markdown-preview li blockquote,
+.markdown-preview li table {
+  margin: 0;
+}
+
+.markdown-preview hr {
+  height: 0;
+  margin: 0.7em 0;
+  border: 0;
+  border-top: 1px solid var(--line);
 }
 
 .markdown-preview blockquote {
-  margin-left: 0;
-  padding-left: 12px;
-  border-left: 3px solid var(--line);
-  color: var(--ink-soft);
+  margin: 0.6em 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+  background: var(--accent-tint);
+  color: var(--ink);
+}
+
+.markdown-preview code,
+.markdown-preview pre {
+  font-family: "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .markdown-preview code {
-  padding: 1px 4px;
+  padding: 0 3px;
   border: 1px solid var(--line-soft);
-  border-radius: 4px;
+  border-radius: 3px;
   background: var(--surface-control);
 }
 
 .markdown-preview pre {
   overflow: auto;
-  padding: 10px 12px;
+  margin: 0.6em 0;
+  padding: 6px 8px;
   border: 1px solid var(--line-soft);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--surface-control);
+  white-space: pre;
 }
 
 .markdown-preview pre code {
@@ -1027,11 +1101,15 @@ select:focus {
 
 .markdown-preview img {
   display: block;
-  max-width: 100%;
+  max-width: min(100%, 520px);
   max-height: 340px;
-  margin: 8px 0;
+  margin: 10px 0;
   border: 1px solid var(--line);
   border-radius: 6px;
+}
+
+.markdown-preview p:has(> img:only-child) {
+  margin: 0.35em 0;
 }
 
 .markdown-preview table {
@@ -1041,7 +1119,7 @@ select:focus {
 
 .markdown-preview th,
 .markdown-preview td {
-  padding: 5px 8px;
+  padding: 3px 6px;
   border: 1px solid var(--line);
   text-align: left;
 }

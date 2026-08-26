@@ -99,21 +99,48 @@ markdown.use(multimdTable).use(taskListPlugin);
 class MarkdownBlockPreviewWidget extends WidgetType {
   private readonly anchor: number;
   private readonly source: string;
+  private readonly tone: "even" | "odd";
+  private readonly isStart: boolean;
+  private readonly visualOffset: number;
 
-  constructor(anchor: number, source: string) {
+  constructor(
+    anchor: number,
+    source: string,
+    tone: "even" | "odd",
+    isStart: boolean,
+    visualOffset: number,
+  ) {
     super();
     this.anchor = anchor;
     this.source = source;
+    this.tone = tone;
+    this.isStart = isStart;
+    this.visualOffset = visualOffset;
   }
 
   eq(other: MarkdownBlockPreviewWidget) {
-    return this.anchor === other.anchor && this.source === other.source;
+    return (
+      this.anchor === other.anchor &&
+      this.source === other.source &&
+      this.tone === other.tone &&
+      this.isStart === other.isStart &&
+      this.visualOffset === other.visualOffset
+    );
   }
 
   toDOM(view: EditorView) {
     const container = document.createElement("section");
-    container.className = "markdown-preview";
+    container.className = [
+      "markdown-preview",
+      this.tone === "even" ? "block-even" : "block-odd",
+      this.isStart ? "block-start" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
     container.dataset.contentAnchor = String(this.anchor);
+    if (this.visualOffset > 0) {
+      container.style.marginTop = `${this.visualOffset}px`;
+    }
     try {
       container.innerHTML = markdown.render(this.source);
       this.prepareImages(container);
@@ -130,17 +157,7 @@ class MarkdownBlockPreviewWidget extends WidgetType {
     container.addEventListener("dblclick", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const block = blockFromAnchor(view, this.anchor);
-      if (!block) return;
-      view.dispatch({
-        effects: setMarkdownBlockPreview.of({
-          anchor: block.content.from,
-          enabled: false,
-        }),
-        selection: EditorSelection.cursor(block.content.from),
-        scrollIntoView: true,
-      });
-      view.focus();
+      exitMarkdownPreview(view, this.anchor);
     });
     return container;
   }
@@ -207,6 +224,25 @@ function blockFromAnchor(view: EditorView, anchor: number) {
     .find((block) => block.content.from === anchor);
 }
 
+function exitMarkdownPreview(view: EditorView, anchor: number) {
+  const block = blockFromAnchor(view, anchor);
+  if (!block) return;
+  const selection = view.state.selection.main;
+  const selectionBelongsToBlock =
+    selection.from >= block.content.from && selection.to <= block.content.to;
+  view.dispatch({
+    effects: setMarkdownBlockPreview.of({
+      anchor: block.content.from,
+      enabled: false,
+    }),
+    ...(selectionBelongsToBlock
+      ? {}
+      : { selection: EditorSelection.cursor(block.content.from) }),
+    scrollIntoView: true,
+  });
+  view.focus();
+}
+
 export const markdownBlockPreview = StateField.define<DecorationSet>({
   create(state) {
     return buildPreviewDecorations(state);
@@ -228,12 +264,24 @@ export const markdownBlockPreview = StateField.define<DecorationSet>({
 
 function buildPreviewDecorations(state: EditorState) {
   const decorations: Range<Decoration>[] = [];
-  const anchors = new Set(state.field(markdownBlockPreviewField));
-  for (const block of state.field(blockField)) {
-    if (block.language !== "markdown" || !anchors.has(block.content.from))
-      continue;
+  const previews = new Map(
+    state
+      .field(markdownBlockPreviewField)
+      .map((entry) => [entry.anchor, entry] as const),
+  );
+  state.field(blockField).forEach((block, index) => {
+    const preview = previews.get(block.content.from);
+    if (block.language !== "markdown" || !preview) {
+      return;
+    }
     const source = state.doc.sliceString(block.content.from, block.content.to);
-    const widget = new MarkdownBlockPreviewWidget(block.content.from, source);
+    const widget = new MarkdownBlockPreviewWidget(
+      block.content.from,
+      source,
+      index % 2 === 0 ? "even" : "odd",
+      index > 0,
+      preview.visualOffset,
+    );
     if (block.content.from === block.content.to) {
       decorations.push(
         Decoration.widget({ widget, block: true, side: 1 }).range(
@@ -248,6 +296,6 @@ function buildPreviewDecorations(state: EditorState) {
         ),
       );
     }
-  }
+  });
   return Decoration.set(decorations, true);
 }

@@ -101,7 +101,10 @@ test.describe("markdown block session preview", () => {
     expect(await savedContent(page)).not.toContain("preview=");
 
     await revealToolbar(page);
-    await page.getByRole("button", { name: "回到源码" }).click();
+    await page
+      .locator(".block-toolbar")
+      .getByRole("button", { name: "回到源码" })
+      .click();
     await expect(page.locator(".markdown-preview")).toHaveCount(0);
     await expect(
       page.locator(".cm-line").filter({ hasText: "# Title" }),
@@ -273,6 +276,219 @@ test.describe("markdown block session preview", () => {
         ),
       ]),
     );
+  });
+
+  test("preview stacks separated paragraphs without inherited pre-wrap gaps", async ({
+    page,
+  }) => {
+    const fixture = note([
+      block(
+        "markdown",
+        ["🚀 直播信息", "", "📍 主题：Agent", "", "🎙️ 分享人：Ada"].join(
+          "\n",
+        ),
+      ),
+    ]);
+    await loadFixture(page, fixture);
+    await renderCurrentBlock(page, "直播信息");
+
+    const metrics = await page.locator(".markdown-preview").evaluate((root) => {
+      const paragraphs = [...root.querySelectorAll("p")];
+      const boxes = paragraphs.map((paragraph) =>
+        paragraph.getBoundingClientRect(),
+      );
+      return {
+        whiteSpace: getComputedStyle(root).whiteSpace,
+        count: paragraphs.length,
+        gaps: boxes
+          .slice(1)
+          .map((box, index) => box.top - boxes[index].bottom),
+      };
+    });
+
+    expect(metrics.count).toBe(3);
+    expect(metrics.whiteSpace).toBe("normal");
+    for (const gap of metrics.gaps) {
+      expect(gap).toBeLessThan(14);
+    }
+  });
+
+  test("preview uses UI type, source-sized images, and callout quotes", async ({
+    page,
+  }) => {
+    const fixture = note([
+      block(
+        "markdown",
+        [
+          "### Title",
+          "",
+          "Body line",
+          "![poster](http://127.0.0.1:3344/favicon.svg)",
+          "",
+          "> 附：本期直播材料",
+        ].join("\n"),
+      ),
+    ]);
+    await loadFixture(page, fixture);
+    await renderCurrentBlock(page, "### Title");
+
+    const styles = await page.locator(".markdown-preview").evaluate((root) => {
+      const preview = getComputedStyle(root);
+      const heading = getComputedStyle(root.querySelector("h3")!);
+      const image = getComputedStyle(root.querySelector("img")!);
+      const quote = getComputedStyle(root.querySelector("blockquote")!);
+      return {
+        fontFamily: preview.fontFamily,
+        lineHeight: preview.lineHeight,
+        fontSize: preview.fontSize,
+        headingSize: heading.fontSize,
+        imageMaxWidth: image.maxWidth,
+        imageMaxHeight: image.maxHeight,
+        quoteBackground: quote.backgroundColor,
+        quoteBorder: quote.borderLeftWidth,
+      };
+    });
+
+    expect(styles.fontFamily.toLowerCase()).toMatch(/inter|ui-sans-serif|system-ui/);
+    expect(styles.fontFamily.toLowerCase()).not.toMatch(/jetbrains|menlo|consolas/);
+    expect(parseFloat(styles.lineHeight) / parseFloat(styles.fontSize)).toBeCloseTo(
+      1.4,
+      2,
+    );
+    expect(parseFloat(styles.headingSize)).toBeGreaterThan(
+      parseFloat(styles.fontSize),
+    );
+    expect(styles.imageMaxWidth).toMatch(/520/);
+    expect(styles.imageMaxHeight).toBe("340px");
+    expect(styles.quoteBorder).toBe("3px");
+    expect(styles.quoteBackground).not.toBe("rgba(0, 0, 0, 0)");
+  });
+
+  test("preview keeps block tone and returns to source from the toolbar", async ({
+    page,
+  }) => {
+    const fixture = note([
+      block("text", "plain"),
+      block("markdown", "# Tinted"),
+    ]);
+    await loadFixture(page, fixture);
+    await clickLine(page, "# Tinted");
+    await renderCurrentBlock(page, "# Tinted");
+
+    const preview = page.locator(".markdown-preview");
+    await expect(preview).toHaveClass(/block-odd/);
+    await expect(preview).toHaveClass(/block-start/);
+    await expect(
+      preview.getByRole("button", { name: "回到源码" }),
+    ).toHaveCount(0);
+
+    await revealToolbar(page);
+    await page
+      .locator(".block-toolbar")
+      .getByRole("button", { name: "回到源码" })
+      .click();
+    await expect(page.locator(".markdown-preview")).toHaveCount(0);
+    await expect(
+      page.locator(".cm-line").filter({ hasText: "# Tinted" }),
+    ).toBeVisible();
+  });
+
+  test("keeps the logical cursor position while toggling preview", async ({
+    page,
+  }) => {
+    await loadFixture(
+      page,
+      note([block("markdown", "# Title\nKeep position here\nLast line")]),
+    );
+    await clickLine(page, "Keep position here");
+    await page.keyboard.press("Home");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator(".status-coordinate")).toHaveText("2:5");
+    const blockStartBox = await page
+      .locator(".cm-line")
+      .filter({ hasText: "# Title" })
+      .boundingBox();
+    if (!blockStartBox) throw new Error("Block start not found");
+
+    await renderCurrentBlock(page, "Keep position here");
+    await expect(page.locator(".status-coordinate")).toHaveText("2:5");
+    const preview = page.locator(".markdown-preview");
+    await expect
+      .poll(async () => {
+        const previewBox = await preview.boundingBox();
+        if (!previewBox) throw new Error("Markdown preview not found");
+        return Math.abs(previewBox.y - blockStartBox.y);
+      })
+      .toBeLessThanOrEqual(1);
+    await expect
+      .poll(() => preview.evaluate((element) => parseFloat(getComputedStyle(element).marginTop)))
+      .toBe(0);
+
+    await revealToolbar(page);
+    await page
+      .locator(".block-toolbar")
+      .getByRole("button", { name: "回到源码" })
+      .click();
+    await expect(page.locator(".markdown-preview")).toHaveCount(0);
+    await expect(page.locator(".status-coordinate")).toHaveText("2:5");
+  });
+
+  test("keeps the editor viewport stable while toggling a long preview", async ({
+    page,
+  }) => {
+    const lines = Array.from({ length: 80 }, (_, index) =>
+      index === 44 ? "keep viewport here" : `line ${index + 1}`,
+    );
+    const tail = Array.from({ length: 80 }, (_, index) =>
+      `following line ${index + 1}`,
+    );
+    await loadFixture(
+      page,
+      note([
+        block("markdown", lines.join("\n")),
+        block("text", tail.join("\n")),
+      ]),
+    );
+    await page.evaluate(() => {
+      window.dispatchEvent(
+        new CustomEvent("vibenote:goto-line", {
+          detail: { line: 46, column: 0 },
+        }),
+      );
+    });
+    await expect(page.locator(".status-coordinate")).toHaveText("45:1");
+
+    await expect(
+      page.locator(".cm-line").filter({ hasText: "keep viewport here" }),
+    ).toBeVisible();
+    const viewportTop = await page.locator(".cm-scroller").evaluate((scroller) => {
+      const content = scroller.querySelector<HTMLElement>(".cm-content");
+      return scroller.getBoundingClientRect().top
+        + (content ? parseFloat(getComputedStyle(content).paddingTop) : 0);
+    });
+
+    const hostBox = await page.locator(".editor-host").boundingBox();
+    if (!hostBox) throw new Error("Editor host not found");
+    await page.mouse.move(hostBox.x + hostBox.width - 24, hostBox.y + 12);
+    const toolbar = page.locator(".block-toolbar");
+    await expect(toolbar).toBeVisible();
+
+    await page.getByRole("button", { name: "渲染此块" }).click();
+    const preview = page.locator(".markdown-preview");
+    await expect(preview).toBeVisible();
+    await expect
+      .poll(async () => {
+        const previewBox = await preview.boundingBox();
+        if (!previewBox) throw new Error("Markdown preview not found");
+        return Math.abs(previewBox.y - viewportTop);
+      })
+      .toBeLessThanOrEqual(1);
+    await expect
+      .poll(() => preview.evaluate((element) => parseFloat(getComputedStyle(element).marginTop)))
+      .toBeGreaterThan(0);
   });
 
   test("double-click exits preview and restores the cursor to block content", async ({

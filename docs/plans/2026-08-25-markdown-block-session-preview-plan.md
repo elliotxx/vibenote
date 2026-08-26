@@ -1,5 +1,7 @@
 # Markdown Block Session Preview Implementation Plan
 
+Design: [Markdown Block Session Preview](../design/2026-08-25-markdown-block-session-preview.md)
+
 ## Phase 1: switch, identity, and protection
 
 1. Add Markdown rendering dependencies.
@@ -22,7 +24,11 @@ Phase 1 must pass before media or interactive behavior is added because later ed
 
 ## Phase 3: exit, documentation, and regression
 
-1. Exit on double-click and restore the cursor to block content.
+1. Preserve the current block's logical cursor or selection while toggling preview; align previews with a visible block start or the viewport edge when the start is off-screen; on double-click, transfer focus only when the clicked preview is not the selected block.
 2. Style the preview exclusively with existing design tokens.
 3. Update the Markdown conventions and design documentation.
 4. Run the focused preview suite, the complete end-to-end suite, the production build, and repository public-safety checks.
+
+## Self-review
+
+The first review made cursor preservation an observable interaction requirement rather than an implementation detail. The second review split same-block preservation from cross-block focus transfer. The third review added deterministic regressions for a visible block start with zero blank offset and an off-screen start anchored to the viewport edge.

@@ -1,5 +1,7 @@
 # Markdown Block Session Preview
 
+Implementation plan: [Markdown Block Session Preview Implementation Plan](../plans/2026-08-25-markdown-block-session-preview-plan.md)
+
 ## Goal
 
 Let a writer explicitly switch one Markdown block from source text to a read-only rendered view, then return safely to the original source. The mode belongs to the current editor session only: it never changes the note format or writes a preview field into a block delimiter.
@@ -10,13 +12,15 @@ This is not a default preview, document-wide preview, or WYSIWYG editor. Raw HTM
 
 - A Markdown block toolbar places an Eye/EyeOff action between Format and Delete.
 - The action is labelled `渲染此块` in source mode and `回到源码` in preview mode.
+- Switching the current block between source and preview preserves its exact logical cursor or selection position. Presentation changes must not move the editing focus to a block boundary.
+- When the block start is visible, the rendered preview stays aligned with that start and adds no blank offset. When the start is already above the viewport, the preview is anchored to the viewport edge and any compensating space remains off-screen.
 - Multiple Markdown blocks can be rendered independently, including blocks whose historical `created` values are identical.
-- Double-clicking a rendered block returns to source and places the cursor at the start of that block's content.
+- Double-clicking a rendered block returns to source. It preserves a selection already belonging to that block; when another block owns the selection, it focuses the clicked block's content start so multi-preview navigation remains explicit.
 - Reloading the editor clears all rendered-block state.
 
 ## Editor model
 
-The editor keeps one CodeMirror document stream. A `StateField` stores the `content.from` anchors of rendered blocks. Anchors are mapped through document changes and resolved again against parsed Markdown blocks; `created` and optional `id` fields are not identities.
+The editor keeps one CodeMirror document stream. A `StateField` stores the `content.from` anchor and off-screen visual offset for each rendered block. Anchors are mapped through document changes and resolved again against parsed Markdown blocks; `created` and optional `id` fields are not identities. The offset is limited to the portion of the block that has already scrolled above the viewport, followed by two animation-frame alignment passes after editor measurement settles. It is zero whenever the block start remains visible.
 
 A block replacement widget presents the rendered HTML without changing the document string. Empty blocks use a block widget at `content.from` because a zero-length replacement is invalid. Language changes and deletions remove anchors that no longer resolve to a Markdown block.
 
@@ -36,4 +40,8 @@ Editor copy and cut continue to expose Markdown source without block delimiters.
 
 ## Verification
 
-Playwright coverage proves toolbar scope, source preservation, reload reset, whole-transaction protection, empty blocks, duplicate historical timestamps, language/delete cleanup, source and visible-text clipboard behavior, tasks, external links, tables, images, and double-click exit. Fixtures are synthetic.
+Playwright coverage proves toolbar scope, logical cursor and viewport preservation, source preservation, reload reset, whole-transaction protection, empty blocks, duplicate historical timestamps, language/delete cleanup, source and visible-text clipboard behavior, tasks, external links, tables, images, and double-click exit. Fixtures are synthetic.
+
+## Self-review
+
+The first review removed cursor repositioning from the presentation toggle because it was unrelated to rendering and violated the editor's source-position contract. The second review retained an explicit focus transfer only when a user exits a non-current preview, preserving multi-preview navigation without changing the current block's logical position. The third review limited layout compensation to content already above the viewport, preventing both scroll-range clamping and visible blank space before a preview.

@@ -16,7 +16,18 @@ export type ScratchBlock = {
 
 export const delimiterPattern = /(^|\n)---block:([^\n]+)\n/g
 export const internalBlockEdit = Annotation.define<boolean>()
-export const setMarkdownBlockPreview = StateEffect.define<{ anchor: number, enabled: boolean }>({
+export type MarkdownBlockPreviewState = {
+  anchor: number
+  visualOffset: number
+}
+
+export type MarkdownBlockPreviewRequest = {
+  anchor: number
+  enabled: boolean
+  visualOffset?: number
+}
+
+export const setMarkdownBlockPreview = StateEffect.define<MarkdownBlockPreviewRequest>({
   map(value, changes) {
     return { ...value, anchor: changes.mapPos(value.anchor, 1) }
   },
@@ -135,23 +146,23 @@ export function foldedBlockResumeOffset(state: any, block: ScratchBlock) {
     ?.resumeOffset ?? 0
 }
 
-export const markdownBlockPreviewField = StateField.define<readonly number[]>({
+export const markdownBlockPreviewField = StateField.define<readonly MarkdownBlockPreviewState[]>({
   create() {
     return []
   },
-  update(anchors, transaction) {
+  update(entries, transaction) {
     const previewEffects = transaction.effects.filter(effect => effect.is(setMarkdownBlockPreview))
-    if (!transaction.docChanged && previewEffects.length === 0) return anchors
-    const candidates = new Map<number, number[]>()
-    for (const anchor of anchors) {
-      candidates.set(anchor, transaction.docChanged
-        ? [transaction.changes.mapPos(anchor, -1), transaction.changes.mapPos(anchor, 1)]
-        : [anchor])
+    if (!transaction.docChanged && previewEffects.length === 0) return entries
+    const candidates = new Map<MarkdownBlockPreviewState, number[]>()
+    for (const entry of entries) {
+      candidates.set(entry, transaction.docChanged
+        ? [transaction.changes.mapPos(entry.anchor, -1), transaction.changes.mapPos(entry.anchor, 1)]
+        : [entry.anchor])
     }
 
-    const requested = new Map<number, boolean>()
+    const requested = new Map<number, MarkdownBlockPreviewRequest>()
     for (const effect of previewEffects) {
-      requested.set(effect.value.anchor, effect.value.enabled)
+      requested.set(effect.value.anchor, effect.value)
     }
 
     const markdownStarts = new Set(
@@ -159,13 +170,18 @@ export const markdownBlockPreviewField = StateField.define<readonly number[]>({
         .filter(block => block.language === 'markdown')
         .map(block => block.content.from),
     )
-    const next = new Set<number>()
-    for (const positions of candidates.values()) {
+    const next = new Map<number, MarkdownBlockPreviewState>()
+    for (const [entry, positions] of candidates) {
       const match = positions.find(position => markdownStarts.has(position))
-      if (match !== undefined) next.add(match)
+      if (match !== undefined) next.set(match, { ...entry, anchor: match })
     }
-    for (const [anchor, enabled] of requested) {
-      if (enabled && markdownStarts.has(anchor)) next.add(anchor)
+    for (const [anchor, request] of requested) {
+      if (request.enabled && markdownStarts.has(anchor)) {
+        next.set(anchor, {
+          anchor,
+          visualOffset: Math.max(0, request.visualOffset ?? 0),
+        })
+      }
       else next.delete(anchor)
     }
     for (const effect of transaction.effects) {
@@ -174,12 +190,13 @@ export const markdownBlockPreviewField = StateField.define<readonly number[]>({
         for (const entry of effect.value) next.delete(entry.anchor)
       }
     }
-    return [...next].sort((left, right) => left - right)
+    return [...next.values()].sort((left, right) => left.anchor - right.anchor)
   },
 })
 
 export function isMarkdownBlockPreviewed(state: any, block: ScratchBlock) {
-  return state.field(markdownBlockPreviewField, false)?.includes(block.content.from) ?? false
+  return state.field(markdownBlockPreviewField, false)
+    ?.some((entry: MarkdownBlockPreviewState) => entry.anchor === block.content.from) ?? false
 }
 
 export const blockDecorations = StateField.define({

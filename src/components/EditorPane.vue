@@ -2600,21 +2600,43 @@ function toggleCurrentMarkdownPreview() {
   if (!view || currentBlock.value?.language !== 'markdown') return
   const block = currentBlock.value
   const enabled = !isMarkdownBlockPreviewed(view.state, block)
+  const selection = view.state.selection.main
+  const selectionBelongsToBlock = selection.head >= block.content.from
+    && selection.head <= block.content.to
+  const blockStartTop = view.documentTop + view.lineBlockAt(block.content.from).top
+  const viewportTop = view.scrollDOM.getBoundingClientRect().top + view.documentPadding.top
+  const visualAnchorTop = enabled && selectionBelongsToBlock
+    ? Math.max(blockStartTop, viewportTop)
+    : undefined
+  const visualOffset = enabled && selectionBelongsToBlock
+    ? Math.max(0, (viewportTop - blockStartTop) / view.scaleY)
+    : 0
   view.dispatch({
     effects: [
       setBlockFold.of({ anchor: block.content.from, folded: false }),
       setMarkdownBlockPreview.of({
         anchor: block.content.from,
         enabled,
+        visualOffset,
       }),
     ],
-    selection: EditorSelection.cursor(
-      enabled && block.content.to > block.content.from
-        ? block.content.from + 1
-        : block.content.from,
-    ),
-    scrollIntoView: true,
   })
+  if (visualAnchorTop !== undefined) {
+    const editor = view
+    const alignPreviewToVisualAnchor = () => {
+      if (view !== editor) return
+      const preview = editor.dom.querySelector<HTMLElement>(
+        `.markdown-preview[data-content-anchor="${block.content.from}"]`,
+      )
+      if (!preview) return
+      const offset = preview.getBoundingClientRect().top - visualAnchorTop
+      if (Math.abs(offset) > 0.5) editor.scrollDOM.scrollTop += offset
+    }
+    window.requestAnimationFrame(() => {
+      alignPreviewToVisualAnchor()
+      window.requestAnimationFrame(alignPreviewToVisualAnchor)
+    })
+  }
   updateStatus(view)
   scheduleBlockToolbarUpdate(view)
 }
