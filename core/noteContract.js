@@ -19,6 +19,7 @@ export const CLI_CONTRACT = Object.freeze({
     snippetCharacters: 240,
     snapshotMax: 100,
     appendBytes: 256 * 1024,
+    updateBytes: 256 * 1024,
     noteRawBytes: 1024 * 1024,
     blockRead: Object.freeze({ defaultBytes: 64 * 1024, maxBytes: 256 * 1024 }),
   }),
@@ -31,6 +32,7 @@ export const CLI_CONTRACT = Object.freeze({
     'blocks.list',
     'blocks.read',
     'blocks.append',
+    'blocks.update',
     'search',
   ]),
 })

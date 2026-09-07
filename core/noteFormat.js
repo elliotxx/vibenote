@@ -102,6 +102,29 @@ export function appendBlockToNote(raw, block) {
   return `${raw}${separator}${delimiter}\n${block.content}`
 }
 
+export function updateBlockInNote(raw, blockId, content, receipts) {
+  if (typeof content !== 'string') throw noteError('INVALID_ARGUMENT', 'Content must be text')
+  if (/(^|\n)---block:/.test(content)) {
+    throw noteError('INVALID_ARGUMENT', 'Content cannot contain block delimiters')
+  }
+  const note = parseNote(raw)
+  const matches = note.blocks.filter(block => block.id === blockId)
+  if (matches.length !== 1) throw invalidFormat('The block id is missing or ambiguous')
+  const block = matches[0]
+  const fields = { ...block.fields, updates: Buffer.from(canonicalJson(receipts)).toString('base64url') }
+  const fieldOrder = block.fieldOrder.includes('updates') ? block.fieldOrder : [...block.fieldOrder, 'updates']
+  const delimiter = serializeDelimiter({ ...block, fields, fieldOrder })
+  const suffix = raw.slice(block.rawRange.to)
+  // The parser removes the separator newline for blocks preceded by metadata or another block.
+  const separator = suffix && (block.rawRange.from > 0 || !content.endsWith('\n')) ? '\n' : ''
+  const candidate = `${raw.slice(0, block.rawRange.from)}${delimiter}\n${content}${separator}${suffix}`
+  const parsed = parseNote(candidate)
+  if (parsed.blocks.length !== note.blocks.length || parsed.blocks.find(item => item.id === blockId)?.content !== content) {
+    throw noteError('INVALID_ARGUMENT', 'Content cannot be represented without changing block boundaries')
+  }
+  return candidate
+}
+
 export function contentRevision(note) {
   const metadata = Object.fromEntries(
     Object.entries(note.metadata || {}).filter(([key]) => !UI_METADATA_FIELDS.has(key)),

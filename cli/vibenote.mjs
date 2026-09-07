@@ -106,6 +106,7 @@ Commands:
   blocks list          List blocks in an internal note
   blocks read          Read one block
   blocks append        Safely append one block
+  blocks update        Safely update an existing block
   search               Search internal note blocks
 
 Run "vibenote <command> --help" for command options.
@@ -125,6 +126,7 @@ Commands:
   blocks list          List blocks in an internal note
   blocks read          Read one block
   blocks append        Safely append one block
+  blocks update        Safely update an existing block
 
 Run "vibenote blocks <command> --help" for command options.
 `,
@@ -143,6 +145,11 @@ Run "vibenote blocks <command> --help" for command options.
   'blocks.read': `Usage: vibenote blocks read --note <id> (--block <id> | --legacy-index <n>) [--offset <bytes>] [--max-bytes <bytes>] [--data-dir <path>] [--output json]
 `,
   'blocks.append': `Usage: vibenote blocks append --data-dir <path> --note <id> (--content <text> | --content-stdin) --idempotency-key <key> (--expected-revision <revision> | --accept-current) [--language <language>] [--dry-run] [--output json]
+`,
+  'blocks.update': `Usage: vibenote blocks update --data-dir <path> --note <id> --block <id> (--content <text> | --content-stdin) --idempotency-key <key> (--expected-revision <revision> | --dry-run) [--dry-run] [--output json]
+
+Replaces the block body while preserving its ID, language, and metadata.
+Legacy indexes and --accept-current are not supported. Read the current revision before updating.
 `,
   search: `Usage: vibenote search --query <text> [--data-dir <path>] [--limit <n>] [--output json]
 `,
@@ -176,11 +183,19 @@ async function execute(command, options, dataDirectory) {
   if (command === 'blocks.list') return store.listBlocks({ noteId: options.note, limit: options.limit, cursor: options.cursor })
   if (command === 'blocks.read') return store.readBlock({ noteId: options.note, blockId: options.block, legacyIndex: options.legacyIndex, offset: Number(options.offset || 0), maxBytes: options.maxBytes ? Number(options.maxBytes) : undefined })
   if (command === 'search') return store.search({ query: options.query, limit: options.limit })
-  if (command === 'blocks.append') {
+  if (command === 'blocks.append' || command === 'blocks.update') {
     if (!dataDirectory.explicit) throw cliError('MUTATION_SCOPE_DENIED', 'Mutation requires an explicit --data-dir until desktop coordination is enabled')
     if (options.content !== undefined && options.contentStdin) throw cliError('INVALID_ARGUMENT', 'Use either --content or --content-stdin')
     if (options.content === undefined && !options.contentStdin) throw cliError('INVALID_ARGUMENT', 'Content is required')
     const content = options.contentStdin ? fs.readFileSync(0, 'utf8') : options.content
+    if (command === 'blocks.update') {
+      if (options.language !== undefined) throw cliError('INVALID_ARGUMENT', 'Update preserves the block language')
+      return store.updateBlock({
+        noteId: options.note, blockId: options.block, legacyIndex: options.legacyIndex, content,
+        idempotencyKey: options.idempotencyKey, expectedRevision: options.expectedRevision,
+        acceptCurrent: options.acceptCurrent, dryRun: options.dryRun,
+      })
+    }
     return store.appendBlock({
       noteId: options.note,
       language: options.language || 'markdown',

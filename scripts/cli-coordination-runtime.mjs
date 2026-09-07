@@ -37,12 +37,20 @@ try {
     'blocks', 'append', '--note', 'internal:stream', '--content-stdin',
     '--idempotency-key', 'coordination-clean', '--dry-run',
   ], 'CLI clean marker')
-  cli(harness.userDataPath, [
+  const appended = cli(harness.userDataPath, [
     'blocks', 'append', '--note', 'internal:stream', '--content-stdin',
     '--idempotency-key', 'coordination-clean', '--expected-revision', cleanProposal.expectedRevision,
   ], 'CLI clean marker')
   await page.getByText('CLI clean marker').waitFor({ timeout: 8_000 })
   assert.match(harness.readStream(), /CLI clean marker/)
+
+  cli(harness.userDataPath, [
+    'blocks', 'update', '--note', 'internal:stream', '--block', appended.blockId,
+    '--content', 'CLI updated marker', '--idempotency-key', 'coordination-update',
+    '--expected-revision', appended.revision,
+  ])
+  await page.getByText('CLI updated marker').waitFor({ timeout: 8_000 })
+  assert.doesNotMatch(harness.readStream(), /CLI clean marker/)
 
   await page.evaluate(() => {
     const original = window.setTimeout.bind(window)
@@ -65,6 +73,28 @@ try {
   const recovery = fs.readFileSync(path.join(harness.userDataPath, 'recovery', 'internal_stream.vibenote'), 'utf8')
   assert.match(recovery, /Local dirty marker/)
   await page.getByText(/保存失败|冲突恢复区/).waitFor({ timeout: 8_000 })
+
+  const updatePage = await harness.relaunch()
+  await updatePage.getByText('CLI updated marker').waitFor()
+  await updatePage.evaluate(() => {
+    const original = window.setTimeout.bind(window)
+    window.setTimeout = (handler, timeout, ...args) =>
+      original(handler, timeout === 350 ? 5_000 : timeout, ...args)
+  })
+  await updatePage.getByText('CLI updated marker', { exact: true }).click()
+  await updatePage.keyboard.press('End')
+  await updatePage.keyboard.insertText('Unsaved update draft')
+  const revision = cli(harness.userDataPath, ['notes', 'read', '--note', 'internal:stream']).revision
+  cli(harness.userDataPath, [
+    'blocks', 'update', '--note', 'internal:stream', '--block', appended.blockId,
+    '--content', 'CLI final marker', '--idempotency-key', 'coordination-dirty-update',
+    '--expected-revision', revision,
+  ])
+  await updatePage.getByText(/保存失败|冲突恢复区/).waitFor({ timeout: 8_000 })
+  await updatePage.waitForTimeout(6_000)
+  assert.match(harness.readStream(), /CLI final marker/)
+  assert.doesNotMatch(harness.readStream(), /Unsaved update draft/)
+  assert.match(fs.readFileSync(path.join(harness.userDataPath, 'recovery', 'internal_stream.vibenote'), 'utf8'), /Unsaved update draft/)
 
   console.log('CLI and desktop coordination verification passed.')
 } finally {

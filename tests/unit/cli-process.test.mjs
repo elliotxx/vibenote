@@ -106,3 +106,45 @@ test('stdin dry-run and apply share the same block id', async t => {
   assert.equal(proposal.data.blockId, written.data.blockId)
   assert.equal(written.data.dryRun, false)
 })
+
+test('update is discoverable and requires explicit mutation scope', async t => {
+  const help = run(['blocks', 'update', '--help'])
+  assert.equal(help.status, 0)
+  assert.match(help.stdout, /--block <id>/)
+  assert.match(help.stdout, /--expected-revision/)
+  const root = await fixture(t)
+  const capability = JSON.parse(run(['capabilities', '--data-dir', root]).stdout).data
+  assert.ok(capability.commands.includes('blocks.update'))
+  assert.ok(capability.scopes.includes('internal:update'))
+  assert.equal(capability.mutations.update.acceptCurrent, false)
+  const denied = run(['blocks', 'update', '--note', 'internal:stream', '--block', 'synthetic', '--content', 'text'])
+  assert.equal(denied.status, 5)
+  assert.equal(JSON.parse(denied.stderr).error.code, 'MUTATION_SCOPE_DENIED')
+})
+
+test('update via stdin changes the same block, preserves append receipts, and checks revisions', async t => {
+  const root = await fixture(t)
+  const base = ['--data-dir', root, '--note', 'internal:stream', '--output', 'json']
+  const appendArgs = ['blocks', 'append', ...base, '--content', 'Original text', '--idempotency-key', 'create', '--accept-current']
+  const appended = JSON.parse(run(appendArgs).stdout).data
+  const updateArgs = ['blocks', 'update', ...base, '--block', appended.blockId, '--content-stdin', '--idempotency-key', 'edit']
+  const proposal = run([...updateArgs, '--dry-run'], { input: 'Updated text\n' })
+  assert.equal(proposal.status, 0)
+  const revision = JSON.parse(proposal.stdout).data.expectedRevision
+  const updated = run([...updateArgs, '--expected-revision', revision], { input: 'Updated text\n' })
+  assert.equal(updated.status, 0, updated.stderr)
+  assert.equal(JSON.parse(updated.stdout).data.blockId, appended.blockId)
+  assert.equal(JSON.parse(run(['blocks', 'read', ...base, '--block', appended.blockId]).stdout).data.content, 'Updated text\n')
+  assert.equal(JSON.parse(run(['blocks', 'list', ...base]).stdout).data.items.length, 2)
+  const retry = run([...updateArgs, '--expected-revision', revision], { input: 'Updated text\n' })
+  assert.equal(JSON.parse(retry.stdout).data.replayed, true)
+  assert.equal(JSON.parse(run(appendArgs).stdout).data.replayed, true)
+  const stale = run([...updateArgs.slice(0, -2), '--idempotency-key', 'new-edit', '--expected-revision', revision], { input: 'Stale text' })
+  assert.equal(stale.status, 4)
+  assert.equal(JSON.parse(stale.stderr).error.code, 'REVISION_CONFLICT')
+  for (const extra of [[], ['--accept-current'], ['--language', 'json'], ['--legacy-index', '0'], ['--content', 'ambiguous']]) {
+    const invalid = run([...updateArgs, ...extra], { input: 'text' })
+    assert.equal(invalid.status, 2, extra.join(' '))
+    assert.equal(JSON.parse(invalid.stderr).error.code, 'INVALID_ARGUMENT')
+  }
+})

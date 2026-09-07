@@ -14,11 +14,31 @@ import {
   contentRevision,
   parseNote,
   storageRevision,
+  updateBlockInNote,
 } from './noteFormat.js'
 import { notePaths } from './notePaths.js'
 import { fixedStringMatches, snippetAround } from './noteSearch.js'
 
 const STREAM_FILE = 'stream.txt'
+
+function updateReceipts(block) {
+  if (!block.fields.updates) return {}
+  try {
+    const encoded = block.fields.updates
+    const bytes = Buffer.from(encoded, 'base64url')
+    if (bytes.toString('base64url') !== encoded) throw new Error('Invalid encoding')
+    const receipts = JSON.parse(bytes.toString('utf8'))
+    if (!receipts || Array.isArray(receipts) || typeof receipts !== 'object') throw new Error('Invalid receipts')
+    for (const [key, value] of Object.entries(receipts)) {
+      if (!/^[a-f0-9]{64}$/.test(key) || typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) {
+        throw new Error('Invalid receipt')
+      }
+    }
+    return receipts
+  } catch {
+    throw noteError('IDEMPOTENCY_CORRUPT', 'The update idempotency record is invalid')
+  }
+}
 
 function safeFileName(value) {
   return String(value).replace(/[^a-z0-9._-]+/gi, '_')
@@ -84,8 +104,11 @@ export class NoteStore {
       formatVersion: CLI_CONTRACT.formatVersion,
       commands: CLI_CONTRACT.commands,
       limits: CLI_CONTRACT.limits,
-      scopes: ['internal:read', 'internal:append'],
-      mutations: { append: { dryRun: true, revisionCheck: true, idempotency: true, snapshot: true } },
+      scopes: ['internal:read', 'internal:append', 'internal:update'],
+      mutations: {
+        append: { dryRun: true, revisionCheck: true, idempotency: true, snapshot: true },
+        update: { dryRun: true, revisionCheck: true, idempotency: true, snapshot: true, stableBlockId: true, acceptCurrent: false },
+      },
     }
   }
 
@@ -369,6 +392,62 @@ export class NoteStore {
       }
       if (request.dryRun) return result
       const snapshotId = await this.writeSnapshot(current, revision)
+      const recoveryId = await this.writeRecovery(current, candidate, revision)
+      await writeAtomic(path.join(this.paths.notes, current.fileName), candidate)
+      return { ...result, snapshotId, recoveryId }
+    } finally {
+      await release()
+    }
+  }
+
+  async updateBlock(request) {
+    if (typeof request.content !== 'string') throw noteError('INVALID_ARGUMENT', 'Content must be text')
+    if (Buffer.byteLength(request.content, 'utf8') > CLI_CONTRACT.limits.updateBytes) {
+      throw noteError('CONTENT_TOO_LARGE', 'Content exceeds the update limit')
+    }
+    if (!request.blockId || request.legacyIndex !== undefined) {
+      throw noteError('INVALID_ARGUMENT', 'Update requires a stable block id')
+    }
+    if (!request.idempotencyKey) throw noteError('INVALID_ARGUMENT', 'Idempotency key is required')
+    if (request.acceptCurrent || (!request.dryRun && !request.expectedRevision)) {
+      throw noteError('INVALID_ARGUMENT', 'Update requires --expected-revision; --accept-current is not supported')
+    }
+    const record = await this.recordFor(request.noteId)
+    if (!record.stable) throw noteError('SCOPE_DENIED', 'Legacy notes are read-only for CLI mutations')
+    const hashes = idempotencyHashes({
+      noteId: request.noteId,
+      key: request.idempotencyKey,
+      content: request.content,
+      options: { command: 'blocks.update', blockId: request.blockId },
+    })
+    const release = await this.acquireLock(request.noteId)
+    try {
+      const current = await this.recordFor(request.noteId)
+      const revision = contentRevision(current.parsed)
+      const targets = current.parsed.blocks.filter(block => block.id === request.blockId)
+      if (!targets.length) throw noteError('BLOCK_NOT_FOUND', 'The block was not found')
+      if (targets.length > 1) throw noteError('INVALID_NOTE_FORMAT', 'The block id is ambiguous')
+      const receipts = current.parsed.blocks.map(block => ({ block, hashes: updateReceipts(block) }))
+      const matches = receipts.filter(receipt => Object.hasOwn(receipt.hashes, hashes.keyHash))
+      if (matches.length > 1) throw noteError('IDEMPOTENCY_CORRUPT', 'The update idempotency record is ambiguous')
+      if (matches.length === 1) {
+        if (matches[0].hashes[hashes.keyHash] !== hashes.payloadHash || matches[0].block.id !== request.blockId) {
+          throw noteError('IDEMPOTENCY_MISMATCH', 'The idempotency key was used for a different update')
+        }
+        return { dryRun: Boolean(request.dryRun), noteId: request.noteId, blockId: request.blockId, revision, replayed: true }
+      }
+      if (request.expectedRevision && request.expectedRevision !== revision) {
+        throw noteError('REVISION_CONFLICT', 'The note changed after it was read', { retryable: true })
+      }
+      const history = { ...updateReceipts(targets[0]), [hashes.keyHash]: hashes.payloadHash }
+      const candidate = updateBlockInNote(current.raw, request.blockId, request.content, history)
+      const result = {
+        dryRun: Boolean(request.dryRun), noteId: request.noteId, blockId: request.blockId,
+        previousRevision: revision, revision: contentRevision(parseNote(candidate)),
+        expectedRevision: revision, replayed: false,
+      }
+      if (request.dryRun) return result
+      const snapshotId = await this.writeSnapshot(current, revision, 'agent-update')
       const recoveryId = await this.writeRecovery(current, candidate, revision)
       await writeAtomic(path.join(this.paths.notes, current.fileName), candidate)
       return { ...result, snapshotId, recoveryId }
