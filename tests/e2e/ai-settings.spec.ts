@@ -41,6 +41,7 @@ async function clickBlockToolbarAction(page: Page, title: string) {
   if (!box) throw new Error('Editor host not found')
   await page.mouse.move(box.x + box.width - 24, box.y + 24)
 
+  if (title.startsWith('AI ')) await page.getByRole('button', { name: 'AI 块操作', exact: true }).click()
   const action = page.getByTitle(title)
   await expect(action).toBeVisible()
   await action.click()
@@ -70,6 +71,35 @@ async function expectInsideEditor(page: Page, selector: string) {
 }
 
 test.describe('AI settings', () => {
+  test('keeps the block AI menu open for keyboard navigation and dismisses it safely', async ({ page }) => {
+    await loadFixture(page, ['A synthetic note for menu navigation'])
+    await openSettings(page)
+    await page.getByLabel('启用 AI').check()
+    await page.getByLabel('API 密钥').fill('test-api-key-value')
+    await page.getByRole('button', { name: '保存 API 密钥' }).click()
+    await expect(page.getByText('API 密钥已本地保存并隐藏')).toBeVisible()
+    await page.getByTitle('关闭设置').click()
+    const host = await page.locator('.editor-host').boundingBox()
+    if (!host) throw new Error('Editor host not found')
+    await page.mouse.move(host.x + host.width - 24, host.y + 24)
+    const trigger = page.getByRole('button', { name: 'AI 块操作', exact: true })
+    await trigger.click()
+    const menu = page.getByRole('menu', { name: 'AI 块操作菜单' })
+    await expect(menu.getByRole('menuitem').first()).toBeFocused()
+    await page.mouse.move(host.x + 30, host.y + 120)
+    await expect(menu).toBeVisible()
+    await page.keyboard.press('ArrowDown')
+    await expect(menu.getByRole('menuitem').last()).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(menu).toHaveCount(0)
+    await expect(trigger).toBeFocused()
+    await trigger.click()
+    await page.locator('.cm-content').click()
+    await expect(menu).toHaveCount(0)
+    await expect(page.locator('.cm-content')).toContainText('A synthetic note for menu navigation')
+    await expect(page.locator('.statusbar-actions button')).toHaveCount(3)
+  })
+
   test('toggles settings with the preferences shortcut', async ({ page }) => {
     await loadFixture(page)
     await page.keyboard.press(`${modifier}+Comma`)
@@ -328,6 +358,7 @@ test.describe('AI settings', () => {
     const hostBox = await page.locator('.editor-host').boundingBox()
     if (!hostBox) throw new Error('Editor host not found')
     await page.mouse.move(hostBox.x + hostBox.width - 24, hostBox.y + 24)
+    await page.getByRole('button', { name: 'AI 块操作', exact: true }).click()
     const polishAction = page.getByTitle('AI 优化选区或此块表述')
     await expect(polishAction).toBeVisible()
     await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1_000)

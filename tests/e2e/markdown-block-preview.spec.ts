@@ -88,7 +88,7 @@ test.describe("markdown block session preview", () => {
     await revealToolbar(page, "# Title");
     await expect(
       page.locator(".block-toolbar .block-action-button"),
-    ).toHaveCount(7);
+    ).toHaveCount(6);
     await expect(page.getByRole("button", { name: "渲染此块" })).toHaveCount(1);
     await page.getByRole("button", { name: "渲染此块" }).click();
 
@@ -114,7 +114,7 @@ test.describe("markdown block session preview", () => {
     await revealToolbar(page, '{"ok":true}');
     await expect(
       page.locator(".block-toolbar .block-action-button"),
-    ).toHaveCount(6);
+    ).toHaveCount(5);
     await expect(page.getByRole("button", { name: "渲染此块" })).toHaveCount(0);
 
     await clickLine(page, "# Title");

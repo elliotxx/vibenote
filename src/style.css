@@ -150,6 +150,7 @@ select:focus {
 }
 
 .editor-host.dark-theme,
+.editor-pane.dark-theme,
 .settings-panel.dark-theme {
   --surface-editor: oklch(20.5% 0.018 250);
   --surface-control: oklch(24% 0.02 250);
@@ -1212,10 +1213,10 @@ select:focus {
   z-index: 8;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
   background: var(--surface-control);
   box-shadow: 0 6px 18px oklch(24% 0.034 250 / 0.1);
 }
@@ -1225,8 +1226,8 @@ select:focus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 5px;
   color: var(--muted);
   background: transparent;
@@ -1275,7 +1276,86 @@ select:focus {
 }
 
 .block-action-button.danger {
+  color: var(--muted);
+}
+
+.block-action-button.danger:hover {
   color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface-control));
+}
+
+.block-toolbar-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--line-soft);
+}
+
+.block-toolbar.ai-menu-open {
+  z-index: 270;
+}
+
+.block-ai-trigger {
+  width: auto;
+  gap: 4px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+.block-ai-trigger[aria-expanded="true"] {
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.block-ai-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  min-width: 164px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-control);
+  box-shadow: 0 8px 24px var(--shadow-modal);
+}
+
+.block-ai-menu.above {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.block-ai-menu button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.block-ai-menu button:hover,
+.block-ai-menu button:focus-visible {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.block-action-button:focus-visible,
+.block-ai-menu button:focus-visible,
+.status-icon-button:focus-visible,
+.status-auto-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.editor-pane.dark-theme {
+  --status-bg: oklch(20.5% 0.018 250);
+  --danger: oklch(73% 0.13 24);
 }
 
 .scroll-jump-button {
@@ -1928,6 +2008,7 @@ select:focus {
 }
 
 .statusbar {
+  min-height: 36px;
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
@@ -1998,8 +2079,9 @@ select:focus {
 }
 
 .status-coordinate {
-  color: var(--accent);
-  font-weight: 700;
+  color: var(--muted);
+  font-weight: 450;
+  font-variant-numeric: tabular-nums;
   min-width: 40px;
   text-align: left;
   white-space: nowrap;
@@ -2019,14 +2101,27 @@ select:focus {
   min-width: 0;
 }
 
+.status-block-meta {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 2px;
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+
 .status-language select {
   width: clamp(112px, 12vw, 136px);
   height: 28px;
-  border-color: var(--line);
-  background: var(--surface-control);
+  border-color: transparent;
+  background: transparent;
   color: var(--ink-soft);
   padding: 0 24px 0 9px;
   font-size: 12px;
+}
+
+.status-language select:hover {
+  background: var(--surface-control);
 }
 
 .status-language select:focus {
@@ -2136,10 +2231,6 @@ select:focus {
     padding: 0 8px;
   }
 
-  .status-auto-toggle {
-    display: none;
-  }
-
   .status-icon-button {
     width: 26px;
     height: 28px;
@@ -2160,6 +2251,7 @@ select:focus {
 
 .modal-backdrop {
   position: fixed;
+  z-index: 1000;
   inset: 0;
   display: grid;
   place-items: center;
@@ -2626,5 +2718,24 @@ select:focus {
   .settings-panel label:not(.settings-toggle-row) {
     grid-template-columns: 1fr;
     gap: 8px;
+  }
+}
+
+@media (max-width: 640px) {
+  .editor-pane:has(.statusbar.has-feedback) {
+    grid-template-rows: 1fr auto;
+  }
+
+  .statusbar.has-feedback .statusbar-center {
+    display: flex;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: stretch;
+    justify-content: flex-start;
+    padding-bottom: 6px;
+  }
+
+  .statusbar.has-feedback .status-feedback {
+    max-width: 100%;
   }
 }

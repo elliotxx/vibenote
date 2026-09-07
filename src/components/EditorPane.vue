@@ -117,6 +117,63 @@ const searchActiveIndex = ref(-1)
 const aiPendingCount = ref(0)
 const aiStatus = ref('')
 const blockToolbar = ref({ visible: false, top: 0 })
+const blockAiMenuOpen = ref(false)
+const blockAiMenuAbove = ref(false)
+const blockAiTrigger = ref<HTMLButtonElement | null>(null)
+const blockAiMenu = ref<HTMLElement | null>(null)
+
+function closeBlockAiMenu(restoreFocus = false) {
+  blockAiMenuOpen.value = false
+  if (restoreFocus) blockAiTrigger.value?.focus()
+  scheduleBlockToolbarUpdate()
+}
+
+async function toggleBlockAiMenu() {
+  if (blockAiMenuOpen.value) {
+    closeBlockAiMenu(true)
+    return
+  }
+  const trigger = blockAiTrigger.value?.getBoundingClientRect()
+  const host = editorHost.value?.getBoundingClientRect()
+  blockAiMenuAbove.value = Boolean(trigger && host && trigger.bottom + 112 > host.bottom)
+  blockAiMenuOpen.value = true
+  await nextTick()
+  blockAiMenu.value?.querySelector<HTMLButtonElement>('button')?.focus()
+}
+
+function onBlockAiMenuKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopPropagation()
+    closeBlockAiMenu(true)
+    return
+  }
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  const items = Array.from(blockAiMenu.value?.querySelectorAll<HTMLButtonElement>('button') || [])
+  const current = items.indexOf(document.activeElement as HTMLButtonElement)
+  const index = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+    : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+  items[index]?.focus()
+}
+
+function onBlockAiOutsidePointer(event: PointerEvent) {
+  if (blockAiMenuOpen.value && !(event.target instanceof Element && event.target.closest('.block-ai-actions'))) {
+    closeBlockAiMenu()
+  }
+}
+
+function onBlockAiFocusOut(event: FocusEvent) {
+  if (!(event.relatedTarget instanceof Element && event.relatedTarget.closest('.block-ai-actions'))) closeBlockAiMenu()
+}
+
+function runBlockAiAction(action: 'polish' | 'extract-todos') {
+  closeBlockAiMenu()
+  view?.focus()
+  return action === 'polish' ? runAiSuggestion() : runAiTodoExtraction()
+}
+
+watch(() => currentBlock.value?.content.from, () => closeBlockAiMenu())
 type ScrollJumpTarget = 'top' | 'bottom'
 const scrollJump = ref({ visible: false, target: 'bottom' as ScrollJumpTarget })
 const aiQuickActions = ref({
@@ -286,6 +343,7 @@ onMounted(() => {
   window.addEventListener('vibenote:goto-line', onGotoLine as EventListener)
   window.addEventListener('vibenote:buffer-changed', onExternalBufferChanged)
   window.addEventListener('keydown', onWindowKeydown)
+  window.addEventListener('pointerdown', onBlockAiOutsidePointer, true)
   window.addEventListener('focus', onWindowFocus)
   window.addEventListener('resize', onWindowResize)
   window.addEventListener('beforeunload', flushSaveSync)
@@ -313,6 +371,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('vibenote:goto-line', onGotoLine as EventListener)
   window.removeEventListener('vibenote:buffer-changed', onExternalBufferChanged)
   window.removeEventListener('keydown', onWindowKeydown)
+  window.removeEventListener('pointerdown', onBlockAiOutsidePointer, true)
   window.removeEventListener('focus', onWindowFocus)
   window.removeEventListener('resize', onWindowResize)
   window.removeEventListener('beforeunload', flushSaveSync)
@@ -2171,12 +2230,13 @@ function updateAiQuickActions(editor: EditorView | null) {
 }
 
 function updateBlockToolbar(editor: EditorView | null) {
-  const shouldReveal = blockToolbarPointerActive.value || blockToolbarScrollActive
+  const toolbarFocused = Boolean(document.activeElement?.closest('.block-toolbar'))
+  const shouldReveal = blockToolbarPointerActive.value || blockToolbarScrollActive || blockAiMenuOpen.value || toolbarFocused
   if (
     !editor
     || !editorHost.value
     || !shouldReveal
-    || (!editor.hasFocus && !blockToolbarPointerActive.value)
+    || (!editor.hasFocus && !blockToolbarPointerActive.value && !blockAiMenuOpen.value && !toolbarFocused)
   ) {
     blockToolbar.value = { ...blockToolbar.value, visible: false }
     return
@@ -2204,6 +2264,7 @@ function updateBlockToolbar(editor: EditorView | null) {
 }
 
 function onEditorScroll() {
+  if (blockAiMenuOpen.value) closeBlockAiMenu()
   revealBlockToolbarForScroll()
   updateScrollJump()
   syncAiSuggestionPositions()
@@ -2365,6 +2426,8 @@ function jumpEditorScroll() {
 
   if (target === 'top') {
     scroller.scrollTop = 0
+    lastEditorScrollTop = scroller.scrollTop
+    lastEditorScrollTime = performance.now()
   } else {
     scrollEditorToBottom()
   }
@@ -3148,6 +3211,7 @@ function onWindowKeydown(event: KeyboardEvent) {
   }
   const primary = event.metaKey || event.ctrlKey
   if (primary && event.key === ',' && !event.shiftKey && !event.altKey) {
+    closeBlockAiMenu()
     event.preventDefault()
     event.stopPropagation()
     emit('toggle-settings')
@@ -3364,7 +3428,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
 </script>
 
 <template>
-  <section class="editor-pane">
+  <section class="editor-pane" :class="{ 'dark-theme': store.settings.theme === 'dark' }">
     <div
       ref="editorHost"
       class="editor-host"
@@ -3734,9 +3798,10 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
       </aside>
     </div>
 
-    <footer class="statusbar">
+    <footer class="statusbar" :class="{ 'has-feedback': statusMessage || currentRecovery }">
       <div class="statusbar-left">
         <span class="status-coordinate" title="当前光标位置">{{ cursorStatus }}</span>
+        <div class="status-block-meta">
         <label class="status-language" title="当前块语言（Cmd/Ctrl+L）">
           <select ref="languageSelect" v-model="activeLanguage" aria-label="Current block language">
             <option v-for="language in languages" :key="language.token" :value="language.token">
@@ -3749,10 +3814,12 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
           class="status-auto-toggle"
           :class="{ active: currentBlock?.auto }"
           title="切换当前块自动识别语言"
+          :aria-pressed="Boolean(currentBlock?.auto)"
           @click="toggleAutoMode"
         >
-          {{ currentBlock?.auto ? 'Auto' : 'Manual' }}
+          {{ currentBlock?.auto ? '自动' : '手动' }}
         </button>
+        </div>
       </div>
 
       <div class="statusbar-center" aria-live="polite">
@@ -3765,7 +3832,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
         >
           恢复草稿
         </button>
-        <span v-if="statusMessage" class="status-feedback" :class="statusTone">
+        <span v-if="statusMessage" class="status-feedback" :class="statusTone" :title="statusMessage">
           {{ statusMessage }}
         </span>
       </div>
@@ -3773,6 +3840,8 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
       <div
         v-if="blockToolbar.visible"
         class="block-toolbar"
+        :class="{ 'ai-menu-open': blockAiMenuOpen }"
+        role="group"
         :style="{ top: `${blockToolbar.top}px` }"
         aria-label="当前块操作"
         @mouseenter="onBlockToolbarMouseEnter"
@@ -3788,28 +3857,40 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
         >
           <FilePlus2 :size="14" />
         </button>
-        <button
-          class="block-action-button"
-          :disabled="!store.settings.ai.enabled || !store.settings.ai.hasApiKey"
-          title="AI 优化选区或此块表述"
-          aria-label="AI 优化选区或此块表述"
-          data-tooltip="AI 优化表述"
-          @mousedown.prevent
-          @click="runAiSuggestion"
-        >
-          <Sparkles :size="14" />
-        </button>
-        <button
-          class="block-action-button"
-          :disabled="!store.settings.ai.enabled || !store.settings.ai.hasApiKey"
-          title="AI 提取选区或此块 Todo"
-          aria-label="AI 提取选区或此块 Todo"
-          data-tooltip="AI 提取 Todo"
-          @mousedown.prevent
-          @click="runAiTodoExtraction"
-        >
-          <ListTodo :size="14" />
-        </button>
+        <div class="block-ai-actions" @focusout="onBlockAiFocusOut">
+          <button
+            ref="blockAiTrigger"
+            class="block-action-button block-ai-trigger"
+            :disabled="!store.settings.ai.enabled || !store.settings.ai.hasApiKey"
+            title="AI 块操作"
+            aria-label="AI 块操作"
+            aria-haspopup="menu"
+            :aria-expanded="blockAiMenuOpen"
+            @mousedown.prevent
+            @click="toggleBlockAiMenu"
+            @keydown.down.prevent="toggleBlockAiMenu"
+          >
+            <Sparkles :size="14" />
+            <span>AI</span>
+            <ChevronDown :size="11" />
+          </button>
+          <div
+            v-if="blockAiMenuOpen"
+            ref="blockAiMenu"
+            class="block-ai-menu"
+            :class="{ above: blockAiMenuAbove }"
+            role="menu"
+            aria-label="AI 块操作菜单"
+            @keydown="onBlockAiMenuKeydown"
+          >
+            <button role="menuitem" title="AI 优化选区或此块表述" @mousedown.prevent @click="runBlockAiAction('polish')">
+              <Sparkles :size="15" />优化表述
+            </button>
+            <button role="menuitem" title="AI 提取选区或此块 Todo" @mousedown.prevent @click="runBlockAiAction('extract-todos')">
+              <ListTodo :size="15" />提取 Todo
+            </button>
+          </div>
+        </div>
         <button
           class="block-action-button"
           :disabled="!canFormatCurrentBlock"
@@ -3821,6 +3902,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
         >
           <AlignLeft :size="14" />
         </button>
+        <span class="block-toolbar-divider" aria-hidden="true"></span>
         <button
           class="block-action-button"
           :title="currentBlockFolded ? '展开此块（Cmd/Ctrl+Option+[）' : '折叠此块（Cmd/Ctrl+Option+[）'"
@@ -3844,6 +3926,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
           <EyeOff v-if="currentBlockPreviewed" :size="14" />
           <Eye v-else :size="14" />
         </button>
+        <span class="block-toolbar-divider" aria-hidden="true"></span>
         <button
           class="block-action-button danger"
           title="删除此块（Cmd/Ctrl+Shift+D）"
@@ -3857,7 +3940,7 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
       </div>
 
       <div class="statusbar-actions">
-        <button class="status-icon-button danger" title="删除当前块（Cmd/Ctrl+Shift+D）" @click="removeBlock">
+        <button class="status-icon-button danger" title="删除当前块（Cmd/Ctrl+Shift+D）" aria-label="删除当前块" @click="removeBlock">
           <Trash2 :size="15" />
         </button>
         <button class="status-icon-button" title="快捷键" aria-label="快捷键" @click="emit('toggle-shortcuts')">
