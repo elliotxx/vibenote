@@ -1191,6 +1191,7 @@ function restorePersistedBlockFolds(editor: EditorView) {
         ? selectionHead - block.content.from
         : 0,
     }))
+  if (ranges.length === 0 && editor.state.field(foldedBlockField).length === 0) return
   editor.dispatch({ effects: replaceBlockFolds.of(entries) })
 }
 

@@ -424,6 +424,9 @@ class FileLibrary {
     this.ignoredStorageRevisions = new Map()
     this.noteWatcher = null
     this.noteWatchTimers = new Map()
+    this.notePollTimer = null
+    this.notePollRunning = false
+    this.noteFileSignatures = new Map()
     this.onInternalChange = () => {}
     this.onExternalInternalChange = () => {}
   }
@@ -459,7 +462,7 @@ class FileLibrary {
 
   startWatching() {
     if (this.noteWatcher) return
-    this.noteWatcher = fs.watch(this.basePath, (_eventType, fileName) => {
+    const scheduleChange = (_eventType, fileName) => {
       const identifier = String(fileName || '')
       if (!identifier.endsWith('.txt')) return
       const existing = this.noteWatchTimers.get(identifier)
@@ -477,11 +480,45 @@ class FileLibrary {
           // The file may have moved before the watcher settled.
         }
       }, 100))
-    })
+    }
+    for (const identifier of fs.readdirSync(this.basePath).filter(name => name.endsWith('.txt'))) {
+      const stat = fs.statSync(path.join(this.basePath, identifier))
+      this.noteFileSignatures.set(identifier, `${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`)
+    }
+    this.noteWatcher = fs.watch(this.basePath, scheduleChange)
     this.noteWatcher.unref()
+    // Directory events can be dropped; metadata polling keeps CLI edits discoverable.
+    this.notePollTimer = setInterval(async () => {
+      if (this.notePollRunning) return
+      this.notePollRunning = true
+      try {
+        const identifiers = (await fs.promises.readdir(this.basePath)).filter(name => name.endsWith('.txt'))
+        for (const identifier of identifiers) {
+          if (!this.notePollTimer) break
+          const stat = await fs.promises.stat(path.join(this.basePath, identifier)).catch(() => null)
+          if (!stat || !this.notePollTimer) continue
+          const signature = `${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`
+          if (this.noteFileSignatures.get(identifier) !== signature) {
+            this.noteFileSignatures.set(identifier, signature)
+            scheduleChange('change', identifier)
+          }
+        }
+        for (const identifier of this.noteFileSignatures.keys()) {
+          if (!identifiers.includes(identifier)) this.noteFileSignatures.delete(identifier)
+        }
+      } catch {
+        // Retry on the next poll if the directory is temporarily unavailable.
+      } finally {
+        this.notePollRunning = false
+      }
+    }, 1_000)
+    this.notePollTimer.unref()
   }
 
   stopWatching() {
+    if (this.notePollTimer) clearInterval(this.notePollTimer)
+    this.notePollTimer = null
+    this.noteFileSignatures.clear()
     this.noteWatcher?.close()
     this.noteWatcher = null
     for (const timer of this.noteWatchTimers.values()) clearTimeout(timer)
