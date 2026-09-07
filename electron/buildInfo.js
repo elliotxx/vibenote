@@ -32,7 +32,7 @@ export function aboutPanelOptions(buildInfo) {
   return {
     applicationName: 'Vibenote',
     applicationVersion: buildInfo.appVersion,
-    version: buildInfo.gitDescribe,
+    version: `${buildInfo.commit || 'unknown'}${buildInfo.dirty ? '-dirty' : ''}`,
   }
 }
 

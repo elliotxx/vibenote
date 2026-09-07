@@ -40,6 +40,26 @@ test('About Vibenote keeps the release version and shows the Git build', () => {
   assert.deepEqual(aboutPanelOptions(buildInfo), {
     applicationName: 'Vibenote',
     applicationVersion: '0.1.12',
-    version: 'v0.1.12-3-gabc1234-dirty',
+    version: 'abc1234-dirty',
+  })
+})
+
+test('About uses the same build identifier before and after the release tag is created', () => {
+  const beforeTag = parseGitDescribe('0.1.15', 'v0.1.14-5-g5f52bb7')
+  const afterTag = parseGitDescribe('0.1.15', 'v0.1.15-0-g5f52bb7')
+
+  assert.deepEqual(aboutPanelOptions(beforeTag), {
+    applicationName: 'Vibenote',
+    applicationVersion: '0.1.15',
+    version: '5f52bb7',
+  })
+  assert.deepEqual(aboutPanelOptions(beforeTag), aboutPanelOptions(afterTag))
+})
+
+test('About preserves the application version when Git metadata is unavailable', () => {
+  assert.deepEqual(aboutPanelOptions(parseGitDescribe('0.1.15', 'unknown')), {
+    applicationName: 'Vibenote',
+    applicationVersion: '0.1.15',
+    version: 'unknown',
   })
 })
