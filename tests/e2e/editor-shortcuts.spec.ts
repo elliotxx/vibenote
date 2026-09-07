@@ -528,6 +528,53 @@ test.describe('editor text selection shortcuts', () => {
     expect(copied).not.toContain('---block:')
   })
 
+  test('cuts an unselected single-line block without exposing the next delimiter', async ({ page }) => {
+    await clickLine(page, '{"service"')
+    const beforeCut = await visibleEditorText(page)
+    await page.keyboard.press(`${modifier}+X`)
+
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe('{"service":"api","ok":true}')
+    await expect(page.locator('.cm-content')).not.toContainText('{"service"')
+    await expect(page.locator('.cm-content')).not.toContainText('---block:')
+    await expect(page.locator('.cm-content')).toContainText('select * from users')
+    await expect.poll(() => page.evaluate(() => {
+      const buffers = JSON.parse(localStorage.getItem('vibenote:mock-buffers') || '[]')
+      return buffers[0]?.content || ''
+    })).toContain('\n\n---block:sql;')
+
+    await page.keyboard.press(`${modifier}+Z`)
+    await expect.poll(() => visibleEditorText(page)).toBe(beforeCut)
+  })
+
+  for (const position of [0, 1, 2]) {
+    test(`preserves block boundaries when cutting single-line block ${position + 1}`, async ({ page }) => {
+      const lines = ['First synthetic line', 'Middle synthetic line', 'Last synthetic line']
+      const delimiters = lines.map((_, index) =>
+        `---block:markdown;id=fixture-${index};auto=0;created=2026-07-01T00:00:00.000Z`,
+      )
+      const content = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${
+        lines.map((line, index) => `${delimiters[index]}\n${line}`).join('\n')
+      }`
+      await loadFixture(page, content)
+      await clickLine(page, lines[position])
+      await page.keyboard.press(`${modifier}+X`)
+
+      const savedContent = () => page.evaluate(() => {
+        const buffers = JSON.parse(localStorage.getItem('vibenote:mock-buffers') || '[]')
+        return buffers[0]?.content || ''
+      })
+      await expect.poll(savedContent).toBe(content.replace(lines[position], ''))
+      await expect(page.locator('.cm-content')).not.toContainText('---block:')
+
+      // Cutting the now-empty line must also preserve the surrounding delimiters.
+      await page.keyboard.press(`${modifier}+X`)
+      await page.keyboard.type('Replacement text')
+      await expect.poll(savedContent).toBe(content.replace(lines[position], 'Replacement text'))
+      await expect(page.locator('.cm-content')).not.toContainText('---block:')
+    })
+  }
+
   test('supports cut, paste, and undo while preserving hidden block structure', async ({ page }) => {
     await clickLine(page, '# Stream')
     const beforeCut = await visibleEditorText(page)
@@ -773,7 +820,7 @@ test.describe('editor text selection shortcuts', () => {
 
     await hoverEditorTopRight(page)
     await expect(toolbar).toBeVisible()
-    await expect(toolbar.locator('.block-action-button')).toHaveCount(6)
+    await expect(toolbar.locator('.block-action-button')).toHaveCount(7)
     await page.waitForTimeout(500)
     await expect(toolbar).toBeVisible()
 

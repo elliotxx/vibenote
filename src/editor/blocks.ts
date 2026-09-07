@@ -315,7 +315,9 @@ export const delimiterChangeProtection = EditorState.changeFilter.of((transactio
     if (!transaction.docChanged) return true
     const protectedRanges: number[] = []
     for (const block of transaction.startState.field(blockField)) {
-      protectedRanges.push(block.delimiter.from, block.delimiter.to)
+      // The leading newline is structural too: removing it can join a delimiter
+      // to content or to the preceding delimiter when a single-line block is cut.
+      protectedRanges.push(Math.max(0, block.delimiter.from - 1), block.delimiter.to)
     }
     return protectedRanges
   })
