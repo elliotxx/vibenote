@@ -3241,6 +3241,18 @@ function onWindowFocus() {
   }, 50)
 }
 
+async function copyBlock() {
+  if (!view) return
+  const block = blockForToolbar(view)
+  if (!block) return
+  try {
+    await navigator.clipboard.writeText(currentBlockText(view, block))
+    setAiStatus('已复制此块', true)
+  } catch {
+    setAiStatus('复制失败，请重试', true)
+  }
+}
+
 async function formatBlock() {
   if (!view || !currentBlock.value) return
   const block = currentBlock.value
@@ -3857,6 +3869,16 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
           @click="addBlockAfterActive"
         >
           <FilePlus2 :size="14" />
+        </button>
+        <button
+          class="block-action-button"
+          title="复制此块"
+          aria-label="复制此块"
+          data-tooltip="复制此块"
+          @mousedown.prevent
+          @click="copyBlock"
+        >
+          <Copy :size="14" />
         </button>
         <div class="block-ai-actions" @focusout="onBlockAiFocusOut">
           <button

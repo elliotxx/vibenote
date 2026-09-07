@@ -74,6 +74,47 @@ async function renderCurrentBlock(page: Page, lineText?: string) {
 }
 
 test.describe("markdown block session preview", () => {
+  test("copies complete block source in source, preview, and folded modes", async ({ page, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    const source = "# Copy fixture\n\n  Keep spacing  \n最后一行";
+    const second = '{"copy":"second"}';
+    const fixture = note([block("markdown", source), block("json", second)]);
+    await loadFixture(page, fixture);
+    await clickLine(page, "# Copy fixture");
+    await page.keyboard.press(`${modifier}+Shift+ArrowRight`);
+    await revealToolbar(page, "# Copy fixture");
+    await page.getByRole("button", { name: "复制此块", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(source);
+    await expect(page.locator(".status-feedback")).toHaveText("已复制此块");
+
+    await renderCurrentBlock(page, "# Copy fixture");
+    await revealToolbar(page);
+    await page.getByRole("button", { name: "复制此块", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(source);
+
+    await clickLine(page, second);
+    await revealToolbar(page, second);
+    await page.getByRole("button", { name: "复制此块", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(second);
+    await page.getByRole("button", { name: "折叠此块", exact: true }).click();
+    await page.getByRole("button", { name: "复制此块", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(second);
+  });
+
+  test("reports clipboard failure without changing block content", async ({ page }) => {
+    const fixture = note([block("text", "Copy failure fixture")]);
+    await loadFixture(page, fixture);
+    await page.evaluate(() => {
+      Object.defineProperty(navigator.clipboard, "writeText", {
+        value: async () => { throw new Error("Clipboard unavailable"); },
+      });
+    });
+    await revealToolbar(page, "Copy failure fixture");
+    await page.getByRole("button", { name: "复制此块", exact: true }).click();
+    await expect(page.locator(".status-feedback")).toHaveText("复制失败，请重试");
+    expect(await savedContent(page)).toBe(fixture);
+  });
+
   test("session toggle is markdown-only, read-only, lossless, and reset by reload", async ({
     page,
   }) => {
@@ -88,7 +129,7 @@ test.describe("markdown block session preview", () => {
     await revealToolbar(page, "# Title");
     await expect(
       page.locator(".block-toolbar .block-action-button"),
-    ).toHaveCount(6);
+    ).toHaveCount(7);
     await expect(page.getByRole("button", { name: "渲染此块" })).toHaveCount(1);
     await page.getByRole("button", { name: "渲染此块" }).click();
 
@@ -114,7 +155,7 @@ test.describe("markdown block session preview", () => {
     await revealToolbar(page, '{"ok":true}');
     await expect(
       page.locator(".block-toolbar .block-action-button"),
-    ).toHaveCount(5);
+    ).toHaveCount(6);
     await expect(page.getByRole("button", { name: "渲染此块" })).toHaveCount(0);
 
     await clickLine(page, "# Title");
