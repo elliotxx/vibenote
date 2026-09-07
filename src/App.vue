@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { X } from 'lucide-vue-next'
 import EditorPane from './components/EditorPane.vue'
 import ShortcutPanel from './components/ShortcutPanel.vue'
@@ -18,7 +18,23 @@ const agentCliBusy = ref(false)
 function toggleSettings() {
   showShortcuts.value = false
   showSettings.value = !showSettings.value
+  if (!showSettings.value) restoreEditorFocus()
 }
+
+function closeSettings() {
+  showSettings.value = false
+  restoreEditorFocus()
+}
+
+function onSettingsKeydown(event: KeyboardEvent) {
+  if (!showSettings.value || event.key !== 'Escape' || event.isComposing) return
+  event.preventDefault()
+  event.stopPropagation()
+  closeSettings()
+}
+
+onMounted(() => window.addEventListener('keydown', onSettingsKeydown, true))
+onBeforeUnmount(() => window.removeEventListener('keydown', onSettingsKeydown, true))
 
 function toggleShortcuts() {
   showSettings.value = false
@@ -174,6 +190,15 @@ async function toggleGitBackup(event: Event) {
   }
 }
 
+async function openGitBackupRepository() {
+  gitBackupMessage.value = ''
+  try {
+    await window.vibenote.gitBackup.openRepository()
+  } catch {
+    gitBackupMessage.value = '无法打开备份目录，请检查目录是否存在且有访问权限。'
+  }
+}
+
 const agentCliStatusLabel = computed(() => {
   if (agentCliMessage.value) return agentCliMessage.value
   const labels: Record<AgentCliStatus['state'], string> = {
@@ -226,11 +251,11 @@ async function uninstallAgentCli() {
       />
     </main>
 
-    <div v-if="showSettings" class="modal-backdrop" @click.self="showSettings = false">
+    <div v-if="showSettings" class="modal-backdrop" @click.self="closeSettings">
       <section class="settings-panel">
         <header>
           <h2>设置</h2>
-          <button class="icon-button" title="关闭设置" @click="showSettings = false">
+          <button class="icon-button" title="关闭设置" @click="closeSettings">
             <X :size="16" />
           </button>
         </header>
@@ -316,6 +341,11 @@ async function uninstallAgentCli() {
             </label>
             <div class="git-repository-row">
               <button class="secondary-button" @click="chooseGitRepository">选择 Git 仓库</button>
+              <button
+                class="secondary-button"
+                :disabled="!store.gitBackupSettings.repositoryPath"
+                @click="openGitBackupRepository"
+              >打开备份目录</button>
               <span class="git-repository-name" :title="gitRepositoryLabel">{{ gitRepositoryLabel }}</span>
             </div>
             <div class="git-backup-state" :class="{ error: store.gitBackupStatus.lastErrorCode || gitBackupMessage }">

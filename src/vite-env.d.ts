@@ -159,6 +159,7 @@ interface Window {
       getSettings(): Promise<GitBackupSettings>
       getStatus(): Promise<GitBackupStatus>
       chooseRepository(): Promise<GitBackupSettings>
+      openRepository(): Promise<void>
       setEnabled(enabled: boolean): Promise<GitBackupSettings>
       onStatusChanged(callback: (status: GitBackupStatus) => void): () => void
     }

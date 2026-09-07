@@ -1697,6 +1697,14 @@ ipcMain.handle('settings:setTheme', (_event, theme) => {
 })
 ipcMain.handle('git-backup:getSettings', () => gitBackup.getSettings())
 ipcMain.handle('git-backup:getStatus', () => gitBackup.getStatus())
+ipcMain.handle('git-backup:openRepository', async () => {
+  const { repositoryPath } = gitBackup.getSettings()
+  if (!repositoryPath) throw new Error('No backup repository selected')
+  const stat = await fs.promises.stat(repositoryPath).catch(() => null)
+  if (!stat?.isDirectory()) throw new Error('Backup directory is unavailable')
+  const error = await shell.openPath(repositoryPath)
+  if (error) throw new Error('Failed to open backup directory')
+})
 ipcMain.handle('git-backup:chooseRepository', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Choose Git backup repository',

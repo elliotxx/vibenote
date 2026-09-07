@@ -74,6 +74,7 @@ contextBridge.exposeInMainWorld('vibenote', {
     getSettings: () => ipcRenderer.invoke('git-backup:getSettings'),
     getStatus: () => ipcRenderer.invoke('git-backup:getStatus'),
     chooseRepository: () => ipcRenderer.invoke('git-backup:chooseRepository'),
+    openRepository: () => ipcRenderer.invoke('git-backup:openRepository'),
     setEnabled: enabled => ipcRenderer.invoke('git-backup:setEnabled', enabled),
     onStatusChanged: callback => {
       const listener = (_event, status) => callback(status)

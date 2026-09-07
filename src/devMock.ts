@@ -265,6 +265,9 @@ export function installDevMock() {
       },
     },
     gitBackup: {
+      async openRepository() {
+        throw new Error('Opening backup directories requires the desktop app')
+      },
       async getSettings() {
         return readMockGitBackupSettings()
       },
