@@ -2259,9 +2259,11 @@ select:focus {
 }
 
 .settings-panel {
+  font-size: 16px;
+  line-height: 1.5;
   display: flex;
   flex-direction: column;
-  width: min(680px, calc(100vw - 32px));
+  width: min(760px, calc(100vw - 32px));
   max-height: min(760px, calc(100dvh - 48px));
   overflow: hidden;
   border: 1px solid var(--line);
@@ -2422,7 +2424,7 @@ select:focus {
 
 .settings-panel h2 {
   margin: 0;
-  font-size: 17px;
+  font-size: 20px;
   font-weight: 650;
 }
 
@@ -2459,7 +2461,7 @@ select:focus {
 .settings-section h3 {
   margin: 0 0 2px;
   color: var(--ink);
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 650;
 }
 
@@ -2468,16 +2470,16 @@ select:focus {
   grid-template-columns: minmax(0, 1fr) minmax(0, 220px);
   align-items: center;
   gap: 16px;
-  min-height: 36px;
+  min-height: 40px;
   color: var(--ink-soft);
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 450;
 }
 
 .settings-panel input:not([type="checkbox"]),
 .settings-panel select {
-  height: 34px;
-  font-size: 13px;
+  height: 40px;
+  font-size: 16px;
   font-weight: 450;
 }
 
@@ -2491,7 +2493,7 @@ select:focus {
   grid-template-columns: minmax(0, 1fr) 32px;
   align-items: center;
   gap: 12px !important;
-  min-height: 38px;
+  min-height: 42px;
   cursor: pointer;
 }
 
@@ -2507,7 +2509,7 @@ select:focus {
 
 .settings-toggle-description {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 450;
   line-height: 1.5;
 }
@@ -2591,7 +2593,7 @@ select:focus {
   min-width: 0;
   overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2599,14 +2601,14 @@ select:focus {
 .settings-description {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.55;
 }
 
 .settings-panel .secondary-button,
 .settings-panel .ghost-button {
-  height: 32px;
-  font-size: 13px;
+  height: 40px;
+  font-size: 16px;
   font-weight: 450;
   transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
@@ -2670,7 +2672,7 @@ select:focus {
 .git-repository-name {
   overflow: hidden;
   color: var(--ink);
-  font-size: 13px;
+  font-size: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2680,13 +2682,13 @@ select:focus {
   gap: 4px;
   padding: 0;
   color: var(--ink-soft);
-  font-size: 13px;
+  font-size: 16px;
   line-height: 1.5;
 }
 
 .settings-state-detail {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 
@@ -2706,7 +2708,7 @@ select:focus {
   line-height: 1.5;
 }
 
-@media (max-width: 480px) {
+@media (max-width: 640px) {
   .settings-panel > header {
     padding: 14px 16px;
   }
