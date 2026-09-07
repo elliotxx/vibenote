@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { X } from 'lucide-vue-next'
+import { FolderOpen, X } from 'lucide-vue-next'
 import EditorPane from './components/EditorPane.vue'
 import ShortcutPanel from './components/ShortcutPanel.vue'
 import { useWorkspaceStore } from './stores/workspace'
@@ -252,10 +252,10 @@ async function uninstallAgentCli() {
     </main>
 
     <div v-if="showSettings" class="modal-backdrop" @click.self="closeSettings">
-      <section class="settings-panel">
+      <section class="settings-panel" :class="{ 'dark-theme': store.settings.theme === 'dark' }" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <header>
-          <h2>设置</h2>
-          <button class="icon-button" title="关闭设置" @click="closeSettings">
+          <h2 id="settings-title">设置</h2>
+          <button class="icon-button" title="关闭设置" aria-label="关闭设置" @click="closeSettings">
             <X :size="16" />
           </button>
         </header>
@@ -330,27 +330,38 @@ async function uninstallAgentCli() {
           <section class="settings-section settings-section-wide">
             <h3>Git 自动备份</h3>
             <p class="settings-description">每 5 分钟将内部笔记导出为单向快照。原始笔记目录仍是唯一数据来源。</p>
-            <label class="checkbox-label">
+            <label class="settings-toggle-row">
+              <span class="settings-toggle-title">启用自动快照与安全推送</span>
               <input
                 :checked="store.gitBackupSettings.enabled"
                 type="checkbox"
                 :disabled="!store.gitBackupSettings.repositoryPath"
                 @change="toggleGitBackup"
               />
-              启用自动快照与安全推送
+              <span class="settings-switch" aria-hidden="true"></span>
             </label>
             <div class="git-repository-row">
-              <button class="secondary-button" @click="chooseGitRepository">选择 Git 仓库</button>
-              <button
-                class="secondary-button"
-                :disabled="!store.gitBackupSettings.repositoryPath"
-                @click="openGitBackupRepository"
-              >打开备份目录</button>
-              <span class="git-repository-name" :title="gitRepositoryLabel">{{ gitRepositoryLabel }}</span>
+              <div class="git-repository-info">
+                <FolderOpen :size="18" :stroke-width="1.5" aria-hidden="true" />
+                <div class="git-repository-copy">
+                  <span class="settings-description">备份目录</span>
+                  <span class="git-repository-name" :title="gitRepositoryLabel">{{ gitRepositoryLabel }}</span>
+                </div>
+              </div>
+              <div class="settings-actions">
+                <button
+                  class="secondary-button"
+                  :disabled="!store.gitBackupSettings.repositoryPath"
+                  @click="openGitBackupRepository"
+                >打开备份目录</button>
+                <button class="ghost-button" @click="chooseGitRepository">
+                  {{ store.gitBackupSettings.repositoryPath ? '更换…' : '选择 Git 仓库' }}
+                </button>
+              </div>
             </div>
             <div class="git-backup-state" :class="{ error: store.gitBackupStatus.lastErrorCode || gitBackupMessage }">
               <span>{{ gitBackupStatusLabel }}</span>
-              <span>{{ gitBackupTimeLabel }}</span>
+              <span class="settings-state-detail">{{ gitBackupTimeLabel }}</span>
             </div>
             <p class="settings-description">仅提交 Vibenote 管理的快照路径；远端不安全或需要人工判断时只保留本地提交。</p>
           </section>
@@ -378,7 +389,7 @@ async function uninstallAgentCli() {
             </div>
             <div class="git-backup-state" :class="{ error: store.agentCliStatus.state === 'conflict' || agentCliMessage }">
               <span>{{ agentCliStatusLabel }}</span>
-              <span v-if="store.agentCliStatus.commandPath" :title="store.agentCliStatus.commandPath">{{ store.agentCliStatus.commandPath }}</span>
+              <span v-if="store.agentCliStatus.commandPath" class="settings-state-detail settings-command-path" :title="store.agentCliStatus.commandPath">{{ store.agentCliStatus.commandPath }}</span>
             </div>
             <p v-if="(store.agentCliStatus.state === 'installed' || store.agentCliStatus.state === 'update-available') && !store.agentCliStatus.pathConfigured" class="settings-description">
               命令已安装，但登录 shell 的 PATH 不包含 <code>{{ store.agentCliStatus.binDirectory }}</code>；Vibenote 不会自动修改 shell 配置。
@@ -391,11 +402,12 @@ async function uninstallAgentCli() {
             </p>
           </section>
 
-          <section class="settings-section settings-section-wide">
+          <section class="settings-section settings-section-wide settings-ai">
             <h3>AI</h3>
-            <label class="checkbox-label">
+            <label class="settings-toggle-row">
+              <span class="settings-toggle-title">启用 AI</span>
               <input v-model="store.settings.ai.enabled" type="checkbox" @change="store.saveSettings" />
-              启用 AI
+              <span class="settings-switch" aria-hidden="true"></span>
             </label>
             <label>
               服务商

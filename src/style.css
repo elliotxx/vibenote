@@ -149,7 +149,8 @@ select:focus {
   cursor: text;
 }
 
-.editor-host.dark-theme {
+.editor-host.dark-theme,
+.settings-panel.dark-theme {
   --surface-editor: oklch(20.5% 0.018 250);
   --surface-control: oklch(24% 0.02 250);
   --surface-block-alt: oklch(22.5% 0.019 235);
@@ -2166,16 +2167,15 @@ select:focus {
 }
 
 .settings-panel {
-  display: grid;
-  gap: 14px;
+  display: flex;
+  flex-direction: column;
   width: min(680px, calc(100vw - 32px));
-  max-height: min(720px, calc(100vh - 48px));
-  overflow: auto;
+  max-height: min(760px, calc(100dvh - 48px));
+  overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 14px;
   background: var(--surface-editor);
-  box-shadow: 0 24px 80px var(--shadow-modal);
-  padding: 16px;
+  box-shadow: 0 16px 48px var(--shadow-modal);
 }
 
 .shortcut-panel {
@@ -2319,67 +2319,81 @@ select:focus {
   }
 }
 
-.settings-panel header {
+.settings-panel > header {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .settings-panel h2 {
   margin: 0;
   font-size: 17px;
+  font-weight: 650;
 }
 
-.settings-sections,
-.settings-section {
-  display: grid;
-  gap: 14px;
+.settings-panel.dark-theme {
+  --surface-soft: oklch(29% 0.018 245);
+  --danger: oklch(73% 0.13 24);
+}
+
+.settings-panel.dark-theme .settings-switch::after {
+  background: var(--ink);
 }
 
 .settings-sections {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
+  display: grid;
+  gap: 28px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 24px;
 }
 
 .settings-section {
-  gap: 10px;
-  padding-top: 12px;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.settings-section + .settings-section {
+  padding-top: 24px;
   border-top: 1px solid var(--line-soft);
 }
 
-.settings-section-wide {
-  grid-column: 1 / -1;
-}
-
 .settings-section h3 {
-  margin: 0;
+  margin: 0 0 2px;
   color: var(--ink);
-  font-size: 12px;
-  font-weight: 750;
-  letter-spacing: 0;
+  font-size: 14px;
+  font-weight: 650;
 }
 
 .settings-panel label {
   display: grid;
-  gap: 6px;
-  color: var(--ink-soft);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.checkbox-label {
-  display: flex !important;
-  grid-template-columns: none;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 220px);
   align-items: center;
-  gap: 8px !important;
+  gap: 16px;
+  min-height: 36px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 450;
 }
 
-.checkbox-label input {
-  width: 15px;
-  height: 15px;
+.settings-panel input:not([type="checkbox"]),
+.settings-panel select {
+  height: 34px;
+  font-size: 13px;
+  font-weight: 450;
 }
 
-.settings-toggle-row {
+.settings-ai > label:not(.settings-toggle-row) {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
+}
+
+.settings-panel .settings-toggle-row {
   position: relative;
   display: grid !important;
   grid-template-columns: minmax(0, 1fr) 32px;
@@ -2396,14 +2410,14 @@ select:focus {
 
 .settings-toggle-title {
   color: var(--ink-soft);
-  font-weight: 650;
+  font-weight: 450;
 }
 
 .settings-toggle-description {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 450;
-  line-height: 1.35;
+  line-height: 1.5;
 }
 
 .settings-toggle-row input {
@@ -2453,6 +2467,7 @@ select:focus {
 
 .settings-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -2496,49 +2511,120 @@ select:focus {
   line-height: 1.55;
 }
 
+.settings-panel .secondary-button,
+.settings-panel .ghost-button {
+  height: 32px;
+  font-size: 13px;
+  font-weight: 450;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.settings-panel .ghost-button {
+  border-color: transparent;
+}
+
+.settings-panel .secondary-button:not(:disabled):hover,
+.settings-panel .ghost-button:not(:disabled):hover {
+  color: var(--accent);
+  border-color: var(--line);
+  background: var(--accent-tint);
+}
+
+.settings-panel button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.settings-toggle-row:has(input:disabled) {
+  cursor: default;
+}
+
+.settings-toggle-row input:disabled + .settings-switch {
+  opacity: 0.45;
+}
+
 .git-repository-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--surface-control);
+}
+
+.git-repository-info {
+  display: flex;
+  flex: 1 1 160px;
+  align-items: center;
   gap: 10px;
+  min-width: 0;
+  color: var(--muted);
+}
+
+.git-repository-info > svg {
+  flex-shrink: 0;
+}
+
+.git-repository-copy {
+  display: grid;
+  gap: 3px;
   min-width: 0;
 }
 
 .git-repository-name {
-  min-width: 0;
   overflow: hidden;
-  color: var(--ink-soft);
-  font-size: 12px;
+  color: var(--ink);
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .git-backup-state {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  border-radius: 6px;
-  padding: 9px 10px;
+  display: grid;
+  gap: 4px;
+  padding: 0;
   color: var(--ink-soft);
-  background: var(--surface-control);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.settings-state-detail {
+  color: var(--muted);
   font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.settings-command-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .git-backup-state.error {
   color: var(--danger, #b42318);
 }
 
-@media (max-width: 620px) {
+.settings-panel .settings-status {
+  flex: 1 1 180px;
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+@media (max-width: 480px) {
+  .settings-panel > header {
+    padding: 14px 16px;
+  }
+
   .settings-sections {
+    padding: 20px 16px;
+  }
+
+  .settings-panel label:not(.settings-toggle-row) {
     grid-template-columns: 1fr;
-  }
-
-  .settings-section-wide {
-    grid-column: auto;
-  }
-
-  .git-backup-state {
-    flex-direction: column;
-    gap: 4px;
+    gap: 8px;
   }
 }
