@@ -87,6 +87,71 @@ function colorDistance(left: number[], right: number[]) {
 }
 
 test.describe('markdown block writing enhancements', () => {
+  for (const unit of ['  ', '    ', '\t']) {
+    test(`uses existing list indentation ${JSON.stringify(unit)} for Tab and Shift-Tab`, async ({ page }) => {
+      const lines = ['- Parent', `${unit}- Child`]
+      const fixture = markdownFixture(lines)
+      await loadFixture(page, fixture)
+      await clickLine(page, 'Child')
+      await page.keyboard.press('Shift+Tab')
+      await expect.poll(() => savedContent(page)).toBe(markdownFixture(['- Parent', '- Child']))
+      await page.keyboard.press('Tab')
+      await expect.poll(() => savedContent(page)).toBe(fixture)
+      await page.keyboard.press('Tab')
+      await expect.poll(() => savedContent(page)).toBe(markdownFixture(['- Parent', `${unit}${unit}- Child`]))
+      await page.keyboard.press(`${modifier}+Z`)
+      await expect.poll(() => savedContent(page)).toBe(fixture)
+      await page.keyboard.press('Tab')
+      await page.keyboard.press('Shift+Tab')
+      await expect.poll(() => savedContent(page)).toBe(fixture)
+    })
+  }
+
+  test('indents selected list rows together and leaves the next row unchanged', async ({ page }) => {
+    await loadFixture(page, markdownFixture(['- Parent', '  - First', '  - Second', '  - Third']))
+    await clickLine(page, 'First')
+    await page.keyboard.press('Home')
+    await page.keyboard.press('Home')
+    await page.keyboard.down('Shift')
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.up('Shift')
+    await page.keyboard.press('Tab')
+    await expect.poll(() => savedContent(page)).toBe(markdownFixture([
+      '- Parent', '    - First', '    - Second', '  - Third',
+    ]))
+    await page.keyboard.press('Shift+Tab')
+    await expect.poll(() => savedContent(page)).toBe(markdownFixture([
+      '- Parent', '  - First', '  - Second', '  - Third',
+    ]))
+  })
+
+  test('detects each list separately and uses the configured width in fenced code', async ({ page }) => {
+    const lines = ['- One', '  - Two', '', '- Three', '    - Four', '', '```text', '- Code', '  - Example', '```']
+    await loadFixture(page, markdownFixture(lines))
+    await clickLine(page, 'Four')
+    await page.keyboard.press('Tab')
+    lines[4] = '        - Four'
+    await expect.poll(() => savedContent(page)).toBe(markdownFixture(lines))
+    await clickLine(page, 'Two')
+    await page.keyboard.press('Tab')
+    lines[1] = '    - Two'
+    await expect.poll(() => savedContent(page)).toBe(markdownFixture(lines))
+    await clickLine(page, 'Code')
+    await page.keyboard.press('Tab')
+    lines[7] = '    - Code'
+    await expect.poll(() => savedContent(page)).toBe(markdownFixture(lines))
+  })
+
+  test('uses the configured indentation when a list has no nested levels', async ({ page }) => {
+    await loadFixture(page, markdownFixture(['- First', '- Second']))
+    await clickLine(page, 'Second')
+    await page.keyboard.press('Tab')
+    await expect.poll(() => savedContent(page)).toBe(markdownFixture(['- First', '    - Second']))
+    await page.keyboard.press('Shift+Tab')
+    await expect.poll(() => savedContent(page)).toBe(markdownFixture(['- First', '- Second']))
+  })
+
   test('highlights common markdown syntax while keeping the block as plain text', async ({ page }) => {
     const fixture = markdownFixture([
       '# Heading',

@@ -2,6 +2,7 @@
 import { Compartment, EditorSelection, EditorState } from '@codemirror/state'
 import { addCursorAbove, addCursorBelow, defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { indentUnit } from '@codemirror/language'
+import { indentMarkdownList, listIndentationField } from '../editor/listIndentation'
 import {
   crosshairCursor,
   drawSelection,
@@ -903,6 +904,7 @@ function mountEditor() {
         },
       }),
       history(),
+      listIndentationField,
       indentationCompartment.of([
         EditorState.tabSize.of(store.settings.tabSize),
         indentUnit.of(' '.repeat(store.settings.tabSize)),
@@ -948,6 +950,7 @@ function mountEditor() {
         { key: 'Delete', run: removeImageOrBlankBlockFromDeleteKey },
         { key: 'ArrowLeft', run: editor => revealCursorAroundActiveImage(editor, 'left') },
         { key: 'ArrowRight', run: editor => revealCursorAroundActiveImage(editor, 'right') },
+        { key: 'Tab', run: editor => indentMarkdownList(editor), shift: editor => indentMarkdownList(editor, true) },
         indentWithTab,
         ...defaultKeymap,
         ...historyKeymap,
