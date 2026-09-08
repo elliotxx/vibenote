@@ -51,6 +51,10 @@ function applyLang(lang: Lang) {
 function applyTheme(theme: "light" | "dark") {
   document.documentElement.dataset.theme = theme;
   localStorage.setItem(THEME_KEY, theme);
+  const metaTheme = document.querySelector('meta[name="theme-color"]');
+  if (metaTheme) {
+    metaTheme.setAttribute("content", theme === "dark" ? "#0e141d" : "#eef3f8");
+  }
   const toggle = document.querySelector<HTMLButtonElement>("[data-theme-toggle]");
   if (toggle) {
     toggle.setAttribute("aria-pressed", theme === "dark" ? "true" : "false");
