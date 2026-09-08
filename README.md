@@ -83,6 +83,7 @@ Only share the DMG with people who trust the build source. This release is unsig
 
 ## Documentation
 
+- [Marketing website](website/README.md): static landing page source under `website/`.
 - [Using Vibenote](docs/guides/using-vibenote.md): blocks, shortcuts, data location, and uninstalling.
 - [Git snapshot backup](docs/guides/git-auto-backup.md): setup, storage behavior, repository safety, and recovery.
 - [Agent CLI](docs/guides/agent-cli.md): installation, command discovery, and mutation safeguards.
