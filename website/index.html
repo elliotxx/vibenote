@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="面向 macOS Apple Silicon 的本地纯文本笔记应用。一条持续的 note stream，用 block 划分节奏，打开就能写。"
+    />
+    <meta name="theme-color" content="#eef3f8" />
+    <link rel="icon" type="image/png" href="/icon-preview.png" />
+    <link rel="apple-touch-icon" href="/icon-preview.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&family=Source+Sans+3:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <title>Vibenote — 沉浸式、顺手、AI Native 的纯文本笔记</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <div class="shell header-inner">
+        <a class="brand" href="#top" aria-label="Vibenote">
+          <img
+            class="brand-mark"
+            src="/icon-preview.png"
+            width="36"
+            height="36"
+            alt=""
+            decoding="async"
+          />
+          <span class="brand-name">Vibenote</span>
+        </a>
+
+        <nav class="nav" aria-label="Primary">
+          <a href="#features" data-i18n="nav.features">功能</a>
+          <a href="#feel" data-i18n="nav.feel">手感</a>
+          <a href="#download" data-i18n="nav.download">下载</a>
+          <a
+            href="https://github.com/elliotxx/vibenote"
+            rel="noopener noreferrer"
+            data-i18n="nav.github"
+            >GitHub</a
+          >
+        </nav>
+
+        <div class="header-actions">
+          <button type="button" class="ghost-btn" data-lang-toggle data-i18n="nav.lang">
+            English
+          </button>
+          <button
+            type="button"
+            class="ghost-btn"
+            data-theme-toggle
+            data-i18n="nav.theme.dark"
+            aria-pressed="false"
+          >
+            深色
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top">
+        <div class="hero-atmosphere" aria-hidden="true"></div>
+        <div class="shell hero-grid">
+          <div class="hero-copy">
+            <div class="hero-brand-lockup">
+              <img
+                class="hero-icon"
+                src="/icon-preview.png"
+                width="88"
+                height="88"
+                alt="Vibenote"
+                decoding="async"
+              />
+              <h1 class="hero-name" data-i18n="hero.brand">Vibenote</h1>
+            </div>
+            <p class="hero-tagline" data-i18n="hero.tagline">
+              沉浸式、顺手、AI Native 的纯文本笔记。
+            </p>
+            <p class="hero-value" data-i18n="hero.value">
+              一条 note stream，打开就能写。不先想目录、文件或格式——block 只是节奏，不是整理工作。
+            </p>
+            <div class="cta-row">
+              <a
+                class="btn btn-primary"
+                href="https://github.com/elliotxx/vibenote/releases/latest"
+                rel="noopener noreferrer"
+                data-i18n="hero.cta.primary"
+                >下载 macOS 版</a
+              >
+              <a
+                class="btn btn-secondary"
+                href="https://github.com/elliotxx/vibenote"
+                rel="noopener noreferrer"
+                data-i18n="hero.cta.secondary"
+                >在 GitHub 查看</a
+              >
+            </div>
+            <p class="hero-platform" data-i18n="hero.platform">
+              仅限 macOS Apple Silicon（arm64）
+            </p>
+          </div>
+
+          <div class="hero-visual" aria-hidden="true">
+            <figure class="editor-mock" data-reveal>
+              <div class="mock-chrome">
+                <span class="mock-dots"><i></i><i></i><i></i></span>
+                <span class="mock-title" data-i18n="mock.title">写作台面</span>
+              </div>
+              <div class="mock-body">
+                <article class="mock-block">
+                  <header class="mock-block-meta">
+                    <span class="mock-sep"></span>
+                    <span data-i18n="mock.block1.title">今早想到的</span>
+                  </header>
+                  <p data-i18n="mock.block1.line1">把发布说明改成「先写，再整理」的口吻。</p>
+                  <p data-i18n="mock.block1.line2">安装提示要诚实：未公证，右键打开即可。</p>
+                </article>
+                <article class="mock-block is-alt">
+                  <header class="mock-block-meta">
+                    <span class="mock-sep"></span>
+                    <span data-i18n="mock.block2.title">片段</span>
+                    <span class="mock-lang" data-i18n="mock.lang">纯文本</span>
+                  </header>
+                  <pre><code><span data-i18n="mock.block2.line1">shasum -a 256 -c SHA256SUMS</span>
+<span data-i18n="mock.block2.line2">open Vibenote.app</span></code></pre>
+                </article>
+                <article class="mock-block">
+                  <header class="mock-block-meta">
+                    <span class="mock-sep"></span>
+                    <span data-i18n="mock.block3.title">备忘</span>
+                  </header>
+                  <p data-i18n="mock.block3.line1">AI 可以建议，但不重写我的原文。</p>
+                  <p class="mock-caret-line"><span class="mock-caret"></span></p>
+                </article>
+              </div>
+              <footer class="mock-status">
+                <span data-i18n="mock.status">已自动保存 · stream.txt</span>
+                <span class="mock-spark" title="AI"></span>
+              </footer>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="section features" id="features">
+        <div class="shell">
+          <header class="section-head" data-reveal>
+            <p class="kicker" data-i18n="features.kicker">功能</p>
+            <h2 data-i18n="features.title">少一点界面，多一点书写。</h2>
+            <p class="section-lead" data-i18n="features.lead">
+              设计目标是安静、精确、就绪——足够用心，但不会打断记录。
+            </p>
+          </header>
+
+          <ul class="feature-list">
+            <li data-reveal>
+              <h3 data-i18n="features.immersive.title">沉浸式记录</h3>
+              <p data-i18n="features.immersive.body">
+                没有侧边栏目录树、没有 tab、没有多 buffer 切换。打开就是唯一的 note stream。
+              </p>
+            </li>
+            <li data-reveal>
+              <h3 data-i18n="features.blocks.title">Block 是节奏</h3>
+              <p data-i18n="features.blocks.body">
+                用边界分隔想法与片段，而不是把内容塞进文件夹。跳转、拆分、删除都围绕书写节奏。
+              </p>
+            </li>
+            <li data-reveal>
+              <h3 data-i18n="features.plain.title">纯文本优先</h3>
+              <p data-i18n="features.plain.body">
+                内容保存在本地 stream.txt：可读、可移植、容易备份，长期仍然是你的文字。
+              </p>
+            </li>
+            <li data-reveal>
+              <h3 data-i18n="features.shortcuts.title">快捷键不抢戏</h3>
+              <p data-i18n="features.shortcuts.body">
+                新增、拆分、选择、跳转——快捷键服务于输入，而不是把应用变成第二套 IDE。
+              </p>
+            </li>
+            <li data-reveal>
+              <h3 data-i18n="features.ai.title">AI 辅助，不改写原文</h3>
+              <p data-i18n="features.ai.body">
+                围绕 block 边界提供非破坏性协助。AI 是旁观者，不是接管整理的编辑器。
+              </p>
+            </li>
+            <li data-reveal>
+              <h3 data-i18n="features.local.title">本地，可选 Git 备份</h3>
+              <p data-i18n="features.local.body">
+                数据留在本机。需要时开启单向 Git 快照，备份内部笔记与引用图片。
+              </p>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="section feel" id="feel">
+        <div class="shell">
+          <header class="section-head" data-reveal>
+            <p class="kicker" data-i18n="feel.kicker">手感</p>
+            <h2 data-i18n="feel.title">打开 → 书写 → 自动保存</h2>
+            <p class="section-lead" data-i18n="feel.lead">
+              成功的标准很简单：进入写作台面，可靠地保存，block 边界刚好够导航。
+            </p>
+          </header>
+
+          <ol class="feel-steps">
+            <li data-reveal>
+              <span class="step-index">01</span>
+              <div>
+                <h3 data-i18n="feel.step1.title">打开</h3>
+                <p data-i18n="feel.step1.body">
+                  没有欢迎向导，没有先建文件夹。窗口就绪，光标已在书写位置。
+                </p>
+              </div>
+            </li>
+            <li data-reveal>
+              <span class="step-index">02</span>
+              <div>
+                <h3 data-i18n="feel.step2.title">书写</h3>
+                <p data-i18n="feel.step2.body">
+                  想法、日志、代码片段直接落入同一条流。需要时再按 block 切开。
+                </p>
+              </div>
+            </li>
+            <li data-reveal>
+              <span class="step-index">03</span>
+              <div>
+                <h3 data-i18n="feel.step3.title">自动保存</h3>
+                <p data-i18n="feel.step3.body">
+                  边写边存；退出前同步落盘。系统状态可见，但不会抢走注意力。
+                </p>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="section download" id="download">
+        <div class="shell download-panel" data-reveal>
+          <header class="section-head">
+            <p class="kicker" data-i18n="download.kicker">下载</p>
+            <h2 data-i18n="download.title">下载 Vibenote</h2>
+            <p class="section-lead" data-i18n="download.lead">
+              最新版本提供 DMG 与 SHA256SUMS。当前仅支持 macOS Apple Silicon。
+            </p>
+          </header>
+
+          <div class="download-actions">
+            <a
+              class="btn btn-primary"
+              href="https://github.com/elliotxx/vibenote/releases/latest"
+              rel="noopener noreferrer"
+              data-i18n="download.cta"
+              >获取最新发布</a
+            >
+            <p class="download-sums">
+              <a
+                href="https://github.com/elliotxx/vibenote/releases/latest"
+                rel="noopener noreferrer"
+                data-i18n="download.sums"
+                >同时下载 SHA256SUMS 并校验</a
+              >
+            </p>
+          </div>
+
+          <aside class="download-note">
+            <p data-i18n="download.note">
+              当前构建未签名、未公证。若 macOS 拦截首次启动，请在 Finder 中右键 Vibenote.app →
+              打开，并确认对话框。
+            </p>
+            <p>
+              <strong data-i18n="download.tip">安装提示</strong>
+              —
+              <span data-i18n="download.tip.body"
+                >打开 DMG，将应用拖入「应用程序」。校验：shasum -a 256 -c SHA256SUMS</span
+              >
+            </p>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-inner">
+        <div class="footer-brand">
+          <img src="/icon-preview.png" width="28" height="28" alt="" decoding="async" />
+          <span>Vibenote</span>
+        </div>
+        <nav class="footer-links" aria-label="Footer">
+          <a
+            href="https://github.com/elliotxx/vibenote/blob/main/docs/guides/using-vibenote.zh-CN.md"
+            rel="noopener noreferrer"
+            data-docs-link
+            data-i18n="footer.docs"
+            >使用指南</a
+          >
+          <a
+            href="https://github.com/elliotxx/vibenote/blob/main/PRODUCT.md"
+            rel="noopener noreferrer"
+            data-i18n="footer.product"
+            >产品说明</a
+          >
+          <a
+            href="https://github.com/elliotxx/vibenote"
+            rel="noopener noreferrer"
+            data-i18n="footer.github"
+            >GitHub</a
+          >
+          <a
+            href="https://github.com/elliotxx/vibenote/releases/latest"
+            rel="noopener noreferrer"
+            data-i18n="footer.releases"
+            >发布页</a
+          >
+        </nav>
+        <p class="footer-copy">
+          <span data-i18n="footer.copy">© elliotxx. 本地纯文本笔记。</span>
+          <span data-i18n="footer.site">官网源码位于仓库 website/ 目录。</span>
+        </p>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

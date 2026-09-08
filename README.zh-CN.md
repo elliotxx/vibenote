@@ -83,6 +83,7 @@ Vibenote 当前只支持 macOS arm64。为了保持简单，首发版本不包�
 
 ## 文档
 
+- [官网落地页](website/README.md)：静态营销站源码位于 `website/`。
 - [使用 Vibenote](docs/guides/using-vibenote.zh-CN.md)：block、快捷键、数据位置和卸载方法。
 - [Git 快照备份](docs/guides/git-auto-backup.zh-CN.md)：配置、存储行为、仓库安全边界和恢复方法。
 - [Agent CLI](docs/guides/agent-cli.zh-CN.md)：安装、命令发现和写入保护。
