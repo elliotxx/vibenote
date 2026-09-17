@@ -22,7 +22,7 @@ export const strings: Record<Lang, Dictionary> = {
     "hero.cta.secondary": "在 GitHub 查看",
     "hero.platform": "仅限 macOS Apple Silicon（arm64）",
     "mock.title": "写作台面",
-    "mock.status": "已自动保存 · stream.txt",
+    "mock.status": "已落盘 · stream.txt",
     "mock.lang": "纯文本",
     "mock.block1.title": "今早想到的",
     "mock.block1.line1": "把发布说明改成「先写，再整理」的口吻。",
@@ -54,14 +54,14 @@ export const strings: Record<Lang, Dictionary> = {
     "features.local.body":
       "数据留在本机。需要时开启单向 Git 快照，备份内部笔记与引用图片。",
     "feel.kicker": "手感",
-    "feel.title": "打开 → 书写 → 自动保存",
+    "feel.title": "打开 → 书写 → 不必保存",
     "feel.lead": "成功的标准很简单：进入写作台面，可靠地保存，block 边界刚好够导航。",
     "feel.step1.title": "打开",
     "feel.step1.body": "没有欢迎向导，没有先建文件夹。窗口就绪，光标已在书写位置。",
     "feel.step2.title": "书写",
     "feel.step2.body": "想法、日志、代码片段直接落入同一条流。需要时再按 block 切开。",
-    "feel.step3.title": "自动保存",
-    "feel.step3.body": "边写边存；退出前同步落盘。系统状态可见，但不会抢走注意力。",
+    "feel.step3.title": "不必保存",
+    "feel.step3.body": "不用找 Cmd+S。字已经在盘上，注意力留在书写里。",
     "download.kicker": "下载",
     "download.title": "下载 Vibenote",
     "download.lead": "最新版本提供 DMG 与 SHA256SUMS。当前仅支持 macOS Apple Silicon。",
@@ -98,7 +98,7 @@ export const strings: Record<Lang, Dictionary> = {
     "hero.cta.secondary": "View on GitHub",
     "hero.platform": "macOS Apple Silicon (arm64) only",
     "mock.title": "Writing surface",
-    "mock.status": "Autosaved · stream.txt",
+    "mock.status": "On disk · stream.txt",
     "mock.lang": "Plain text",
     "mock.block1.title": "This morning",
     "mock.block1.line1": "Rewrite the release notes in a write-first voice.",
@@ -131,7 +131,7 @@ export const strings: Record<Lang, Dictionary> = {
     "features.local.body":
       "Data stays on your Mac. Optionally enable one-way Git snapshots for notes and referenced images.",
     "feel.kicker": "How it feels",
-    "feel.title": "Open → write → autosave",
+    "feel.title": "Open → write → no Save",
     "feel.lead":
       "Success is simple: open into a focused surface, save reliably, keep block boundaries just visible enough to navigate.",
     "feel.step1.title": "Open",
@@ -140,9 +140,9 @@ export const strings: Record<Lang, Dictionary> = {
     "feel.step2.title": "Write",
     "feel.step2.body":
       "Thoughts, logs, and snippets land in one stream. Split into blocks when the rhythm asks for it.",
-    "feel.step3.title": "Autosave",
+    "feel.step3.title": "No Save",
     "feel.step3.body":
-      "Save as you type; sync on quit. System state is available without stealing attention.",
+      "No hunting for ⌘S. The words are already on disk — attention stays with the writing.",
     "download.kicker": "Download",
     "download.title": "Get Vibenote",
     "download.lead":
