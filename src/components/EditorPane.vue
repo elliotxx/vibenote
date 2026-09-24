@@ -242,9 +242,7 @@ let cursorSaveTimer: number | null = null
 let aiStatusTimer: number | null = null
 let aiElapsedTimer: number | null = null
 let blockToolbarFrame: number | null = null
-let blockToolbarHideTimer: number | null = null
 const blockToolbarPointerActive = ref(false)
-let blockToolbarScrollActive = false
 let editorScrollElement: HTMLElement | null = null
 let scrollJumpHideTimer: number | null = null
 let scrollJumpFrame: number | null = null
@@ -276,7 +274,8 @@ const SCROLL_JUMP_MIN_VELOCITY = 0.5
 const SCROLL_JUMP_HIDE_DELAY = 1500
 const BLOCK_TOOLBAR_HOT_ZONE_WIDTH = 184
 const BLOCK_TOOLBAR_HOT_ZONE_HEIGHT = 88
-const BLOCK_TOOLBAR_SCROLL_HIDE_DELAY = 1200
+const BLOCK_TOOLBAR_HEIGHT = 38
+const BLOCK_TOOLBAR_GAP = 4
 
 const searchResultLabel = computed(() => {
   if (!searchQuery.value) return '输入关键词'
@@ -359,7 +358,6 @@ onBeforeUnmount(() => {
     aiElapsedTimer = null
   }
   if (blockToolbarFrame) window.cancelAnimationFrame(blockToolbarFrame)
-  if (blockToolbarHideTimer) window.clearTimeout(blockToolbarHideTimer)
   if (scrollJumpHideTimer) window.clearTimeout(scrollJumpHideTimer)
   if (scrollJumpFrame) window.cancelAnimationFrame(scrollJumpFrame)
   stopAiPopoverInteraction()
@@ -2235,7 +2233,7 @@ function updateAiQuickActions(editor: EditorView | null) {
 
 function updateBlockToolbar(editor: EditorView | null) {
   const toolbarFocused = Boolean(document.activeElement?.closest('.block-toolbar'))
-  const shouldReveal = blockToolbarPointerActive.value || blockToolbarScrollActive || blockAiMenuOpen.value || toolbarFocused
+  const shouldReveal = blockToolbarPointerActive.value || blockAiMenuOpen.value || toolbarFocused
   if (
     !editor
     || !editorHost.value
@@ -2246,7 +2244,7 @@ function updateBlockToolbar(editor: EditorView | null) {
     return
   }
 
-  const block = activeBlock(editor.state)
+  const block = blockForToolbar(editor)
   if (!block) {
     blockToolbar.value = { ...blockToolbar.value, visible: false }
     return
@@ -2269,24 +2267,30 @@ function updateBlockToolbar(editor: EditorView | null) {
 
 function onEditorScroll() {
   if (blockAiMenuOpen.value) closeBlockAiMenu()
-  revealBlockToolbarForScroll()
+  hideBlockToolbar()
   updateScrollJump()
   syncAiSuggestionPositions()
   scheduleBlockToolbarUpdate()
 }
 
-function revealBlockToolbarForScroll() {
-  blockToolbarScrollActive = true
-  if (blockToolbarHideTimer) window.clearTimeout(blockToolbarHideTimer)
-  blockToolbarHideTimer = window.setTimeout(() => {
-    blockToolbarScrollActive = false
-    blockToolbarHideTimer = null
-    scheduleBlockToolbarUpdate()
-  }, BLOCK_TOOLBAR_SCROLL_HIDE_DELAY)
+function hideBlockToolbar() {
+  blockToolbarPointerActive.value = false
+  blockAiMenuOpen.value = false
+  blockToolbar.value = { ...blockToolbar.value, visible: false }
+}
+
+function onEditorInteraction(event: Event) {
+  if (event.target instanceof Element && event.target.closest('.cm-editor')) {
+    hideBlockToolbar()
+  }
 }
 
 function onEditorHostMouseMove(event: MouseEvent) {
-  activatePresentedBlockAtY(event.clientY)
+  if (event.buttons !== 0) return
+  // Keep the target while moving up to actions that float over the previous block.
+  if (!blockToolbar.value.visible || !isBlockToolbarRevealArea(event.clientX, event.clientY)) {
+    activatePresentedBlockAtY(event.clientY)
+  }
   setBlockToolbarPointerActive(isBlockToolbarRevealArea(event.clientX, event.clientY))
 }
 
@@ -2317,25 +2321,27 @@ function isBlockToolbarHotZone(clientX: number, clientY: number) {
   const rect = editorHost.value.getBoundingClientRect()
   const block = blockForToolbar(view)
   if (!block) return false
-  const top = rect.top + blockToolbarTop(view, block, rect)
+  const top = rect.top + Math.max(8, blockToolbarAnchorTop(view, block, rect))
   return clientX >= rect.right - BLOCK_TOOLBAR_HOT_ZONE_WIDTH
     && clientX <= rect.right
     && clientY >= top
     && clientY <= Math.min(rect.bottom, top + BLOCK_TOOLBAR_HOT_ZONE_HEIGHT)
 }
 
-function blockToolbarTop(editor: EditorView, block: ScratchBlock, hostRect: DOMRect) {
+function blockToolbarAnchorTop(editor: EditorView, block: ScratchBlock, hostRect: DOMRect) {
   const presentation = editor.dom.querySelector<HTMLElement>(
     `.markdown-preview[data-content-anchor="${block.content.from}"], .block-fold-summary[data-content-anchor="${block.content.from}"]`,
   )
-  if (presentation) {
-    return Math.max(8, presentation.getBoundingClientRect().top - hostRect.top + 4)
-  }
-  const line = editor.state.doc.lineAt(block.content.from)
-  const coords = editor.coordsAtPos(line.from)
-  const stickyTop = 8
-  const blockStartTop = coords ? coords.top - hostRect.top + 4 : stickyTop
-  return Math.max(stickyTop, blockStartTop)
+  const top = presentation
+    ? presentation.getBoundingClientRect().top
+    : editor.documentTop + editor.lineBlockAt(block.content.from).top
+  return top - hostRect.top
+}
+
+function blockToolbarTop(editor: EditorView, block: ScratchBlock, hostRect: DOMRect) {
+  const anchorTop = blockToolbarAnchorTop(editor, block, hostRect)
+  const aboveTop = anchorTop - BLOCK_TOOLBAR_HEIGHT - BLOCK_TOOLBAR_GAP
+  return aboveTop >= 8 ? aboveTop : Math.max(8, anchorTop + BLOCK_TOOLBAR_GAP)
 }
 
 function isBlockToolbarRevealArea(clientX: number, clientY: number) {
@@ -2344,10 +2350,15 @@ function isBlockToolbarRevealArea(clientX: number, clientY: number) {
   const toolbar = document.querySelector<HTMLElement>('.block-toolbar')
   if (!toolbar) return false
   const rect = toolbar.getBoundingClientRect()
+  const hostRect = editorHost.value?.getBoundingClientRect()
+  const block = view && blockForToolbar(view)
+  const bridgeBottom = view && block && hostRect
+    ? hostRect.top + blockToolbarAnchorTop(view, block, hostRect) + BLOCK_TOOLBAR_GAP
+    : rect.bottom
   return clientX >= rect.left
     && clientX <= rect.right
     && clientY >= rect.top
-    && clientY <= rect.bottom
+    && clientY <= Math.max(rect.bottom, bridgeBottom)
 }
 
 function setBlockToolbarPointerActive(active: boolean) {
@@ -3450,6 +3461,9 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
       class="editor-host"
       :class="{ 'dark-theme': store.settings.theme === 'dark' }"
       @mousedown.self="focusEditorContent"
+      @keydown.capture="onEditorInteraction"
+      @beforeinput.capture="onEditorInteraction"
+      @pointerdown.capture="onEditorInteraction"
       @mousemove.capture="onEditorHostMouseMove"
       @mouseleave="onEditorHostMouseLeave"
     >

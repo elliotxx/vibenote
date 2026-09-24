@@ -109,7 +109,7 @@ async function hoverEditorTopRight(page: Page) {
   if (!box) throw new Error('Editor host not found')
   const point = { x: box.x + box.width - 24, y: box.y + 24 }
   const isInsideHost = await page.evaluate(({ x, y }) => {
-    return Boolean(document.elementFromPoint(x, y)?.closest('.editor-host'))
+    return Boolean(document.elementFromPoint(x, y)?.closest('.editor-host, .block-toolbar'))
   }, point)
   if (!isInsideHost) throw new Error(`Top-right point is outside editor host: ${JSON.stringify(point)}`)
   await page.mouse.move(point.x, point.y)
@@ -812,7 +812,7 @@ test.describe('editor text selection shortcuts', () => {
     await expect(page.locator('.cm-content')).toContainText('Drop plain text notes here. continuously typing')
   })
 
-  test('reveals block actions only while scrolling or hovering the top-right hot zone', async ({ page }) => {
+  test('reveals block actions only when hovering the top-right hot zone', async ({ page }) => {
     await loadFixture(page)
 
     const toolbar = page.locator('.block-toolbar')
@@ -845,11 +845,34 @@ test.describe('editor text selection shortcuts', () => {
       scroller.scrollTop = 40
       scroller.dispatchEvent(new Event('scroll'))
     })
-    await expect(toolbar).toBeVisible()
-    await expect(toolbar).toHaveCount(0, { timeout: 2_000 })
+    await page.waitForTimeout(200)
+    await expect(toolbar).toHaveCount(0)
   })
 
-  test('reveals block actions from the active block top-right corner', async ({ page }) => {
+  test('hides block actions when editing resumes with the pointer still in the hot zone', async ({ page }) => {
+    await loadFixture(page)
+    await clickLine(page, '# Stream')
+    await hoverEditorTopRight(page)
+    const toolbar = page.locator('.block-toolbar')
+    await expect(toolbar).toBeVisible()
+
+    await page.keyboard.type('typing')
+    await expect(toolbar).toHaveCount(0)
+    await page.waitForTimeout(200)
+    await expect(toolbar).toHaveCount(0)
+
+    await hoverEditorTopRight(page)
+    await expect(toolbar).toBeVisible()
+    await page.keyboard.insertText('输入')
+    await expect(toolbar).toHaveCount(0)
+
+    await hoverEditorTopRight(page)
+    await expect(toolbar).toBeVisible()
+    await clickLine(page, 'Drop plain text notes here.')
+    await expect(toolbar).toHaveCount(0)
+  })
+
+  test('places block actions above the block and keeps them reachable across the gap', async ({ page }) => {
     await loadFixture(page)
     await clickLine(page, '2 + 2 * 10')
 
@@ -859,23 +882,33 @@ test.describe('editor text selection shortcuts', () => {
     await hoverBlockTopRight(page, '2 + 2 * 10')
     await expect(toolbar).toBeVisible()
 
-    const [toolbarBox, hostBox] = await Promise.all([
+    const [toolbarBox, hostBox, blockBox] = await Promise.all([
       toolbar.boundingBox(),
       page.locator('.editor-host').boundingBox(),
+      page.locator('.cm-line').filter({ hasText: '2 + 2 * 10' }).boundingBox(),
     ])
     expect(toolbarBox).not.toBeNull()
     expect(hostBox).not.toBeNull()
-    expect(toolbarBox!.y).toBeGreaterThan(hostBox!.y + 88)
+    expect(toolbarBox!.y).toBeGreaterThanOrEqual(hostBox!.y)
+    expect(toolbarBox!.y + toolbarBox!.height).toBeLessThanOrEqual(blockBox!.y - 4)
 
+    // Cross the gap diagonally, including its portion outside the original hot zone.
+    await page.mouse.move(toolbarBox!.x + 4, blockBox!.y + 2)
+    await expect(toolbar).toBeVisible()
     await page.mouse.move(
-      toolbarBox!.x + toolbarBox!.width / 2,
+      toolbarBox!.x + 4,
       toolbarBox!.y + toolbarBox!.height / 2,
+      { steps: 12 },
     )
     await page.waitForTimeout(300)
     await expect(toolbar).toBeVisible()
   })
 
-  test('keeps block actions floating above long wrapped text', async ({ page }) => {
+  for (const fontSize of [13, 48]) test(`keeps block text compact when revealing actions at ${fontSize}px`, async ({ page }) => {
+    await page.setViewportSize({ width: 600, height: 800 })
+    await page.addInitScript(fontSize => {
+      localStorage.setItem('vibenote:settings', JSON.stringify({ theme: 'light', fontSize }))
+    }, fontSize)
     const created = '2026-07-01T10:38:41.565Z'
     const content = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
       `---block:markdown;auto=1;created=${created}`,
@@ -885,6 +918,7 @@ test.describe('editor text selection shortcuts', () => {
 
     await loadFixture(page, content)
     await clickLine(page, '本周目标')
+    const lineBefore = await page.locator('.cm-line').filter({ hasText: '本周目标' }).boundingBox()
     await hoverEditorTopRight(page)
 
     const layout = await page.evaluate(() => {
@@ -895,6 +929,7 @@ test.describe('editor text selection shortcuts', () => {
       return {
         lineRight: line.getBoundingClientRect().right,
         linePaddingRight: Number.parseFloat(getComputedStyle(line).paddingRight || '0'),
+        linePaddingTop: Number.parseFloat(getComputedStyle(line).paddingTop || '0'),
         toolbarPosition: getComputedStyle(document.querySelector<HTMLElement>('.block-toolbar')!).position,
         toolbarRight: toolbar.right,
       }
@@ -904,9 +939,14 @@ test.describe('editor text selection shortcuts', () => {
     expect(layout!.linePaddingRight).toBeLessThanOrEqual(20)
     expect(layout!.toolbarPosition).toBe('absolute')
     expect(layout!.lineRight).toBeGreaterThan(layout!.toolbarRight)
+    expect(layout!.linePaddingTop).toBe(4)
+    expect(await page.locator('.cm-line').filter({ hasText: '本周目标' }).boundingBox()).toEqual(lineBefore)
+    const toolbarBox = await page.locator('.block-toolbar').boundingBox()
+    const hostBox = await page.locator('.editor-host').boundingBox()
+    expect(toolbarBox!.y).toBeGreaterThanOrEqual(hostBox!.y)
   })
 
-  test('keeps block actions pinned while scrolling inside a long focused block', async ({ page }) => {
+  test('hides block actions on scroll until the user hovers again', async ({ page }) => {
     const created = '2026-07-01T10:38:41.565Z'
     const lines = Array.from({ length: 90 }, (_, index) => `line ${String(index + 1).padStart(2, '0')} long block content`)
     const content = `${JSON.stringify({ formatVersion: '1.0.0', name: 'Stream' })}\n${[
@@ -920,7 +960,8 @@ test.describe('editor text selection shortcuts', () => {
     await clickLine(page, 'line 01')
 
     const toolbar = page.locator('.block-toolbar')
-    await expect(toolbar).toHaveCount(0)
+    await hoverEditorTopRight(page)
+    await expect(toolbar).toBeVisible()
 
     await page.evaluate(() => {
       const scroller = document.querySelector<HTMLElement>('.cm-scroller')
@@ -929,6 +970,9 @@ test.describe('editor text selection shortcuts', () => {
       scroller.dispatchEvent(new Event('scroll'))
     })
 
+    await page.waitForTimeout(200)
+    await expect(toolbar).toHaveCount(0)
+    await hoverEditorTopRight(page)
     await expect(toolbar).toBeVisible()
     await expect.poll(() => page.evaluate(() => {
       const toolbarRect = document.querySelector<HTMLElement>('.block-toolbar')?.getBoundingClientRect()

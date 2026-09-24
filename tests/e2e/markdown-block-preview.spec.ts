@@ -94,9 +94,18 @@ test.describe("markdown block session preview", () => {
 
     await clickLine(page, second);
     await revealToolbar(page, second);
+    const toolbarBox = await page.locator(".block-toolbar").boundingBox();
+    const blockBox = await page.locator(".cm-line").filter({ hasText: second }).boundingBox();
+    expect(toolbarBox!.y + toolbarBox!.height).toBeLessThanOrEqual(blockBox!.y - 4);
+    await page.mouse.move(toolbarBox!.x + 4, blockBox!.y + 2);
+    await page.mouse.move(toolbarBox!.x + 4, toolbarBox!.y + toolbarBox!.height / 2, { steps: 12 });
+    await expect(page.locator(".block-toolbar")).toBeVisible();
     await page.getByRole("button", { name: "复制此块", exact: true }).click();
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(second);
     await page.getByRole("button", { name: "折叠此块", exact: true }).click();
+    const foldedToolbar = await page.locator(".block-toolbar").boundingBox();
+    const foldedBlock = await page.locator(".block-fold-summary").boundingBox();
+    expect(foldedToolbar!.y + foldedToolbar!.height).toBeLessThanOrEqual(foldedBlock!.y - 4);
     await page.getByRole("button", { name: "复制此块", exact: true }).click();
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(second);
   });
