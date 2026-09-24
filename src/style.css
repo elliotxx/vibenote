@@ -1234,6 +1234,18 @@ select:focus {
   cursor: pointer;
 }
 
+.block-markdown-modes {
+  display: inline-flex;
+  gap: 2px;
+  border-radius: 5px;
+  background: var(--surface-soft);
+}
+
+.block-markdown-modes .block-action-button[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+
 .block-action-button[data-tooltip]::after {
   position: absolute;
   right: 0;

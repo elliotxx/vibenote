@@ -12,7 +12,9 @@ import {
   foldedBlockField,
   isBlockFolded,
   isMarkdownBlockPreviewed,
+  isMarkdownSource,
   markdownBlockPreviewField,
+  markdownSourceField,
 } from './blocks'
 
 type StrongRange = {
@@ -42,7 +44,8 @@ class MarkdownStrongPreviewPlugin {
     const presentationChanged =
       update.startState.field(blockField) !== update.state.field(blockField) ||
       update.startState.field(foldedBlockField) !== update.state.field(foldedBlockField) ||
-      update.startState.field(markdownBlockPreviewField) !== update.state.field(markdownBlockPreviewField)
+      update.startState.field(markdownBlockPreviewField) !== update.state.field(markdownBlockPreviewField) ||
+      update.startState.field(markdownSourceField) !== update.state.field(markdownSourceField)
 
     if (update.docChanged || presentationChanged) {
       this.ranges = parseStrongRanges(update.view)
@@ -70,7 +73,7 @@ function parseStrongRanges(view: EditorView): StrongRange[] {
   const ranges: StrongRange[] = []
 
   for (const block of view.state.field(blockField)) {
-    if (block.language !== 'markdown' || isMarkdownBlockPreviewed(view.state, block) || isBlockFolded(view.state, block)) continue
+    if (block.language !== 'markdown' || isMarkdownBlockPreviewed(view.state, block) || isMarkdownSource(view.state, block) || isBlockFolded(view.state, block)) continue
 
     const content = view.state.doc.sliceString(
       block.content.from,

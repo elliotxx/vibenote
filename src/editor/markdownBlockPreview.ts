@@ -90,6 +90,14 @@ function taskListPlugin(markdown: InstanceType<typeof MarkdownIt>) {
 }
 
 const markdown = new MarkdownIt({ html: false, linkify: false });
+const normalizeLink = markdown.normalizeLink.bind(markdown);
+const validateLink = markdown.validateLink.bind(markdown);
+// Local image paths are stored as filesystem text. Convert them before the
+// parser encodes URLs so spaces, Unicode, and literal percent signs survive.
+markdown.normalizeLink = (url) =>
+  url.startsWith("/") ? imagePreviewSource(url) : normalizeLink(url);
+markdown.validateLink = (url) =>
+  url.startsWith("file://") || validateLink(url);
 // markdown-it 14+ removed this legacy alias while multimd-table still calls it.
 (
   markdown.utils as typeof markdown.utils & { assign: typeof Object.assign }

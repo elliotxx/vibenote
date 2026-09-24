@@ -7,7 +7,7 @@ export function imagePreviewSource(url: string) {
     return url;
   }
   if (url.startsWith("/")) {
-    return `file://${encodeURI(url)}`;
+    return `file://${url.split("/").map(encodeURIComponent).join("/")}`;
   }
   return "";
 }

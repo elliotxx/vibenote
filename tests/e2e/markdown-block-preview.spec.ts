@@ -69,7 +69,7 @@ async function revealToolbar(page: Page, lineText?: string) {
 
 async function renderCurrentBlock(page: Page, lineText?: string) {
   await revealToolbar(page, lineText);
-  await page.getByRole("button", { name: "渲染此块" }).click();
+  await page.getByRole("button", { name: "预览模式", exact: true }).click();
   await expect(page.locator(".markdown-preview").last()).toBeVisible();
 }
 
@@ -138,9 +138,9 @@ test.describe("markdown block session preview", () => {
     await revealToolbar(page, "# Title");
     await expect(
       page.locator(".block-toolbar .block-action-button"),
-    ).toHaveCount(7);
-    await expect(page.getByRole("button", { name: "渲染此块" })).toHaveCount(1);
-    await page.getByRole("button", { name: "渲染此块" }).click();
+    ).toHaveCount(9);
+    await expect(page.getByRole("button", { name: "预览模式", exact: true })).toHaveCount(1);
+    await page.getByRole("button", { name: "预览模式", exact: true }).click();
 
     await expect(
       page.locator(".cm-line").filter({ hasText: "# Title" }),
@@ -153,7 +153,7 @@ test.describe("markdown block session preview", () => {
     await revealToolbar(page);
     await page
       .locator(".block-toolbar")
-      .getByRole("button", { name: "回到源码" })
+      .getByRole("button", { name: "源码模式", exact: true })
       .click();
     await expect(page.locator(".markdown-preview")).toHaveCount(0);
     await expect(
@@ -165,7 +165,7 @@ test.describe("markdown block session preview", () => {
     await expect(
       page.locator(".block-toolbar .block-action-button"),
     ).toHaveCount(6);
-    await expect(page.getByRole("button", { name: "渲染此块" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "预览模式", exact: true })).toHaveCount(0);
 
     await clickLine(page, "# Title");
     await renderCurrentBlock(page, "# Title");
@@ -181,7 +181,7 @@ test.describe("markdown block session preview", () => {
     ]);
     await loadFixture(page, fixture);
     await revealToolbar(page);
-    await page.getByRole("button", { name: "渲染此块" }).click();
+    await page.getByRole("button", { name: "预览模式", exact: true }).click();
     await expect(page.locator(".markdown-preview")).toBeVisible();
     await expect.poll(() => savedContent(page)).toBe(fixture);
   });
@@ -207,7 +207,7 @@ test.describe("markdown block session preview", () => {
     await renderCurrentBlock(page, "# One");
     await page.getByLabel("Current block language").selectOption("json");
     await expect(page.locator(".markdown-preview")).toHaveCount(1);
-    await expect(page.getByRole("button", { name: "渲染此块" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "预览模式", exact: true })).toHaveCount(0);
 
     await page.locator(".markdown-preview").dblclick();
     await renderCurrentBlock(page, "# Two");
@@ -429,13 +429,13 @@ test.describe("markdown block session preview", () => {
     await expect(preview).toHaveClass(/block-odd/);
     await expect(preview).toHaveClass(/block-start/);
     await expect(
-      preview.getByRole("button", { name: "回到源码" }),
+      preview.getByRole("button", { name: "源码模式", exact: true }),
     ).toHaveCount(0);
 
     await revealToolbar(page);
     await page
       .locator(".block-toolbar")
-      .getByRole("button", { name: "回到源码" })
+      .getByRole("button", { name: "源码模式", exact: true })
       .click();
     await expect(page.locator(".markdown-preview")).toHaveCount(0);
     await expect(
@@ -480,7 +480,7 @@ test.describe("markdown block session preview", () => {
     await revealToolbar(page);
     await page
       .locator(".block-toolbar")
-      .getByRole("button", { name: "回到源码" })
+      .getByRole("button", { name: "源码模式", exact: true })
       .click();
     await expect(page.locator(".markdown-preview")).toHaveCount(0);
     await expect(page.locator(".status-coordinate")).toHaveText("2:5");
@@ -526,7 +526,7 @@ test.describe("markdown block session preview", () => {
     const toolbar = page.locator(".block-toolbar");
     await expect(toolbar).toBeVisible();
 
-    await page.getByRole("button", { name: "渲染此块" }).click();
+    await page.getByRole("button", { name: "预览模式", exact: true }).click();
     const preview = page.locator(".markdown-preview");
     await expect(preview).toBeVisible();
     await expect

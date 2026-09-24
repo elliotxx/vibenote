@@ -1,4 +1,4 @@
-import { Annotation, EditorState, RangeSetBuilder, StateEffect, StateField, Transaction } from '@codemirror/state'
+import { Annotation, EditorState, MapMode, RangeSetBuilder, StateEffect, StateField, Transaction } from '@codemirror/state'
 import { Decoration, EditorView, GutterMarker, ViewPlugin, gutterLineClass } from '@codemirror/view'
 import { blockDelimiter } from '../common/noteFormat'
 import { detectLanguage } from '../common/languages'
@@ -28,6 +28,12 @@ export type MarkdownBlockPreviewRequest = {
 }
 
 export const setMarkdownBlockPreview = StateEffect.define<MarkdownBlockPreviewRequest>({
+  map(value, changes) {
+    return { ...value, anchor: changes.mapPos(value.anchor, 1) }
+  },
+})
+export type MarkdownBlockMode = 'source' | 'live' | 'preview'
+export const setMarkdownSource = StateEffect.define<{ anchor: number, enabled: boolean }>({
   map(value, changes) {
     return { ...value, anchor: changes.mapPos(value.anchor, 1) }
   },
@@ -197,6 +203,42 @@ export const markdownBlockPreviewField = StateField.define<readonly MarkdownBloc
 export function isMarkdownBlockPreviewed(state: any, block: ScratchBlock) {
   return state.field(markdownBlockPreviewField, false)
     ?.some((entry: MarkdownBlockPreviewState) => entry.anchor === block.content.from) ?? false
+}
+
+// Like block preview, source mode is local to this editor session. No entry means
+// live preview, which remains the default. Remember the editing mode during preview.
+export const markdownSourceField = StateField.define<readonly number[]>({
+  create: () => [],
+  update(anchors, transaction) {
+    const effects = transaction.effects.filter(effect => effect.is(setMarkdownSource))
+    if (!transaction.docChanged && effects.length === 0) return anchors
+    const starts = new Set(transaction.state.field(blockField)
+      .filter(block => block.language === 'markdown').map(block => block.content.from))
+    const next = new Set<number>()
+    for (const anchor of anchors) {
+      const oldBlock = transaction.startState.field(blockField).find(block => block.content.from === anchor)
+      if (!oldBlock) continue
+      // Deleting a block must not transfer its mode to the following block.
+      if (transaction.changes.mapPos(oldBlock.delimiter.from + 1, -1, MapMode.TrackDel) === null) continue
+      const mapped = [transaction.changes.mapPos(anchor, -1), transaction.changes.mapPos(anchor, 1)]
+        .find(position => starts.has(position))
+      if (mapped !== undefined) next.add(mapped)
+    }
+    for (const { value } of effects) {
+      if (value.enabled && starts.has(value.anchor)) next.add(value.anchor)
+      else next.delete(value.anchor)
+    }
+    return [...next].sort((left, right) => left - right)
+  },
+})
+
+export function isMarkdownSource(state: EditorState, block: ScratchBlock) {
+  return block.language === 'markdown' && (state.field(markdownSourceField, false)?.includes(block.content.from) ?? false)
+}
+
+export function markdownBlockMode(state: EditorState, block: ScratchBlock): MarkdownBlockMode {
+  if (isMarkdownBlockPreviewed(state, block)) return 'preview'
+  return isMarkdownSource(state, block) ? 'source' : 'live'
 }
 
 export const blockDecorations = StateField.define({

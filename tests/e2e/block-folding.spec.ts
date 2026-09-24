@@ -136,7 +136,7 @@ test.describe('block folding', () => {
     const [hostBox, lineBox] = await Promise.all([host.boundingBox(), line.boundingBox()])
     if (!hostBox || !lineBox) throw new Error('Unable to reveal toolbar')
     await page.mouse.move(hostBox.x + hostBox.width - 24, lineBox.y + 10)
-    await page.getByRole('button', { name: '渲染此块' }).click()
+    await page.getByRole('button', { name: '预览模式', exact: true }).click()
     await expect(page.locator('.markdown-preview')).toBeVisible()
     await expect(page.locator('.block-fold-toggle')).toHaveCount(0)
 

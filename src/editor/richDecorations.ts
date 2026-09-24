@@ -6,7 +6,9 @@ import {
   foldedBlockField,
   isBlockFolded,
   isMarkdownBlockPreviewed,
+  isMarkdownSource,
   markdownBlockPreviewField,
+  markdownSourceField,
   type ScratchBlock,
 } from './blocks'
 import { imagePreviewSource } from './imagePreview'
@@ -195,7 +197,8 @@ export const richDecorations = ViewPlugin.fromClass(
 function presentationStateChanged(update: any) {
   return update.startState.field(blockField) !== update.state.field(blockField) ||
     update.startState.field(foldedBlockField) !== update.state.field(foldedBlockField) ||
-    update.startState.field(markdownBlockPreviewField) !== update.state.field(markdownBlockPreviewField)
+    update.startState.field(markdownBlockPreviewField) !== update.state.field(markdownBlockPreviewField) ||
+    update.startState.field(markdownSourceField) !== update.state.field(markdownSourceField)
 }
 
 function hasActiveImageLineEffect(update: any) {
@@ -209,7 +212,7 @@ function buildRichDecorations(view: EditorView) {
   const { state } = view
   const blocks = state.field(blockField)
   for (const block of blocks) {
-    if (isMarkdownBlockPreviewed(state, block) || isBlockFolded(state, block)) continue
+    if (isMarkdownBlockPreviewed(state, block) || isMarkdownSource(state, block) || isBlockFolded(state, block)) continue
     addSyntaxMarks(decorations, state, block)
     addPriorityMarks(decorations, state, block)
     addMentionMarks(decorations, state, block)

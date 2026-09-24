@@ -25,9 +25,9 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  Code2,
   Copy,
   Eye,
-  EyeOff,
   FilePlus2,
   Keyboard,
   ListTodo,
@@ -61,6 +61,9 @@ import {
   internalBlockEdit,
   isBlockFolded,
   isMarkdownBlockPreviewed,
+  isMarkdownSource,
+  markdownBlockMode,
+  markdownSourceField,
   markdownBlockPreviewChangeProtection,
   markdownBlockPreviewField,
   protectDelimiters,
@@ -68,8 +71,10 @@ import {
   replaceBlockLanguage,
   setBlockFold,
   setMarkdownBlockPreview,
+  setMarkdownSource,
   splitCurrentBlock,
   type ScratchBlock,
+  type MarkdownBlockMode,
 } from '../editor/blocks'
 import {
   blockFoldDecorations,
@@ -102,7 +107,12 @@ const editorHost = ref<HTMLElement | null>(null)
 const editorMount = ref<HTMLElement | null>(null)
 const languageSelect = ref<HTMLSelectElement | null>(null)
 const currentBlock = ref<ScratchBlock | null>(null)
-const currentBlockPreviewed = ref(false)
+const currentMarkdownMode = ref<MarkdownBlockMode>('live')
+const markdownModes = [
+  { mode: 'source', label: '源码模式', icon: Code2 },
+  { mode: 'live', label: '半预览模式', icon: Pencil },
+  { mode: 'preview', label: '预览模式', icon: Eye },
+] as const
 const currentBlockFolded = ref(false)
 const cursorLabel = ref('1:1')
 const searchInput = ref<HTMLInputElement | null>(null)
@@ -1021,6 +1031,7 @@ function mountEditor() {
       editorScrollTail,
       blockField,
       markdownBlockPreviewField,
+      markdownSourceField,
       foldedBlockField,
       searchDecorationField,
       blockDecorations,
@@ -1102,7 +1113,7 @@ function mountEditor() {
       }),
       EditorView.updateListener.of(update => {
         const previewChanged = update.transactions.some(transaction =>
-          transaction.effects.some(effect => effect.is(setMarkdownBlockPreview)),
+          transaction.effects.some(effect => effect.is(setMarkdownBlockPreview) || effect.is(setMarkdownSource)),
         )
         const foldChanged = update.transactions.some(transaction =>
           transaction.effects.some(effect => effect.is(setBlockFold) || effect.is(replaceBlockFolds)),
@@ -1998,6 +2009,7 @@ function visibleContentLines(editor: EditorView) {
 }
 
 function imageLinesInBlock(editor: EditorView, block: ScratchBlock) {
+  if (isMarkdownSource(editor.state, block)) return []
   const content = editor.state.doc.sliceString(block.content.from, block.content.to)
   const imagePattern = /!\[[^\]]*]\((<([^>]+)>|([^)]+))\)/g
   const lines: Array<{ from: number, to: number, edit: boolean, cursor?: 'left' | 'right' }> = []
@@ -2148,7 +2160,7 @@ function normalizeSelectionToBlockContent(editor: EditorView) {
 function updateStatus(editor: EditorView) {
   const block = activeBlock(editor.state)
   currentBlock.value = block || null
-  currentBlockPreviewed.value = Boolean(block && isMarkdownBlockPreviewed(editor.state, block))
+  currentMarkdownMode.value = block ? markdownBlockMode(editor.state, block) : 'live'
   currentBlockFolded.value = Boolean(block && isBlockFolded(editor.state, block))
   const line = editor.state.doc.lineAt(editor.state.selection.main.head)
   const blockStartLine = block ? contentStartLineNumber(editor.state, block) : 1
@@ -2306,7 +2318,7 @@ function activatePresentedBlockAtY(clientY: number) {
   const block = view.state.field(blockField).find(item => item.content.from === anchor)
   if (!block) return
   currentBlock.value = block
-  currentBlockPreviewed.value = isMarkdownBlockPreviewed(view.state, block)
+  currentMarkdownMode.value = markdownBlockMode(view.state, block)
   currentBlockFolded.value = isBlockFolded(view.state, block)
 }
 
@@ -2674,10 +2686,11 @@ function toggleCurrentBlockFoldFromKeymap(editor: EditorView) {
   return toggled
 }
 
-function toggleCurrentMarkdownPreview() {
+function setCurrentMarkdownMode(mode: MarkdownBlockMode) {
   if (!view || currentBlock.value?.language !== 'markdown') return
   const block = currentBlock.value
-  const enabled = !isMarkdownBlockPreviewed(view.state, block)
+  if (markdownBlockMode(view.state, block) === mode && !isBlockFolded(view.state, block)) return
+  const enabled = mode === 'preview'
   const selection = view.state.selection.main
   const selectionBelongsToBlock = selection.head >= block.content.from
     && selection.head <= block.content.to
@@ -2697,7 +2710,10 @@ function toggleCurrentMarkdownPreview() {
         enabled,
         visualOffset,
       }),
+      ...(!enabled ? [setMarkdownSource.of({ anchor: block.content.from, enabled: mode === 'source' })] : []),
+      setActiveImageLine.of(null),
     ],
+    ...(!selectionBelongsToBlock ? { selection: EditorSelection.cursor(block.content.from) } : {}),
   })
   if (visualAnchorTop !== undefined) {
     const editor = view
@@ -2715,6 +2731,7 @@ function toggleCurrentMarkdownPreview() {
       window.requestAnimationFrame(alignPreviewToVisualAnchor)
     })
   }
+  if (!enabled) view.focus()
   updateStatus(view)
   scheduleBlockToolbarUpdate(view)
 }
@@ -3954,18 +3971,26 @@ function onGotoLine(event: CustomEvent<SearchResult>) {
           <ChevronDown v-if="currentBlockFolded" :size="14" />
           <ChevronRight v-else :size="14" />
         </button>
-        <button
+        <div
           v-if="currentBlock?.language === 'markdown'"
-          class="block-action-button"
-          :title="currentBlockPreviewed ? '回到源码' : '渲染此块'"
-          :aria-label="currentBlockPreviewed ? '回到源码' : '渲染此块'"
-          :data-tooltip="currentBlockPreviewed ? '回到源码' : '渲染此块'"
-          @mousedown.prevent
-          @click="toggleCurrentMarkdownPreview"
+          class="block-markdown-modes"
+          role="group"
+          aria-label="Markdown 显示模式"
         >
-          <EyeOff v-if="currentBlockPreviewed" :size="14" />
-          <Eye v-else :size="14" />
-        </button>
+          <button
+            v-for="option in markdownModes"
+            :key="option.mode"
+            class="block-action-button"
+            :title="option.label"
+            :aria-label="option.label"
+            :data-tooltip="option.label"
+            :aria-pressed="currentMarkdownMode === option.mode && !currentBlockFolded"
+            @mousedown.prevent
+            @click="setCurrentMarkdownMode(option.mode)"
+          >
+            <component :is="option.icon" :size="14" />
+          </button>
+        </div>
         <span class="block-toolbar-divider" aria-hidden="true"></span>
         <button
           class="block-action-button danger"
