@@ -69,6 +69,14 @@ Resolve resource paths relative to this skill folder.
      - Fail if any application window becomes visible.
    - Stop on any failure. Do not tag a failed build.
 
+4. **Report how the app was installed**
+   - After every local installation or replacement, explicitly describe the installation method in the final response. Saying only "installed" or "updated" is insufficient.
+   - Identify the artifact source: a locally built DMG, a downloaded GitHub Release DMG, or another source actually used. Do not describe a local build as the downloaded release artifact.
+   - State the command or manual action used and the destination. For `npm run verify:install`, explain that it mounts the DMG and copies `Vibenote.app` with `ditto` to replace `/Applications/Vibenote.app`.
+   - State that replacement affects the application bundle and preserves existing notes and settings; report any preservation verification only if it was actually performed.
+   - When explaining manual installation, provide the DMG download link and the steps to open it, drag `Vibenote.app` into Applications, and confirm replacement for an upgrade. Include the unsigned-build first-launch instructions.
+   - Report separately whether the installed app was verified headlessly, reopened for normal use, or left closed. A headless verification launch does not mean the user's app was reopened.
+
 5. **Optional visible dogfood**
    - The automated install gate must copy the DMG build into the macOS Applications folder, launch it hidden, edit isolated test content, quit, relaunch, and confirm persistence.
    - Run a visible foreground dogfood pass only when the user explicitly requests it or when a headless gate exposes a UI issue that requires visual diagnosis.
@@ -116,4 +124,5 @@ Report:
 - Whether the tag was pushed.
 - Whether the GitHub Actions release workflow passed.
 - Whether the GitHub Release was created.
+- If an installation was performed, its artifact source, installation method, destination, data preservation behavior, and final application state, as described above.
 - Explicitly state that this is an unsigned, not-notarized macOS build.
