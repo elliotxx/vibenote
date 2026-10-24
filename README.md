@@ -64,7 +64,8 @@ Requirements:
 - Mount the DMG, copy Vibenote.app into the Applications folder, unmount the DMG, and launch the app.
 - Do not touch any Heynote data.
 - Do not clone or build from source unless the release download fails.
-- If macOS blocks the unsigned app, tell me the exact Finder right-click Open or Privacy & Security steps.
+- If the release notes say the build is unsigned and macOS blocks it, tell me the exact Finder right-click Open or Privacy & Security steps.
+- If the release notes say the build is signed and notarized, do not use the unsigned-app workaround.
 ```
 
 Manual install:
@@ -79,7 +80,7 @@ Manual install:
 5. If macOS blocks the first launch, open the Applications folder in Finder, right-click `Vibenote.app`, choose `Open`, then confirm the dialog.
 6. If right-click `Open` is still blocked, go to System Settings, Privacy & Security, and allow Vibenote from the security warning shown there.
 
-Only share the DMG with people who trust the build source. This release is unsigned and not notarized.
+Only share a DMG with people who trust the build source. Builds produced without Apple credentials are unsigned and not notarized. Signed releases and auto-update setup are documented in [RELEASE.md](RELEASE.md).
 
 ## Documentation
 

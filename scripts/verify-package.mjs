@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { extractFile } from '@electron/asar'
+import { readReleaseMode } from './mac-packaging.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
@@ -49,7 +50,13 @@ check(bundleIcon.includes('icon'), 'Info.plist points at bundled icon')
 
 const asarList = output('npx', ['asar', 'list', asarPath])
 check(asarList.includes('/electron/preload.cjs'), 'asar contains preload.cjs')
-check(asarList.includes(`/node_modules/@vscode/ripgrep-darwin-${arch}/bin/rg`), 'asar contains ripgrep runtime')
+const unpackedRgCandidates = [
+  path.join(appPath, 'Contents', 'Resources', 'app.asar.unpacked', 'node_modules', `@vscode/ripgrep-darwin-${arch}`, 'bin', 'rg'),
+  path.join(appPath, 'Contents', 'Resources', 'app.asar.unpacked', 'node_modules', '@vscode', 'ripgrep', 'node_modules', `@vscode/ripgrep-darwin-${arch}`, 'bin', 'rg'),
+]
+const unpackedRg = unpackedRgCandidates.find(fileExists)
+check(Boolean(unpackedRg), 'unpacked ripgrep runtime is present')
+check(unpackedRg && (fs.statSync(unpackedRg).mode & 0o111) !== 0, 'unpacked ripgrep binary is executable')
 check(/\/dist\/assets\/index-.*\.js/.test(asarList), 'asar contains renderer JavaScript')
 check(/\/dist\/assets\/index-.*\.css/.test(asarList), 'asar contains renderer CSS')
 check(asarList.includes('/dist/build-info.json'), 'asar contains Git build information')
@@ -58,11 +65,40 @@ const buildInfo = JSON.parse(extractFile(asarPath, 'dist/build-info.json').toStr
 check(buildInfo.appVersion === version, `build information version is ${version}`)
 check(typeof buildInfo.gitDescribe === 'string' && buildInfo.gitDescribe.length > 0, 'build information contains a Git description')
 
+const releaseMode = readReleaseMode(root)
 const identityOutput = spawnSync('security', ['find-identity', '-v', '-p', 'codesigning'], { encoding: 'utf8' }).stdout || ''
-if (identityOutput.includes('Developer ID Application')) {
+if (releaseMode?.signed) {
+  const verified = spawnSync('codesign', ['--verify', '--strict', '--verbose=2', appPath], { encoding: 'utf8' })
+  check(verified.status === 0, 'codesign accepts the signed app')
+  const signature = spawnSync('codesign', ['-dv', '--verbose=4', appPath], { encoding: 'utf8' })
+  const signatureText = `${signature.stdout || ''}\n${signature.stderr || ''}`
+  check(signatureText.includes('Developer ID Application'), 'app is signed with Developer ID Application')
+  check(/flags=.*runtime/.test(signatureText), 'hardened runtime is enabled')
+  const zipPath = path.join(root, 'dist', `${productName}-${version}-${arch}.zip`)
+  const blockmapPath = path.join(root, 'dist', `${productName}-${version}-${arch}.zip.blockmap`)
+  check(fileExists(zipPath), 'signed release contains a zip update archive')
+  check(fileExists(blockmapPath), 'signed release contains a zip blockmap')
+} else if (identityOutput.includes('Developer ID Application')) {
   console.log('ok - Developer ID Application identity is available for notarized distribution')
 } else {
   console.log('warn - Developer ID Application identity is not available; notarization cannot be completed on this machine')
+}
+
+if (releaseMode?.notarized) {
+  const appTicket = spawnSync('xcrun', ['stapler', 'validate', appPath], { encoding: 'utf8' })
+  check(appTicket.status === 0, 'app notarization ticket is stapled')
+  const dmgTicket = spawnSync('xcrun', ['stapler', 'validate', dmgPath], { encoding: 'utf8' })
+  check(dmgTicket.status === 0, 'DMG notarization ticket is stapled')
+}
+
+if (releaseMode?.updateFeed) {
+  const updateConfigPath = path.join(appPath, 'Contents', 'Resources', 'app-update.yml')
+  check(fileExists(updateConfigPath), 'app-update.yml is embedded')
+  const updateConfig = fs.readFileSync(updateConfigPath, 'utf8')
+  check(updateConfig.includes('provider: generic'), 'embedded update config uses the generic provider')
+  check(/url:\s*https:\/\//.test(updateConfig), 'embedded update config uses https')
+  check(!updateConfig.includes('@'), 'embedded update config has no credentials')
+  check(fileExists(path.join(root, 'dist', 'latest-mac.yml')), 'latest-mac.yml is present for the update feed')
 }
 
 const mountRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vibenote-dmg-'))

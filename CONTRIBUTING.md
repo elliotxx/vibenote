@@ -77,4 +77,4 @@ The verification suite covers package structure, DMG contents, runtime input, qu
 
 Use Conventional Commits. Keep unrelated work out of the same commit and review the staged diff before committing.
 
-Packaging, checksum verification, acceptance criteria, and tag publishing are documented in [RELEASE.md](RELEASE.md).
+Packaging, checksum verification, acceptance criteria, and tag publishing are documented in [RELEASE.md](RELEASE.md). Unsigned `npm run release:mac` remains the default. `npm run release:mac:signed` is the Developer ID, notarization, and auto-update path; it reads credentials from the environment and does not store them in the repository.

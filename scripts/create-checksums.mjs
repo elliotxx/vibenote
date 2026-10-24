@@ -3,15 +3,21 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { checksumArtifactNames, readReleaseMode, releaseArtifactNames } from './mac-packaging.mjs'
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const productName = packageJson.build.productName
 const version = packageJson.version
 const arch = process.env.VIBENOTE_RELEASE_ARCH || 'arm64'
 const distDir = path.join(root, 'dist')
-const artifacts = [
-  `${productName}-${version}-${arch}.dmg`,
-]
+const mode = readReleaseMode(root) || { signed: false, updateFeed: false }
+const names = releaseArtifactNames({ productName, version, arch })
+const artifacts = checksumArtifactNames(names, {
+  signed: mode.signed,
+  updateFeed: mode.updateFeed,
+  exists: name => fs.existsSync(path.join(distDir, name)),
+})
 
 function sha256(filePath) {
   const hash = crypto.createHash('sha256')
