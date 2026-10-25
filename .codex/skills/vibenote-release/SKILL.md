@@ -12,13 +12,14 @@ Use this skill only from the Vibenote repository root.
 The current release mode is **tag-driven macOS release distribution**:
 
 - macOS arm64 only.
-- Unsigned and not notarized.
-- DMG is the primary tester artifact.
+- `npm run release:mac` is unsigned unless Developer ID and notarization credentials are already in the environment.
+- `npm run release:mac:signed` signs, notarizes, and can embed a generic GitHub Releases update feed.
+- DMG is the primary tester artifact. Signed builds also produce a zip, blockmap, and `latest-mac.yml` when the feed is enabled.
 - `SHA256SUMS` must accompany shared builds.
 - A pushed `v<version>` tag creates a formal GitHub Release through GitHub Actions.
-- Do not describe this build as signed, notarized, or Gatekeeper-clean.
+- Read `dist/release-mode.json` before describing a build as signed, notarized, or auto-updating. If that file is absent, the build is unsigned.
 
-If the user asks for a signed release, notarized release, auto-update release, Homebrew Cask, or broad distribution, stop and explain that Developer ID signing, hardened runtime, notarization, and stapling are required first.
+If the user asks for Homebrew Cask or another platform, stop. That is outside this packaging path. If they ask for a signed release and the Apple credentials are not available, stop before tagging and report the missing secrets. Do not describe an unsigned build as Gatekeeper-clean.
 
 ## Useful Resources
 
@@ -47,9 +48,10 @@ Resolve resource paths relative to this skill folder.
      ```sh
      npm run release:mac
      ```
-   - Expected artifacts:
+   - Expected unsigned artifacts:
      - `dist/Vibenote-<version>-arm64.dmg`
      - `dist/SHA256SUMS`
+   - For `npm run release:mac:signed`, also expect the zip, its blockmap, and `latest-mac.yml` when `dist/release-mode.json` has `updateFeed: true`.
 
    - Run:
      ```sh
@@ -74,7 +76,7 @@ Resolve resource paths relative to this skill folder.
    - Identify the artifact source: a locally built DMG, a downloaded GitHub Release DMG, or another source actually used. Do not describe a local build as the downloaded release artifact.
    - State the command or manual action used and the destination. For `npm run verify:install`, explain that it mounts the DMG and copies `Vibenote.app` with `ditto` to replace `/Applications/Vibenote.app`.
    - State that replacement affects the application bundle and preserves existing notes and settings; report any preservation verification only if it was actually performed.
-   - When explaining manual installation, provide the DMG download link and the steps to open it, drag `Vibenote.app` into Applications, and confirm replacement for an upgrade. Include the unsigned-build first-launch instructions.
+   - When explaining manual installation, provide the DMG download link and the steps to open it, drag `Vibenote.app` into Applications, and confirm replacement for an upgrade. For an unsigned build, include the right-click Open instructions. For a signed and notarized build, do not add that workaround.
    - Report separately whether the installed app was verified headlessly, reopened for normal use, or left closed. A headless verification launch does not mean the user's app was reopened.
 
 5. **Optional visible dogfood**
@@ -108,6 +110,7 @@ Stop before tagging or publishing if any of these are true:
 - Version and tag do not match.
 - Tag already exists and the user has not chosen a re-release/new-version path.
 - `npm run release:mac` fails locally or in GitHub Actions.
+- A signed or notarized release was requested, but the Developer ID certificate or notarization credentials are missing.
 - Any required verification fails.
 - `SHA256SUMS` is missing or does not validate.
 - Automated packaged-app verification finds launch, edit, save, quit, relaunch, visibility, isolation, or persistence issues.
@@ -125,4 +128,4 @@ Report:
 - Whether the GitHub Actions release workflow passed.
 - Whether the GitHub Release was created.
 - If an installation was performed, its artifact source, installation method, destination, data preservation behavior, and final application state, as described above.
-- Explicitly state that this is an unsigned, not-notarized macOS build.
+- Explicitly state whether the build is unsigned or signed and notarized, using `dist/release-mode.json` when it exists.

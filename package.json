@@ -20,8 +20,10 @@
     "test:e2e": "playwright test",
     "preview": "vite preview",
     "electron": "electron .",
-    "build:mac": "set -e; export VIBENOTE_RELEASE_ARCH=${VIBENOTE_RELEASE_ARCH:-arm64}; rm -f dist/*.zip dist/*.zip.blockmap; npm run build; node scripts/create-build-info.mjs; electron_dist_arg=\"\"; if [ -d .electron-dist ]; then electron_dist_arg=\"-c.electronDist=.electron-dist\"; fi; CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir --${VIBENOTE_RELEASE_ARCH} --publish never $electron_dist_arg; node scripts/create-dmg.mjs",
+    "build:mac": "node scripts/build-mac.mjs",
+    "build:mac:signed": "node scripts/build-mac.mjs --signed",
     "release:mac": "npm run build:mac && npm run verify:package && node scripts/create-checksums.mjs",
+    "release:mac:signed": "npm run build:mac:signed && npm run verify:package && node scripts/create-checksums.mjs",
     "release:trial": "npm run release:mac",
     "verify:package": "node scripts/verify-package.mjs",
     "verify:runtime": "node scripts/smoke-runtime.mjs",
@@ -43,17 +45,22 @@
   "build": {
     "appId": "com.elliotxx.vibenote",
     "productName": "Vibenote",
+    "publish": null,
     "electronVersion": "41.3.0",
     "artifactName": "${productName}-${version}-${arch}.${ext}",
     "directories": {
       "buildResources": "build"
     },
+    "afterPack": "scripts/after-pack-update.mjs",
     "files": [
       "dist/**/*",
       "cli/**/*",
       "core/**/*",
       "electron/**/*",
       "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/@vscode/ripgrep-darwin-*/**/*"
     ],
     "extraResources": [
       {
@@ -63,6 +70,9 @@
     ],
     "mac": {
       "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
       "target": [
         "dir"
       ],
@@ -114,6 +124,7 @@
     "@codemirror/view": "^6.43.4",
     "@lezer/common": "^1.5.2",
     "@vscode/ripgrep": "^1.18.0",
+    "electron-updater": "^6.8.11",
     "lucide-vue-next": "^0.577.0",
     "markdown-it": "^15.0.0",
     "markdown-it-multimd-table": "^4.2.3",
@@ -122,6 +133,7 @@
     "vue": "^3.5.38"
   },
   "devDependencies": {
+    "@electron/notarize": "^2.5.0",
     "@lezer/generator": "^1.8.0",
     "@playwright/test": "^1.61.1",
     "@types/markdown-it": "^14.2.0",

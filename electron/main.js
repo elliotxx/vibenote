@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { rgPath } from '@vscode/ripgrep'
 import { GitBackupManager } from './gitBackup.js'
 import { AgentCliInstaller } from './agentCliInstaller.js'
+import { configureAutoUpdate } from './autoUpdate.js'
 import { aboutPanelOptions, loadBuildInfo } from './buildInfo.js'
 import { storageRevision } from '../core/noteFormat.js'
 import { NoteStore } from '../core/noteStore.js'
@@ -1612,6 +1613,13 @@ app.whenReady().then(async () => {
   app.setAboutPanelOptions(aboutPanelOptions(buildInfo))
   setupApplicationMenu()
   createWindow()
+  void configureAutoUpdate({
+    isPackaged: app.isPackaged,
+    isHeadless: isHeadlessVerification,
+    resourcesPath: process.resourcesPath,
+    env: process.env,
+    logger: console,
+  })
   if (!isHeadlessVerification) {
     globalShortcut.register('CommandOrControl+Shift+Space', () => {
       if (!mainWindow) return

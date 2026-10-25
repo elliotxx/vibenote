@@ -40,5 +40,6 @@ shasum -a 256 -c SHA256SUMS
 - Unsigned and not notarized.
 - macOS Gatekeeper warning on first launch.
 - No auto-update channel.
-- No auto-update channel.
+
+Use `node scripts/release-notes.mjs` for the workflow text. It selects the unsigned or signed wording from `dist/release-mode.json`.
 ```
