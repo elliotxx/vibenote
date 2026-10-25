@@ -10,9 +10,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const productName = packageJson.build.productName
 const version = packageJson.version
+const local = process.argv.includes('--local')
 const arch = process.env.VIBENOTE_RELEASE_ARCH || 'arm64'
 const appPath = path.join(root, 'dist', `mac-${arch}`, `${productName}.app`)
-const dmgPath = path.join(root, 'dist', `${productName}-${version}-${arch}.dmg`)
+const dmgPath = path.join(root, 'dist', `${productName}-${version}-${arch}${local ? '-local' : ''}.dmg`)
 
 function run(command, args) {
   execFileSync(command, args, { cwd: root, stdio: 'inherit' })
@@ -27,7 +28,11 @@ if (!fs.existsSync(appPath)) {
   throw new Error(`Packaged app not found: ${appPath}`)
 }
 const mode = readReleaseMode(root)
-if ((mode && mode.customDmg === false) || signingRequested(process.env) || developerIdSigned(appPath)) {
+if (local) {
+  const { verifyLocalApp } = await import('./local-mac.mjs')
+  verifyLocalApp(appPath)
+}
+if ((!local && ((mode && mode.customDmg === false) || signingRequested(process.env))) || developerIdSigned(appPath)) {
   if (fs.existsSync(dmgPath)) {
     console.log(`Keeping electron-builder DMG for signed app: ${dmgPath}`)
     process.exit(0)

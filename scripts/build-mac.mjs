@@ -23,6 +23,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const planOnly = process.argv.includes('--plan')
 const signedFlag = process.argv.includes('--signed')
+const localFlag = process.argv.includes('--local')
+if (localFlag && signedFlag) throw new Error('--local and --signed cannot be combined.')
+if (localFlag) {
+  process.env.VIBENOTE_MAC_SIGN = '0'
+  process.env.VIBENOTE_UPDATE_FEED_URL = 'off'
+}
 if (signedFlag) process.env.VIBENOTE_MAC_SIGN = '1'
 
 function fail(message) {
@@ -77,6 +83,12 @@ try {
   throw error
 }
 
+if (localFlag && !planOnly) {
+  // Resolve the stable certificate before rebuilding or removing any artifacts.
+  const { resolveLocalIdentity } = await import('./local-mac.mjs')
+  process.env.VIBENOTE_LOCAL_SIGNING_IDENTITY = resolveLocalIdentity().hash
+}
+
 if (planOnly) {
   process.stdout.write(`${JSON.stringify(describeMacPackagingPlan(plan), null, 2)}\n`)
   process.exit(0)
@@ -91,7 +103,7 @@ const names = releaseArtifactNames({
   version: packageJson.version,
   arch: plan.arch,
 })
-for (const name of [names.dmgName, names.zipName, names.blockmapName, names.updateInfoName, 'release-mode.json']) {
+for (const name of [names.dmgName, names.zipName, names.blockmapName, names.updateInfoName, 'release-mode.json', 'local-mode.json']) {
   fs.rmSync(distFile(name), { force: true })
 }
 
@@ -109,6 +121,14 @@ const builderArgs = electronBuilderArgs(plan, {
 })
 const builderBin = path.join(root, 'node_modules', '.bin', 'electron-builder')
 run(builderBin, builderArgs, builderEnv)
+
+if (localFlag) {
+  run(process.execPath, ['scripts/local-mac.mjs', '--sign'], builderEnv)
+  run(process.execPath, ['scripts/create-dmg.mjs', '--local'], builderEnv)
+  run(process.execPath, ['scripts/local-mac.mjs', '--verify'], builderEnv)
+  console.log('Local Apple Development build complete (not notarized, update feed disabled).')
+  process.exit(0)
+}
 
 if (plan.customDmg) {
   run(process.execPath, ['scripts/create-dmg.mjs'], process.env)

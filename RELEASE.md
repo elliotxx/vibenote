@@ -199,3 +199,20 @@ Publish a version only when:
 - The tag-driven GitHub Actions release workflow passes.
 
 Do not call a build signed or notarized unless `dist/release-mode.json` records that result.
+
+## Stable local signing
+
+For everyday development on a Mac with an Apple Development certificate:
+
+```sh
+npm run build:mac:local
+npm run verify:mac:local
+# Quit the installed app before replacing it:
+npm run install:mac:local
+```
+
+This selects a single valid Apple Development certificate from Keychain, signs the app and nested code with hardened runtime, and verifies the Apple certificate chain. When multiple development identities are available, set `VIBENOTE_LOCAL_SIGNING_IDENTITY` to the exact certificate SHA-1 or full name. It fails instead of falling back to ad-hoc signing. Keep the same identity across local upgrades so the encrypted AI credentials remain readable.
+
+The DMG ends in `-local.dmg`; `dist/local-mode.json` records the certificate, revision, and whether the source was dirty. Local builds disable the update feed and do not generate the public release manifest. They are not notarized and must not be uploaded as public releases. The installer verifies the staged app before replacing `/Applications/Vibenote.app`, rejects a certificate change, retains the previous app in `backups/local-apps`, and restores it if activation fails. It does not touch application data.
+
+With a signed installed build, run `npm run verify:keychain` to test native encryption with synthetic credentials and an isolated profile. `VIBENOTE_KEYCHAIN_UPGRADE_APP` may point to a second build signed with the same identity to verify credential reads after an upgrade. The test contacts only its local mock provider and never reads the real profile's API key.
