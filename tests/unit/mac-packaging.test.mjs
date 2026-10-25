@@ -13,6 +13,7 @@ import {
   describeMacPackagingPlan,
   electronBuilderArgs,
   electronBuilderEnv,
+  electronBuilderPublishConfig,
   githubReleaseFeedUrl,
   notarizeRequest,
   releaseArtifactNames,
@@ -101,6 +102,10 @@ test('signed packaging notarizes, uses electron-builder archives, and can defaul
   assert.ok(args.includes('zip'))
   assert.ok(args.includes('-c.mac.forceCodeSigning=true'))
   assert.equal(args.includes('-c.mac.notarize=false'), false)
+  assert.deepEqual(electronBuilderPublishConfig(plan), {
+    provider: 'generic',
+    url: 'https://github.com/elliotxx/vibenote/releases/latest/download',
+  })
   assert.ok(args.includes('-c.publish.url=https://github.com/elliotxx/vibenote/releases/latest/download'))
   assert.ok(args.includes('-c.electronDist=.electron-dist'))
 
@@ -173,6 +178,11 @@ test('API key and keychain notarization are accepted, and signature experiments 
   assert.equal(apiPlan.notary, 'api-key')
   assert.equal(apiPlan.feedUrl, '')
   assert.equal(apiPlan.identitySource, 'csc-name')
+  assert.equal(electronBuilderPublishConfig(apiPlan), null)
+  const disabledArgs = electronBuilderArgs(apiPlan)
+  assert.equal(disabledArgs.includes('-c.publish.provider=generic'), false)
+  assert.equal(disabledArgs.some(arg => String(arg).startsWith('-c.publish')), false)
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).build.publish, null)
   assert.deepEqual(notarizeRequest('/tmp/Vibenote.dmg', {
     APPLE_API_KEY: '/tmp/AuthKey.p8',
     APPLE_API_KEY_ID: 'KEYID12345',
@@ -245,6 +255,14 @@ test('update metadata and release notes follow the packaging mode', () => {
   ])
 })
 
+test('helper entitlements allow JIT for signed arm64 processes', () => {
+  const inherit = fs.readFileSync(path.join(root, 'build', 'entitlements.mac.inherit.plist'), 'utf8')
+  const main = fs.readFileSync(path.join(root, 'build', 'entitlements.mac.plist'), 'utf8')
+  assert.match(inherit, /<key>com\.apple\.security\.cs\.allow-jit<\/key>\s*<true\/>/)
+  assert.match(inherit, /<key>com\.apple\.security\.inherit<\/key>\s*<true\/>/)
+  assert.match(main, /<key>com\.apple\.security\.cs\.allow-jit<\/key>\s*<true\/>/)
+})
+
 test('afterPack writes the generic feed before signing', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vibenote-after-pack-'))
   const previous = process.env.VIBENOTE_RESOLVED_UPDATE_FEED
@@ -256,6 +274,26 @@ test('afterPack writes the generic feed before signing', async () => {
     })
     const written = fs.readFileSync(path.join(directory, 'Vibenote.app', 'Contents', 'Resources', 'app-update.yml'), 'utf8')
     assert.match(written, /url: https:\/\/example\.com\/updates\n/)
+  } finally {
+    if (previous === undefined) delete process.env.VIBENOTE_RESOLVED_UPDATE_FEED
+    else process.env.VIBENOTE_RESOLVED_UPDATE_FEED = previous
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('afterPack removes update metadata when the feed is off', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vibenote-after-pack-'))
+  const previous = process.env.VIBENOTE_RESOLVED_UPDATE_FEED
+  delete process.env.VIBENOTE_RESOLVED_UPDATE_FEED
+  const target = path.join(directory, 'Vibenote.app', 'Contents', 'Resources', 'app-update.yml')
+  fs.mkdirSync(path.dirname(target), { recursive: true })
+  fs.writeFileSync(target, 'provider: github\nowner: example\nrepo: vibenote\n')
+  try {
+    await afterPack({
+      appOutDir: directory,
+      packager: { appInfo: { productFilename: 'Vibenote' } },
+    })
+    assert.equal(fs.existsSync(target), false)
   } finally {
     if (previous === undefined) delete process.env.VIBENOTE_RESOLVED_UPDATE_FEED
     else process.env.VIBENOTE_RESOLVED_UPDATE_FEED = previous

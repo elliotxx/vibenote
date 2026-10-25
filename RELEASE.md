@@ -149,7 +149,7 @@ GitHub Actions reads those values from repository secrets. For a hosted runner, 
 
 `https://github.com/elliotxx/vibenote/releases/latest/download`
 
-That feed must serve `latest-mac.yml`, the zip, and the zip blockmap from the GitHub Release. The app embeds the feed only for signed builds. Unsigned builds do not check for updates. A packaged app can also set `VIBENOTE_UPDATE_FEED_URL`, or set `VIBENOTE_DISABLE_AUTO_UPDATE=1` to skip the check. Headless verification never checks.
+That feed must serve `latest-mac.yml`, the zip, and the zip blockmap from the GitHub Release. The app embeds `app-update.yml` only when a signed build has an update feed. `build.publish` stays `null` unless that feed is set, so a disabled or omitted feed does not inherit GitHub update metadata from `repository`. Unsigned builds do not check for updates. A packaged app can also set `VIBENOTE_UPDATE_FEED_URL`, or set `VIBENOTE_DISABLE_AUTO_UPDATE=1` to skip the check. Headless verification never checks.
 
 `VIBENOTE_MAC_NOTARIZE=0` signs without notarization. Use that only to inspect a signature. The normal signed release fails closed when notarization credentials are missing.
 

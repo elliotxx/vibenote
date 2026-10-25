@@ -45,6 +45,7 @@
   "build": {
     "appId": "com.elliotxx.vibenote",
     "productName": "Vibenote",
+    "publish": null,
     "electronVersion": "41.3.0",
     "artifactName": "${productName}-${version}-${arch}.${ext}",
     "directories": {

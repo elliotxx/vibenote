@@ -91,14 +91,16 @@ if (releaseMode?.notarized) {
   check(dmgTicket.status === 0, 'DMG notarization ticket is stapled')
 }
 
+const updateConfigPath = path.join(appPath, 'Contents', 'Resources', 'app-update.yml')
 if (releaseMode?.updateFeed) {
-  const updateConfigPath = path.join(appPath, 'Contents', 'Resources', 'app-update.yml')
   check(fileExists(updateConfigPath), 'app-update.yml is embedded')
   const updateConfig = fs.readFileSync(updateConfigPath, 'utf8')
   check(updateConfig.includes('provider: generic'), 'embedded update config uses the generic provider')
   check(/url:\s*https:\/\//.test(updateConfig), 'embedded update config uses https')
   check(!updateConfig.includes('@'), 'embedded update config has no credentials')
   check(fileExists(path.join(root, 'dist', 'latest-mac.yml')), 'latest-mac.yml is present for the update feed')
+} else {
+  check(!fileExists(updateConfigPath), 'app-update.yml is absent when the update feed is off')
 }
 
 const mountRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vibenote-dmg-'))

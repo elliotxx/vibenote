@@ -174,13 +174,25 @@ export function createMacPackagingPlan(env, { signedFlag = false, defaultGithubF
   }
 }
 
+export function electronBuilderPublishConfig(plan) {
+  if (!plan.feedUrl) return null
+  return {
+    provider: 'generic',
+    url: plan.feedUrl,
+  }
+}
+
 export function electronBuilderArgs(plan, { electronDist = false } = {}) {
   const args = ['--mac', ...plan.targets, `--${plan.arch}`, '--publish', 'never']
   if (plan.sign) args.push('-c.mac.forceCodeSigning=true')
   if (!plan.notarize) args.push('-c.mac.notarize=false')
-  if (plan.feedUrl) {
-    args.push('-c.publish.provider=generic', `-c.publish.url=${plan.feedUrl}`)
+  const publishConfig = electronBuilderPublishConfig(plan)
+  if (publishConfig) {
+    args.push('-c.publish.provider=generic', `-c.publish.url=${publishConfig.url}`)
   }
+  // An empty feed keeps package.json build.publish null. Do not pass
+  // -c.publish=null: the CLI stores the string "null", which names a publisher
+  // and replaces that JSON null, so GitHub repository metadata is embedded again.
   if (electronDist) args.push('-c.electronDist=.electron-dist')
   return args
 }
