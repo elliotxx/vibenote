@@ -77,8 +77,8 @@ Manual install:
    ```
 3. Open the DMG and drag `Vibenote.app` into the Applications folder.
 4. Launch Vibenote.
-5. If macOS blocks the first launch, open the Applications folder in Finder, right-click `Vibenote.app`, choose `Open`, then confirm the dialog.
-6. If right-click `Open` is still blocked, go to System Settings, Privacy & Security, and allow Vibenote from the security warning shown there.
+
+Check that release’s notes for signing and notarization status. Signed and notarized releases use the steps above; macOS may still ask you to confirm the download source. For a damaged-app or signature alert, download again and verify the checksum. Follow additional first-launch instructions only for a release explicitly marked as an unnotarized test build.
 
 Only share a DMG with people who trust the build source. Builds produced without Apple credentials are unsigned and not notarized. Signed releases and auto-update setup are documented in [RELEASE.md](RELEASE.md).
 

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, protocol, shell } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, protocol, safeStorage, shell } from 'electron'
 import { execFileSync, spawn } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -9,6 +9,7 @@ import { rgPath } from '@vscode/ripgrep'
 import { GitBackupManager } from './gitBackup.js'
 import { AgentCliInstaller } from './agentCliInstaller.js'
 import { configureAutoUpdate } from './autoUpdate.js'
+import { encodeApiKey, decodeApiKey } from './aiKeyStorage.js'
 import { aboutPanelOptions, loadBuildInfo } from './buildInfo.js'
 import { storageRevision } from '../core/noteFormat.js'
 import { NoteStore } from '../core/noteStore.js'
@@ -911,7 +912,7 @@ class AiSettingsStore {
   keyStorageFromRecord(record) {
     if (!record) return 'none'
     if (record.storage === 'localFallback') return 'local-fallback'
-    if (record.storage === 'safeStorage') return 'unknown'
+    if (record.storage === 'safeStorage') return 'secure'
     return 'unknown'
   }
 
@@ -944,11 +945,7 @@ class AiSettingsStore {
     if (!value) {
       throw new Error('API key is required')
     }
-    const record = {
-      version: 1,
-      storage: 'localFallback',
-      value: Buffer.from(value, 'utf8').toString('base64'),
-    }
+    const record = encodeApiKey(value, safeStorage)
     await writeAtomic(this.keyPath, JSON.stringify(record, null, 2))
     return this.readSettings()
   }
@@ -963,13 +960,12 @@ class AiSettingsStore {
     if (!record) {
       throw new Error('API key is required')
     }
-    if (record.storage === 'localFallback') {
-      return Buffer.from(record.value, 'base64').toString('utf8')
+    const value = decodeApiKey(record, safeStorage)
+    if (record.storage === 'localFallback' && safeStorage.isEncryptionAvailable()) {
+      // Atomic replacement happens only after encryption succeeds.
+      await this.setApiKey(value)
     }
-    if (record.storage === 'safeStorage') {
-      throw new Error('This API key was saved with macOS Keychain. Clear it and save it again.')
-    }
-    throw new Error('Unsupported API key storage')
+    return value
   }
 
   endpointFor(settings) {

@@ -26,7 +26,7 @@ export const strings: Record<Lang, Dictionary> = {
     "mock.lang": "纯文本",
     "mock.block1.title": "今早想到的",
     "mock.block1.line1": "把发布说明改成「先写，再整理」的口吻。",
-    "mock.block1.line2": "安装提示要诚实：未公证，右键打开即可。",
+    "mock.block1.line2": "灵感来了就记下，保存和整理留给 Vibenote。",
     "mock.block2.title": "片段",
     "mock.block2.line1": "shasum -a 256 -c SHA256SUMS",
     "mock.block2.line2": "open Vibenote.app",
@@ -68,7 +68,7 @@ export const strings: Record<Lang, Dictionary> = {
     "download.cta": "获取最新发布",
     "download.sums": "同时下载 SHA256SUMS 并校验",
     "download.note":
-      "当前构建未签名、未公证。若 macOS 拦截首次启动，请在 Finder 中右键 Vibenote.app → 打开，并确认对话框。",
+      "签名与公证状态见该版本的发布说明。安装后如遇安全提示，请先核对下载来源及发布说明。",
     "download.tip": "安装提示",
     "download.tip.body":
       "打开 DMG，将应用拖入「应用程序」。校验：shasum -a 256 -c SHA256SUMS",
@@ -102,7 +102,7 @@ export const strings: Record<Lang, Dictionary> = {
     "mock.lang": "Plain text",
     "mock.block1.title": "This morning",
     "mock.block1.line1": "Rewrite the release notes in a write-first voice.",
-    "mock.block1.line2": "Be honest about unsigned builds — right-click Open.",
+    "mock.block1.line2": "Capture the thought. Let Vibenote handle saving and organizing.",
     "mock.block2.title": "Snippet",
     "mock.block2.line1": "shasum -a 256 -c SHA256SUMS",
     "mock.block2.line2": "open Vibenote.app",
@@ -150,7 +150,7 @@ export const strings: Record<Lang, Dictionary> = {
     "download.cta": "Latest release",
     "download.sums": "Also grab SHA256SUMS and verify",
     "download.note":
-      "Builds are currently unsigned and not notarized. If macOS blocks the first launch, right-click Vibenote.app in Finder → Open, then confirm.",
+      "Check the release notes for signing and notarization status. If macOS shows a security alert, verify the download source and follow the instructions for that release.",
     "download.tip": "Install tip",
     "download.tip.body":
       "Open the DMG and drag the app into Applications. Verify with: shasum -a 256 -c SHA256SUMS",

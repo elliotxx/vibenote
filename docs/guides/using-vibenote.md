@@ -54,3 +54,9 @@ Removing the app does not remove its note data. Delete the application data only
 ```sh
 rm -rf "$HOME/Library/Application Support/Vibenote"
 ```
+
+## API key storage
+
+New API keys are encrypted with the operating system's secure storage, using Keychain on macOS. If secure storage is unavailable, saving fails and the existing record is retained. Legacy local records migrate when AI uses them and secure storage is available; existing Keychain records remain readable. Migration or decryption failures do not clear the saved key. macOS may request permission on first access or after a signing identity change.
+
+After building the app, maintainers can run `node scripts/ai-key-storage-runtime.mjs` to verify credential saves, legacy migration, and failure preservation through production IPC. This check uses isolated data, a local mock provider, and a simulated keystore; it does not access real API keys or prove native Keychain authorization behavior.
